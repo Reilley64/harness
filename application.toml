@@ -1,0 +1,21 @@
+app_data_path = "~/.harness"
+
+[authentication.openai]
+dynamic_client_id = "dynamic_agent_client"
+issuer = "https://auth.openai.com"
+resource = "https://api.openai.com/v1"
+scopes = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
+open_browser = true
+timeout_seconds = 600
+
+[replies.openai]
+base_url = "https://api.openai.com/v1"
+timeout_seconds = 600
+
+[models]
+url = "http://localhost:3000/models.json"
+memory_ttl_seconds = 300
+
+[providers]
+url = "http://localhost:3000/providers.json"
+memory_ttl_seconds = 300

@@ -1,0 +1,291 @@
+use crate::create_conversation;
+use crate::create_file;
+use crate::create_model_step_factory;
+use crate::create_process;
+use crate::create_tool_output;
+use crate::lock_conversation;
+use crate::read_code_matches;
+use crate::read_conversation;
+use crate::read_directory;
+use crate::read_file;
+use crate::read_model_selection;
+use crate::read_paths;
+use crate::read_provider_connection;
+use crate::read_text_matches;
+use crate::read_tool_invocation;
+use crate::read_tools;
+use crate::read_web_search;
+use crate::update_conversation;
+use crate::update_file;
+use crate::update_model_selection;
+
+use std::time::Duration;
+
+use application::ports;
+
+use crate::create_provider_connection_factory::create_provider_connection_factory;
+use crate::read_models::read_models;
+use crate::read_providers::read_providers;
+use crate::settings::Settings;
+
+#[fundle::bundle]
+pub struct Dependencies {
+    settings: Settings,
+    read_file: ports::ReadFile,
+    create_process: ports::CreateProcess,
+    update_file: ports::UpdateFile,
+    create_file: ports::CreateFile,
+    read_directory: ports::ReadDirectory,
+    read_paths: ports::ReadPaths,
+    read_text_matches: ports::ReadTextMatches,
+    read_code_matches: ports::ReadCodeMatches,
+    read_web_search: ports::ReadWebSearch,
+    read_tools: ports::ReadTools,
+    read_tool_invocation: ports::ReadToolInvocation,
+    create_tool_output: ports::CreateToolOutput,
+    read_model_selection: ports::ReadModelSelection,
+    update_model_selection: ports::UpdateModelSelection,
+    create_conversation: ports::CreateConversation,
+    read_conversation: ports::ReadConversation,
+    update_conversation: ports::UpdateConversation,
+    lock_conversation: ports::LockConversation,
+    read_provider_connection: ports::ReadProviderConnection,
+    create_model_step_factory: ports::CreateModelStepFactory,
+    create_provider_connection_factory: ports::CreateProviderConnectionFactory,
+    read_models: ports::ReadModels,
+    read_providers: ports::ReadProviders,
+}
+
+impl Dependencies {
+    pub fn build(settings: Settings) -> Self {
+        Self::builder()
+            .settings(|_| settings.clone())
+            .create_provider_connection_factory(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let credentials_path = settings.app_data_path.join("auth");
+                let settings = settings.authentication.clone();
+                ports::CreateProviderConnectionFactory::new(move |provider_id| {
+                    let create = create_provider_connection_factory(
+                        &settings,
+                        &credentials_path,
+                        &provider_id,
+                    )?;
+                    Ok(ports::CreateProviderConnection::new(
+                        move |present_authorization| {
+                            let result = create(present_authorization);
+                            Box::pin(async move {
+                                let connection = result.await?;
+                                Ok(connection)
+                            })
+                        },
+                    ))
+                })
+            })
+            .create_conversation(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = create_conversation::create_conversation(
+                    &settings.app_data_path.join("conversations"),
+                );
+                ports::CreateConversation::new(move |model, effort, connection, workspace| {
+                    let result = implementation(model, effort, connection, workspace);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_conversation(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_conversation::read_conversation(
+                    &settings.app_data_path.join("conversations"),
+                );
+                ports::ReadConversation::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_conversation(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = update_conversation::update_conversation(
+                    &settings.app_data_path.join("conversations"),
+                );
+                ports::UpdateConversation::new(move |conversation| {
+                    let result = implementation(conversation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .lock_conversation(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = lock_conversation::lock_conversation(
+                    &settings.app_data_path.join("conversations"),
+                );
+                ports::LockConversation::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_provider_connection(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_provider_connection::read_provider_connection(
+                    &settings.app_data_path.join("auth"),
+                );
+                ports::ReadProviderConnection::new(move |provider_id| {
+                    let result = implementation(provider_id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .create_model_step_factory(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let reply_settings = settings.replies.clone();
+                let authentication = settings.authentication.clone();
+                let credentials_path = settings.app_data_path.join("auth");
+                ports::CreateModelStepFactory::new(move |provider_id| {
+                    let create = create_model_step_factory::create_model_step_factory(
+                        &reply_settings,
+                        &authentication,
+                        &credentials_path,
+                        &provider_id,
+                    )?;
+                    Ok(create)
+                })
+            })
+            .read_model_selection(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_model_selection::read_model_selection(
+                    &settings
+                        .app_data_path
+                        .join("preferences/model-selection.json"),
+                );
+                ports::ReadModelSelection::new(move || {
+                    let result = read();
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_model_selection(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let update = update_model_selection::update_model_selection(
+                    &settings
+                        .app_data_path
+                        .join("preferences/model-selection.json"),
+                );
+                ports::UpdateModelSelection::new(move |selection| {
+                    let result = update(selection);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_models(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_models(
+                    &settings.models.url,
+                    &settings.app_data_path.join("models.json"),
+                    Duration::from_secs(settings.models.memory_ttl_seconds),
+                );
+                ports::ReadModels::new(move || {
+                    let future = read();
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_providers(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_providers(
+                    &settings.providers.url,
+                    &settings.app_data_path.join("providers.json"),
+                    Duration::from_secs(settings.providers.memory_ttl_seconds),
+                );
+                ports::ReadProviders::new(move || {
+                    let future = read();
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_file(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_file::read_file(&settings.app_data_path);
+                ports::ReadFile::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .create_process(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = create_process::create_process(&settings.app_data_path);
+                ports::CreateProcess::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .update_file(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = update_file::update_file(&settings.app_data_path);
+                ports::UpdateFile::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .create_file(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = create_file::create_file(&settings.app_data_path);
+                ports::CreateFile::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_directory(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_directory::read_directory(&settings.app_data_path);
+                ports::ReadDirectory::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_paths(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_paths::read_paths(&settings.app_data_path);
+                ports::ReadPaths::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_text_matches(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_text_matches::read_text_matches(&settings.app_data_path);
+                ports::ReadTextMatches::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_code_matches(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_code_matches::read_code_matches(&settings.app_data_path);
+                ports::ReadCodeMatches::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_web_search(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_web_search::read_web_search(&settings.app_data_path);
+                ports::ReadWebSearch::new(move |workspace, arguments, cancellation| {
+                    let future = implementation(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_tools(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_tools::read_tools(settings.tools.enabled);
+                ports::ReadTools::new(move || {
+                    let future = read();
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_tool_invocation(|_| {
+                let read = read_tool_invocation::read_tool_invocation();
+                ports::ReadToolInvocation::new(move |tool, args| Ok(read(tool, args)?))
+            })
+            .create_tool_output(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let create = create_tool_output::create_tool_output(&settings.app_data_path);
+                ports::CreateToolOutput::new(move |id, call| {
+                    let future = create(id, call);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .build()
+    }
+}

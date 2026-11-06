@@ -1,0 +1,217 @@
+#[derive(serde::Serialize)]
+pub(super) struct Record {
+    version: u32,
+    workspace: Option<std::path::PathBuf>,
+    id: String,
+    provider_connection_id: String,
+    model: ModelRecord,
+    effort: Option<EffortRecord>,
+    messages: Vec<MessageRecord>,
+    created_at: u64,
+    updated_at: u64,
+    revision: u64,
+}
+
+#[derive(serde::Serialize)]
+struct MessageRecord {
+    id: String,
+    role: String,
+    content: String,
+    status: String,
+    model_id: String,
+    effort: Option<EffortRecord>,
+    steps: Vec<StepRecord>,
+    steering: Vec<SteeringRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generation_usage: Option<Vec<Option<UsageRecord>>>,
+}
+
+impl From<domain::Conversation> for Record {
+    fn from(conversation: domain::Conversation) -> Self {
+        Self {
+            version: 2,
+            workspace: conversation.workspace,
+            id: conversation.id,
+            provider_connection_id: conversation.provider_connection_id,
+            model: conversation.model.into(),
+            effort: conversation.effort.map(Into::into),
+            messages: conversation
+                .messages
+                .into_iter()
+                .map(|message| MessageRecord {
+                    id: message.id,
+                    role: match message.role {
+                        domain::MessageRole::User => "user",
+                        domain::MessageRole::Assistant => "assistant",
+                    }
+                    .into(),
+                    content: message.content,
+                    status: match message.status {
+                        domain::MessageStatus::InProgress => "in_progress",
+                        domain::MessageStatus::Completed => "completed",
+                        domain::MessageStatus::Cancelled => "cancelled",
+                        domain::MessageStatus::Failed => "failed",
+                        domain::MessageStatus::Interrupted => "interrupted",
+                        domain::MessageStatus::Incomplete => "incomplete",
+                        domain::MessageStatus::Limited => "limited",
+                        domain::MessageStatus::Refused => "refused",
+                    }
+                    .into(),
+                    model_id: message.model_id,
+                    effort: message.effort.map(Into::into),
+                    generation_usage: message.generation_usage.map(|reports| {
+                        reports
+                            .into_iter()
+                            .map(|report| {
+                                report.map(|usage| UsageRecord {
+                                    input_tokens: usage.input_tokens,
+                                    output_tokens: usage.output_tokens,
+                                })
+                            })
+                            .collect()
+                    }),
+                    steps: message.steps.into_iter().map(Into::into).collect(),
+                    steering: message
+                        .steering
+                        .into_iter()
+                        .map(|s| SteeringRecord {
+                            id: s.id,
+                            text: s.text,
+                            after_step: s.after_step,
+                        })
+                        .collect(),
+                })
+                .collect(),
+            created_at: conversation.created_at,
+            updated_at: conversation.updated_at,
+            revision: conversation.revision,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct StepRecord {
+    id: String,
+    output: String,
+    calls: Vec<CallRecord>,
+    usage: Option<UsageRecord>,
+    status: Option<String>,
+}
+#[derive(serde::Serialize)]
+struct SteeringRecord {
+    pub id: String,
+    pub text: String,
+    pub after_step: usize,
+}
+#[derive(serde::Serialize)]
+struct CallRecord {
+    id: String,
+    call_id: String,
+    name: String,
+    arguments: String,
+    status: String,
+    output: String,
+    artifact: Option<String>,
+    truncated: bool,
+    elapsed_ms: u64,
+    text_offset: usize,
+}
+
+#[derive(serde::Serialize)]
+struct UsageRecord {
+    input_tokens: u64,
+    output_tokens: u64,
+}
+
+impl From<domain::ModelStep> for StepRecord {
+    fn from(step: domain::ModelStep) -> Self {
+        Self {
+            id: step.id,
+            output: step.output,
+            usage: step.usage.map(|usage| UsageRecord {
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+            }),
+            status: Some(
+                match step.status {
+                    domain::MessageStatus::Completed => "completed",
+                    domain::MessageStatus::Cancelled => "cancelled",
+                    domain::MessageStatus::Refused => "refused",
+                    domain::MessageStatus::Incomplete => "incomplete",
+                    _ => "failed",
+                }
+                .into(),
+            ),
+            calls: step
+                .calls
+                .into_iter()
+                .map(|c| CallRecord {
+                    id: c.id,
+                    call_id: c.call_id,
+                    name: c.name,
+                    arguments: c.arguments,
+                    status: c.status.as_str().into(),
+                    output: c.output,
+                    artifact: c.artifact,
+                    truncated: c.truncated,
+                    elapsed_ms: c.elapsed_ms,
+                    text_offset: c.text_offset,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ModelRecord {
+    id: String,
+    name: String,
+    context_window: Option<u64>,
+    provider_id: String,
+    efforts: Vec<EffortRecord>,
+    pricing: Option<PricingRecord>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum EffortRecord {
+    Low,
+    Medium,
+    High,
+    ExtraHigh,
+}
+
+#[derive(serde::Serialize)]
+struct PricingRecord {
+    input: Option<f64>,
+    cached_input: Option<f64>,
+    output: Option<f64>,
+}
+
+impl From<domain::ModelEffort> for EffortRecord {
+    fn from(effort: domain::ModelEffort) -> Self {
+        match effort {
+            domain::ModelEffort::Low => Self::Low,
+            domain::ModelEffort::Medium => Self::Medium,
+            domain::ModelEffort::High => Self::High,
+            domain::ModelEffort::ExtraHigh => Self::ExtraHigh,
+        }
+    }
+}
+
+impl From<domain::Model> for ModelRecord {
+    fn from(model: domain::Model) -> Self {
+        Self {
+            id: model.id,
+            name: model.name,
+            context_window: model.context_window,
+            provider_id: model.provider_id.0,
+            efforts: model.efforts.into_iter().map(Into::into).collect(),
+            pricing: model.pricing.map(|pricing| PricingRecord {
+                input: pricing.input,
+                cached_input: pricing.cached_input,
+                output: pricing.output,
+            }),
+        }
+    }
+}

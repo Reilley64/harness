@@ -1,0 +1,99 @@
+[tools]
+actionlint = "1.7.12"
+bun = "1.4.3"
+gitleaks = "8.30.1"
+rust = { version = "nightly-2026-10-28", profile = "minimal", components = ["clippy", "rustfmt"] }
+shellcheck = "0.11.0"
+
+[tasks.default]
+alias = ["dev", "tui"]
+description = "Run the TUI with its managed background ACP agent"
+depends = ["build:agent", "install:tui"]
+dir = "{{cwd}}"
+raw = true
+run = "bun \"{{config_root}}/presentation/tui/src/index.tsx\""
+
+[tasks.build]
+description = "Build the Rust workspace and all targets"
+dir = "{{config_root}}"
+run = "cargo build --locked --workspace --all-targets"
+
+[tasks."build:agent"]
+description = "Build the managed Rust ACP agent"
+dir = "{{config_root}}"
+run = "cargo build --locked --bin harness"
+
+[tasks."build:release"]
+description = "Build the release workspace and all targets"
+dir = "{{config_root}}"
+run = "cargo build --locked --release --workspace --all-targets"
+
+[tasks.test]
+description = "Run the checked-in test suites"
+depends = ["test:rust"]
+
+[tasks."test:rust"]
+description = "Run all Rust test targets and doctests"
+dir = "{{config_root}}"
+run = [
+    "cargo test --locked --workspace --all-targets",
+    "cargo test --locked --workspace --doc",
+]
+
+[tasks.check]
+description = "Run Rust, TUI and automation checks"
+depends = ["check:rust", "check:tui", "lint:automation", "lint:secrets"]
+
+[tasks."check:rust"]
+description = "Check Rust formatting and run strict Clippy"
+depends = ["lint:rust"]
+dir = "{{config_root}}"
+run = "cargo fmt --all -- --check"
+
+[tasks."install:tui"]
+description = "Install locked TUI dependencies"
+dir = "{{config_root}}"
+run = "bun install --cwd presentation/tui --frozen-lockfile"
+
+[tasks."check:tui"]
+description = "Check TUI types, formatting and lint"
+depends = ["typecheck", "lint:tui"]
+dir = "{{config_root}}/presentation/tui"
+run = "bun run --bun format:check"
+
+[tasks.lint]
+description = "Lint Rust, the TUI and automation"
+depends = ["lint:rust", "lint:tui", "lint:automation", "lint:secrets"]
+
+[tasks."lint:rust"]
+description = "Run strict Clippy"
+dir = "{{config_root}}"
+run = "cargo clippy --locked --workspace --all-targets -- -D warnings"
+
+[tasks."lint:tui"]
+description = "Check TUI lint and import organization"
+depends = ["install:tui"]
+dir = "{{config_root}}/presentation/tui"
+run = "bun run --bun lint"
+
+[tasks.typecheck]
+description = "Check TUI types"
+depends = ["install:tui"]
+dir = "{{config_root}}/presentation/tui"
+run = "bun run --bun typecheck"
+
+[tasks."lint:automation"]
+description = "Validate GitHub workflows and the launcher"
+dir = "{{config_root}}"
+run = ["actionlint", "bash -n bin/harness", "shellcheck bin/harness", "python3 -c 'import ast, pathlib; ast.parse(pathlib.Path(\"scripts/check-no-new-comments\").read_text())'"]
+
+[tasks."lint:secrets"]
+description = "Scan first-party files for secrets without displaying matched values"
+dir = "{{config_root}}"
+run = "gitleaks dir --config .gitleaks.toml --redact=100 --no-banner --ignore-gitleaks-allow --timeout=60 ."
+
+[tasks.format]
+description = "Format Rust and the TUI"
+depends = ["install:tui"]
+dir = "{{config_root}}"
+run = ["cargo fmt --all", "bun run --bun --cwd presentation/tui format"]

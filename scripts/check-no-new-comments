@@ -1,0 +1,417 @@
+#!/usr/bin/env python3
+from collections import Counter
+import io
+import json
+import re
+import subprocess
+import sys
+import tokenize
+
+
+EXCLUDED = {
+    ".git", ".venv", "venv", "node_modules", "target", "dist", "build",
+    "vendor", "vendored", "third_party", "third-party", "generated",
+    "__generated__", "coverage", "docs", ".next", "__pycache__",
+    "deps", "site-packages", ".yarn", ".tox", ".cache",
+}
+LANGUAGES = {
+    "rs": "rust", "ts": "js", "tsx": "jsx", "mts": "js", "cts": "js",
+    "js": "js", "jsx": "jsx", "mjs": "js", "cjs": "js", "sh": "shell",
+    "bash": "shell", "zsh": "shell", "py": "python", "toml": "toml",
+    "yaml": "yaml", "yml": "yaml",
+}
+
+
+def git(*args):
+    result = subprocess.run(
+        ["git", "--literal-pathspecs", *args],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if result.returncode:
+        raise RuntimeError()
+    return result.stdout
+
+
+def excluded(path):
+    parts = path.lower().split("/")
+    name = parts[-1]
+    return (
+        any(part in EXCLUDED for part in parts)
+        or name.endswith((".lock", ".min.js", ".min.css", ".md", ".mdx", ".rst"))
+        or ".generated." in name
+        or "_generated." in name
+        or name in {"package-lock.json", "yarn.lock", "cargo.lock", "bun.lockb", "pnpm-lock.yaml", "pnpm-lock.yml"}
+    )
+
+
+def language(path, data):
+    name = path.lower().split("/")[-1]
+    suffix = name.rsplit(".", 1)[-1] if "." in name else ""
+    if suffix in LANGUAGES:
+        return LANGUAGES[suffix]
+    first = data.split(b"\n", 1)[0]
+    if first.startswith(b"#!"):
+        if re.search(rb"\bpython[0-9.]*\b", first):
+            return "python"
+        if re.search(rb"\b(?:ba|z|da|k)?sh\b", first):
+            return "shell"
+        if re.search(rb"\b(?:node|bun|deno)\b", first):
+            return "js"
+    return None
+
+
+def quoted_end(text, start, quote, triple=False, escapes=True):
+    delimiter = quote * (3 if triple else 1)
+    i = start + len(delimiter)
+    while i < len(text):
+        if escapes and text[i] == "\\":
+            i += 2
+        elif text.startswith(delimiter, i):
+            return i + len(delimiter)
+        else:
+            i += 1
+    return len(text)
+
+
+def code_comments(text, rust=False, jsx=False):
+    comments = []
+    size = len(text)
+    raw_string = re.compile(r'(?:br|cr|r)(#*)"')
+    rust_char = re.compile(r"'(?:\\(?:u\{[0-9a-fA-F_]+\}|x[0-9a-fA-F]{2}|.)|[^'\\\n])'")
+    word_pattern = re.compile(r"[\w$]+")
+    jsx_open = re.compile(r"<(?:[A-Za-z][\w.:-]*(?=[\s/>])|>)")
+
+    def markup(i):
+        i += 1
+        while i < size:
+            if text[i] in "\"'":
+                i = quoted_end(text, i, text[i], escapes=False)
+            elif text[i] == "{":
+                i = scan(i + 1, True)
+            elif text.startswith("/>", i):
+                return i + 2
+            elif text[i] == ">":
+                i += 1
+                break
+            else:
+                i += 1
+        while i < size:
+            if text.startswith("</", i):
+                end = text.find(">", i + 2)
+                return size if end < 0 else end + 1
+            if text[i] == "{":
+                i = scan(i + 1, True)
+            elif jsx_open.match(text, i):
+                i = markup(i)
+            else:
+                i += 1
+        return i
+
+    def scan(i, expression=False):
+        depth = 0
+        regex_allowed = True
+        control_pending = False
+        parentheses = []
+        while i < size:
+            c = text[i]
+            if c.isspace():
+                i += 1
+                continue
+            if text.startswith("//", i):
+                end = text.find("\n", i)
+                end = size if end < 0 else end
+                comments.append((i, end))
+                i = end
+                continue
+            if text.startswith("/*", i):
+                start = i
+                i += 2
+                nesting = 1
+                while i < size and nesting:
+                    if rust and text.startswith("/*", i):
+                        nesting += 1
+                        i += 2
+                    elif text.startswith("*/", i):
+                        nesting -= 1
+                        i += 2
+                    else:
+                        i += 1
+                comments.append((start, i))
+                continue
+            if rust:
+                raw = raw_string.match(text, i)
+                if raw:
+                    delimiter = '"' + raw[1]
+                    end = text.find(delimiter, raw.end())
+                    i = size if end < 0 else end + len(delimiter)
+                    continue
+            if c == '"' or (c == "'" and not rust):
+                i = quoted_end(text, i, c)
+                regex_allowed = False
+                continue
+            if rust and c == "'":
+                char = rust_char.match(text, i)
+                if char:
+                    i = char.end()
+                    continue
+            if not rust and c == "`":
+                i += 1
+                while i < size:
+                    if text[i] == "\\":
+                        i += 2
+                    elif text[i] == "`":
+                        i += 1
+                        break
+                    elif text.startswith("${", i):
+                        i = scan(i + 2, True)
+                    else:
+                        i += 1
+                regex_allowed = False
+                continue
+            if jsx and c == "<" and regex_allowed and jsx_open.match(text, i):
+                i = markup(i)
+                regex_allowed = False
+                continue
+            if not rust and c == "/" and regex_allowed:
+                i += 1
+                in_class = False
+                while i < size and text[i] != "\n":
+                    if text[i] == "\\":
+                        i += 2
+                        continue
+                    if text[i] == "[":
+                        in_class = True
+                    elif text[i] == "]":
+                        in_class = False
+                    elif text[i] == "/" and not in_class:
+                        i += 1
+                        break
+                    i += 1
+                regex_allowed = False
+                continue
+            word = word_pattern.match(text, i)
+            if word:
+                control_pending = word[0] in {"if", "while", "for", "with", "switch", "catch"}
+                regex_allowed = word[0] in {
+                    "return", "throw", "yield", "await", "case", "delete",
+                    "void", "typeof", "instanceof", "in", "of", "else", "do",
+                }
+                i = word.end()
+                continue
+            if c == "(":
+                parentheses.append(control_pending)
+                control_pending = False
+            elif c == ")":
+                regex_allowed = parentheses.pop() if parentheses else False
+                i += 1
+                continue
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                if expression and depth == 0:
+                    return i + 1
+                depth -= 1
+            regex_allowed = c not in ")]}."
+            i += 1
+        return i
+
+    scan(0)
+    return comments
+
+
+def hash_comments(text, kind):
+    comments = []
+    i = 0
+    size = len(text)
+    heredocs = []
+    block_indent = None
+    line_start = True
+    while i < size:
+        if line_start:
+            end = text.find("\n", i)
+            end = size if end < 0 else end
+            line = text[i:end]
+            if heredocs:
+                delimiter, tabs = heredocs[0]
+                if (line.lstrip("\t") if tabs else line) == delimiter:
+                    heredocs.pop(0)
+                i = min(end + 1, size)
+                continue
+            if kind == "yaml" and block_indent is not None:
+                indent = len(line) - len(line.lstrip(" "))
+                if not line.strip() or indent > block_indent:
+                    i = min(end + 1, size)
+                    continue
+                block_indent = None
+            line_start = False
+        c = text[i]
+        if c == "\n":
+            line_start = True
+            i += 1
+            continue
+        if kind == "shell" and c == "\\":
+            i += 2
+            continue
+        if kind == "shell" and text.startswith("<<<", i):
+            i += 3
+            continue
+        if kind == "shell" and text.startswith("<<", i):
+            match = re.match(r"<<(-?)\s*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([\w-]+))", text[i:])
+            if match:
+                heredocs.append((next(x for x in match.groups()[1:] if x), bool(match[1])))
+                i += match.end()
+                continue
+        if c in "\"'":
+            if kind == "yaml" and i and not text[i - 1].isspace() and text[i - 1] not in "[{,:-?":
+                i += 1
+                continue
+            triple = kind == "toml" and text.startswith(c * 3, i)
+            escapes = c == '"' or (kind == "shell" and i > 0 and text[i - 1] == "$")
+            i = quoted_end(text, i, c, triple, escapes)
+            continue
+        if kind == "yaml" and c in "|>":
+            end = text.find("\n", i)
+            end = size if end < 0 else end
+            if re.fullmatch(r"[|>][1-9+-]*\s*(?:#.*)?", text[i:end]):
+                start = text.rfind("\n", 0, i) + 1
+                line = text[start:i]
+                block_indent = len(line) - len(line.lstrip(" "))
+        boundary = i == 0 or text[i - 1].isspace()
+        if kind == "toml":
+            boundary = True
+        elif kind == "shell":
+            boundary = boundary or text[i - 1] in ";|&()<>"
+        if c == "#" and boundary:
+            end = text.find("\n", i)
+            end = size if end < 0 else end
+            comments.append((i, end))
+            i = end
+        else:
+            i += 1
+    return comments
+
+
+def directive(comment, line, kind):
+    if line == 1 and comment.startswith("#!"):
+        return True
+    if kind == "python" and line <= 2 and re.fullmatch(r"#\s*(?:-\*-\s*)?coding[:=]\s*[-\w.]+(?:\s*-\*-)?\s*", comment):
+        return True
+    if kind in {"js", "jsx"}:
+        return bool(re.fullmatch(
+            r"//\s*@ts-(?:check|nocheck|ignore|expect-error)\s*|"
+            r'///\s*<reference(?:\s+(?:path|types|lib|no-default-lib|resolution-mode|preserve)=[\"\'][^\"\'\n]+[\"\'])+\s*/>\s*|'
+            r"/\*\*?\s*@jsx(?:ImportSource|Runtime)?\s+[\w@./-]+\s*\*/",
+            comment,
+        ))
+    return False
+
+
+def comment_lines(text, kind):
+    found = []
+    if kind == "python":
+        for token in tokenize.generate_tokens(io.StringIO(text).readline):
+            if token.type == tokenize.ERRORTOKEN and token.string.strip():
+                raise RuntimeError()
+            if token.type == tokenize.COMMENT and not directive(token.string, token.start[0], kind):
+                found.append((token.start[0], token.string))
+        return found
+    spans = code_comments(text, kind == "rust", kind == "jsx") if kind in {"rust", "js", "jsx"} else hash_comments(text, kind)
+    for start, end in spans:
+        first = text.count("\n", 0, start) + 1
+        if directive(text[start:end], first, kind):
+            continue
+        found.extend((first + offset, fragment) for offset, fragment in enumerate(text[start:end].split("\n")))
+    return found
+
+
+def new_comment_lines(old, new, added):
+    remaining = Counter(fragment.strip() for _, fragment in old)
+    for line, fragment in new:
+        if line not in added:
+            remaining[fragment.strip()] -= 1
+    violations = set()
+    for line, fragment in new:
+        if line not in added:
+            continue
+        key = fragment.strip()
+        if remaining[key] > 0:
+            remaining[key] -= 1
+        else:
+            violations.add(line)
+    return violations
+
+
+def added_lines(base, path, previous=None):
+    paths = [previous, path] if previous else [path]
+    patch = git(
+        "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=0",
+        "--find-renames=1%" if previous else "--no-renames", base, "HEAD", "--", *paths,
+    )
+    added = set()
+    line = None
+    for entry in patch.split(b"\n"):
+        hunk = re.match(rb"@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", entry)
+        if hunk:
+            line = int(hunk[1])
+        elif line is not None:
+            if entry.startswith(b"+"):
+                added.add(line)
+                line += 1
+            elif entry.startswith(b" "):
+                line += 1
+    return added
+
+
+def main():
+    if len(sys.argv) != 2 or not sys.argv[1]:
+        print("usage: scripts/check-no-new-comments BASE_REF", file=sys.stderr)
+        return 2
+    base = git("rev-parse", "--verify", "--end-of-options", sys.argv[1] + "^{commit}").strip().decode("ascii")
+    base = git("merge-base", base, "HEAD").strip().decode("ascii")
+    entries = iter(git(
+        "diff", "--name-status", "-z", "--find-renames=1%", "--diff-filter=ACMRT",
+        base, "HEAD",
+    ).split(b"\0"))
+    violations = []
+    for status in entries:
+        if not status:
+            continue
+        previous = None
+        raw = next(entries)
+        if status.startswith((b"R", b"C")):
+            previous = raw.decode("utf-8", "surrogateescape")
+            raw = next(entries)
+        path = raw.decode("utf-8", "surrogateescape")
+        if excluded(path):
+            continue
+        tree = git("ls-tree", "-z", "HEAD", "--", path)
+        if tree.startswith((b"120000 ", b"160000 ")):
+            continue
+        if not tree.startswith((b"100644 ", b"100755 ")):
+            raise RuntimeError()
+        data = git("show", "HEAD:" + path)
+        if b"\0" in data:
+            continue
+        kind = language(path, data)
+        if not kind:
+            continue
+        text = data.decode("utf-8")
+        old = []
+        if not status.startswith(b"A"):
+            old_data = git("show", base + ":" + (previous or path))
+            if b"\0" not in old_data:
+                old = comment_lines(old_data.decode("utf-8"), kind)
+        added = added_lines(base, path, previous)
+        new = new_comment_lines(old, comment_lines(text, kind), added)
+        for line in sorted(new):
+            violations.append((path, line))
+    for path, line in violations:
+        print(f"{json.dumps(path, ensure_ascii=True)}:{line}: new source comment")
+    return 1 if violations else 0
+
+
+try:
+    sys.exit(main())
+except Exception:
+    print("comment policy: unable to inspect repository diff safely", file=sys.stderr)
+    sys.exit(2)

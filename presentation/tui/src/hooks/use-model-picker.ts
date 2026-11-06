@@ -1,0 +1,163 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Agent } from "../services/acp.js";
+import { errorMessage } from "../services/acp.js";
+import { defaultEffort, filterModels, modelKey } from "../services/models.js";
+import type {
+  Model,
+  ModelEffort,
+  ModelPickerState,
+  ModelSelection,
+} from "../types/model.js";
+
+export function useModelPicker(
+  agent: Agent,
+  initialSelection: ModelSelection | null = null,
+  initialError: string | null = null,
+) {
+  const [picker, setPicker] = useState<ModelPickerState | null>(null);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(initialError);
+  const mounted = useRef(true);
+  const [selected, setSelected] = useState(0);
+  const [efforts, setEfforts] = useState<Record<string, ModelEffort>>({});
+  const [selection, setSelection] = useState<ModelSelection | null>(
+    initialSelection,
+  );
+  const loading = useRef<AbortController | null>(null);
+  const committed = useRef<ModelSelection | null>(initialSelection);
+
+  useEffect(() => {
+    let active = true;
+    mounted.current = true;
+    void agent.closed.then(() => {
+      if (!active) return;
+      loading.current?.abort();
+      setPicker((current) =>
+        current ? { status: "failed", message: agent.failure() } : null,
+      );
+    });
+    return () => {
+      active = false;
+      mounted.current = false;
+      loading.current?.abort();
+    };
+  }, [agent]);
+
+  const open = useCallback(() => {
+    loading.current?.abort();
+    const request = new AbortController();
+    loading.current = request;
+    setQuery("");
+    setSelected(0);
+    setEfforts({});
+    setPicker({ status: "loading" });
+    void agent.listModels(request.signal).then(
+      (models) => {
+        if (request.signal.aborted) return;
+        const previous = committed.current;
+        const index = previous
+          ? models.findIndex(
+              (model) => modelKey(model) === modelKey(previous.model),
+            )
+          : -1;
+        setSelected(Math.max(0, index));
+        if (previous?.effort)
+          setEfforts({ [modelKey(previous.model)]: previous.effort });
+        setPicker({ status: "ready", models });
+      },
+      (error) => {
+        if (!request.signal.aborted)
+          setPicker({ status: "failed", message: errorMessage(error) });
+      },
+    );
+  }, [agent]);
+
+  const close = useCallback(() => {
+    loading.current?.abort();
+    setPicker(null);
+  }, []);
+
+  const models =
+    picker?.status === "ready" ? filterModels(picker.models, query) : [];
+  const highlighted = models[selected];
+
+  function search(value: string) {
+    setQuery(value.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
+    setSelected(0);
+  }
+
+  function effortFor(model: Model): ModelEffort | null {
+    const effort = efforts[modelKey(model)];
+    return effort && model.efforts.includes(effort)
+      ? effort
+      : defaultEffort(model);
+  }
+
+  function move(direction: -1 | 1) {
+    setSelected((current) =>
+      Math.max(0, Math.min(models.length - 1, current + direction)),
+    );
+  }
+
+  function changeEffort(direction: -1 | 1) {
+    if (!highlighted?.efforts.length) return;
+    setEfforts((previous) => {
+      const key = modelKey(highlighted);
+      const saved = previous[key];
+      const current =
+        saved && highlighted.efforts.includes(saved)
+          ? saved
+          : defaultEffort(highlighted);
+      const index = current ? highlighted.efforts.indexOf(current) : 0;
+      const effort =
+        highlighted.efforts[
+          Math.max(
+            0,
+            Math.min(highlighted.efforts.length - 1, index + direction),
+          )
+        ];
+      return { ...previous, [key]: effort };
+    });
+  }
+
+  function select(): ModelSelection | undefined {
+    if (!highlighted) return;
+    const next = { model: highlighted, effort: effortFor(highlighted) };
+    committed.current = next;
+    setSelection(next);
+    setError(null);
+    close();
+    void agent.updateModelSelection(next).then(
+      (saved) => {
+        if (mounted.current && committed.current === next) {
+          committed.current = saved;
+          setSelection(saved);
+        }
+      },
+      (error) => {
+        if (mounted.current && committed.current === next)
+          setError(
+            `Could not remember the selected model: ${errorMessage(error)}`,
+          );
+      },
+    );
+    return next;
+  }
+
+  return {
+    picker,
+    error,
+    query,
+    models,
+    selected,
+    highlighted,
+    selection,
+    open,
+    close,
+    search,
+    move,
+    effortFor,
+    changeEffort,
+    select,
+  };
+}

@@ -1,0 +1,498 @@
+mod authentication;
+mod conversations;
+mod dependencies;
+mod projection;
+mod steering;
+mod tools;
+mod usage;
+
+mod model_selection;
+mod models;
+
+mod providers;
+
+pub use dependencies::Dependencies;
+
+use agent_client_protocol::Agent;
+use agent_client_protocol::Error;
+use agent_client_protocol::Stdio;
+use agent_client_protocol::schema::ProtocolVersion;
+use agent_client_protocol::v1::schema::AgentCapabilities;
+use agent_client_protocol::v1::schema::AuthMethod;
+use agent_client_protocol::v1::schema::AuthMethodAgent;
+use agent_client_protocol::v1::schema::AuthenticateRequest;
+use agent_client_protocol::v1::schema::AuthenticateResponse;
+use agent_client_protocol::v1::schema::CancelNotification;
+use agent_client_protocol::v1::schema::Implementation;
+use agent_client_protocol::v1::schema::InitializeRequest;
+use agent_client_protocol::v1::schema::InitializeResponse;
+use agent_client_protocol::v1::schema::LoadSessionRequest;
+use agent_client_protocol::v1::schema::LoadSessionResponse;
+use agent_client_protocol::v1::schema::NewSessionRequest;
+use agent_client_protocol::v1::schema::NewSessionResponse;
+use agent_client_protocol::v1::schema::PromptRequest;
+use agent_client_protocol::v1::schema::PromptResponse;
+use agent_client_protocol::v1::schema::SessionNotification;
+use agent_client_protocol::v1::schema::StopReason;
+use application::error_context::ResultExt;
+use application::ports::PresentAuthorization;
+use application::ports::PresentTurnEvent;
+use application::use_cases::create_conversation;
+use application::use_cases::create_message;
+use application::use_cases::create_provider_connection;
+use application::use_cases::read_conversation;
+use application::use_cases::read_model_selection;
+use application::use_cases::read_models;
+use application::use_cases::read_providers;
+use application::use_cases::update_model_selection;
+
+use crate::model_selection::ModelSelectionResponse;
+use crate::model_selection::ReadModelSelectionRequest;
+use crate::model_selection::UpdateModelSelectionRequest;
+use crate::models::ModelSummary;
+use crate::models::ModelsRequest;
+use crate::models::ModelsResponse;
+use crate::providers::ProviderSummary;
+use crate::providers::ProvidersRequest;
+use crate::providers::ProvidersResponse;
+
+pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
+    let Dependencies {
+        providers,
+        authentication,
+        models,
+        create_conversation,
+        read_conversation,
+        create_message,
+        read_model_selection,
+        update_model_selection,
+    } = dependencies.into();
+    let sessions = conversations::Sessions::default();
+    let new_sessions = sessions.clone();
+    let loaded_sessions = sessions.clone();
+    let prompted_sessions = sessions.clone();
+    let steering_sessions = sessions.clone();
+    let steering_history = read_conversation.clone();
+    let projection_history = read_conversation.clone();
+    Agent
+        .v1()
+        .name("harness")
+        .on_receive_request(
+            async |_: InitializeRequest, responder, _connection| {
+                let metadata: serde_json::Map<String, serde_json::Value> = [
+                    ("harness/providerCatalog".into(), serde_json::json!(true)),
+                    ("harness/modelCatalog".into(), serde_json::json!(true)),
+                    ("harness/modelSelection".into(), serde_json::json!(true)),
+                    ("harness/tools".into(), serde_json::json!(true)),
+                    ("harness/steering".into(), serde_json::json!(true)),
+                    ("harness/usage".into(), serde_json::json!(true)),
+                ]
+                .into_iter()
+                .collect();
+                responder.respond(
+                    InitializeResponse::new(ProtocolVersion::V1)
+                        .agent_info(Implementation::new("harness", env!("CARGO_PKG_VERSION")))
+                        .agent_capabilities(AgentCapabilities::new().load_session(true))
+                        .auth_methods(vec![AuthMethod::Agent(
+                            AuthMethodAgent::new("openai", "Continue with ChatGPT")
+                                .description("Connect your ChatGPT plan to Harness"),
+                        )])
+                        .meta(metadata),
+                )
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_: ProvidersRequest, responder, connection| {
+                let dependencies = providers.clone();
+                connection.spawn(async move {
+                    let result = responder
+                        .cancellation()
+                        .run_until_cancelled(async {
+                            read_providers::call(dependencies)
+                                .await
+                                .context("Could not load the provider catalog")
+                                .map_err(|error| {
+                                    Error::new(-32001, "Could not load providers")
+                                        .data(application::error_context::diagnostic(&error))
+                                })
+                        })
+                        .await;
+                    match result {
+                        Ok(providers) => responder.respond(ProvidersResponse {
+                            providers: providers
+                                .into_iter()
+                                .map(|provider| ProviderSummary {
+                                    id: provider.id.0,
+                                    name: provider.name,
+                                })
+                                .collect(),
+                        }),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_: ModelsRequest, responder, connection| {
+                let dependencies = models.clone();
+                connection.spawn(async move {
+                    match responder
+                        .cancellation()
+                        .run_until_cancelled(async {
+                            read_models::call(dependencies)
+                                .await
+                                .context("Could not load the model catalog")
+                                .map_err(|error| {
+                                    Error::new(-32003, "Could not load models")
+                                        .data(application::error_context::diagnostic(&error))
+                                })
+                        })
+                        .await
+                    {
+                        Ok(models) => responder.respond(ModelsResponse {
+                            models: models.into_iter().map(ModelSummary::from).collect(),
+                        }),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: AuthenticateRequest, responder, connection| {
+                let authentication = authentication.clone();
+                let auth_connection = connection.clone();
+                connection.spawn(async move {
+                    let connection = auth_connection;
+                    let provider_id = request.method_id.to_string();
+                    if provider_id != "openai" {
+                        return responder.respond_with_error(
+                            Error::invalid_params().data("Unsupported authentication method"),
+                        );
+                    }
+                    let authentication_id = request
+                        .meta
+                        .as_ref()
+                        .and_then(|meta| meta.get("harness/authenticationId"))
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|id| id.len() <= 128)
+                        .map(str::to_owned);
+                    let challenge_provider = provider_id.clone();
+                    let present_authorization = PresentAuthorization::new(move |challenge| {
+                        connection
+                            .send_notification(authentication::AuthorizationChallenge {
+                                authentication_id: authentication_id.clone(),
+                                provider_id: challenge_provider.clone(),
+                                authorization_url: challenge.authorization_url,
+                            })
+                            .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
+                        Ok(())
+                    });
+                    match responder
+                        .cancellation()
+                        .run_until_cancelled(async {
+                            create_provider_connection::call(
+                                authentication.clone(),
+                                provider_id.into(),
+                                present_authorization,
+                            )
+                            .await
+                            .map_err(authentication::error)
+                        })
+                        .await
+                    {
+                        Ok(created) => responder.respond(
+                            AuthenticateResponse::new().meta(
+                                [(
+                                    "harness/providerConnection".into(),
+                                    serde_json::json!({
+                                        "id": created.id,
+                                        "providerId": created.provider_id.0,
+                                    }),
+                                )]
+                                .into_iter()
+                                .collect::<serde_json::Map<String, serde_json::Value>>(),
+                            ),
+                        ),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: NewSessionRequest, responder, connection| {
+                let dependencies = create_conversation.clone();
+                let sessions = new_sessions.clone();
+                connection.spawn(async move {
+                    let result = async {
+                        let selection = conversations::selection(request.meta.as_ref())?
+                            .ok_or_else(|| {
+                                Error::invalid_params().data("Choose a model with /model first")
+                            })?;
+                        let output =
+                            create_conversation::call(dependencies, selection, request.cwd.clone())
+                                .await
+                                .map_err(conversations::error)?;
+                        sessions.register(
+                            &output.conversation.id,
+                            output.conversation.workspace.clone().unwrap_or(request.cwd),
+                        );
+                        Ok(NewSessionResponse::new(output.conversation.id.clone())
+                            .meta(conversations::metadata(&output.conversation)))
+                    }
+                    .await;
+                    match result {
+                        Ok(response) => responder.respond(response),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: LoadSessionRequest, responder, connection| {
+                let dependencies = read_conversation.clone();
+                let sessions = loaded_sessions.clone();
+                let updates = connection.clone();
+                connection.spawn(async move {
+                    let result = async {
+                        let output =
+                            read_conversation::call(dependencies, request.session_id.to_string())
+                                .await
+                                .map_err(conversations::error)?;
+                        sessions.register(
+                            &output.conversation.id,
+                            output.conversation.workspace.clone().unwrap_or(request.cwd),
+                        );
+                        let mut projection =
+                            projection::Projection::new(Some(&output.conversation.model));
+                        for update in projection.replay(&output.conversation) {
+                            updates.send_notification(SessionNotification::new(
+                                output.conversation.id.clone(),
+                                update,
+                            ))?;
+                        }
+                        updates.send_notification(usage::Notification {
+                            session_id: output.conversation.id.clone(),
+                            usage: output.conversation.usage().into(),
+                        })?;
+                        Ok(LoadSessionResponse::new()
+                            .meta(conversations::metadata(&output.conversation)))
+                    }
+                    .await;
+                    match result {
+                        Ok(response) => responder.respond(response),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: PromptRequest, responder, connection| {
+                let selection = match conversations::selection(request.meta.as_ref()) {
+                    Ok(selection) => selection,
+                    Err(error) => return responder.respond_with_error(error),
+                };
+                let text = match projection::prompt(request.prompt) {
+                    Ok(text) => text,
+                    Err(error) => return responder.respond_with_error(error),
+                };
+                let mut running = match prompted_sessions.start(&request.session_id.to_string()) {
+                    Ok(running) => running,
+                    Err(error) => return responder.respond_with_error(error),
+                };
+                let dependencies = create_message.clone();
+                let history = projection_history.clone();
+                let updates = connection.clone();
+                let final_updates = connection.clone();
+                connection.spawn(async move {
+                    let id = request.session_id.to_string();
+                    let model = read_conversation::call(history, id.clone())
+                        .await
+                        .ok()
+                        .map(|output| output.conversation.model)
+                        .filter(|model| {
+                            selection.as_ref().is_none_or(|selection| {
+                                selection.model_id == model.id
+                                    && selection.provider_id == model.provider_id
+                            })
+                        });
+                    let projection =
+                        parking_lot::Mutex::new(projection::Projection::new(model.as_ref()));
+                    let updated_session = id.clone();
+                    let present = PresentTurnEvent::new(move |event| {
+                        if let domain::TurnEvent::Usage { usage } = &event {
+                            updates
+                                .send_notification(usage::Notification {
+                                    session_id: updated_session.clone(),
+                                    usage: usage.clone().into(),
+                                })
+                                .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
+                        }
+                        for update in projection.lock().event(event) {
+                            updates
+                                .send_notification(SessionNotification::new(
+                                    updated_session.clone(),
+                                    update,
+                                ))
+                                .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
+                        }
+                        Ok(())
+                    });
+                    let result = create_message::call(
+                        dependencies,
+                        id,
+                        text,
+                        selection,
+                        present,
+                        running
+                            .steering
+                            .take()
+                            .expect("Newly started reply owns its steering receiver"),
+                        running.workspace.clone(),
+                        running.cancellation.clone(),
+                    );
+                    tokio::pin!(result);
+                    let request_cancellation = responder.cancellation();
+                    let result = tokio::select! {
+                        result = &mut result => result,
+                        _ = request_cancellation.cancelled() => {
+                            running.cancellation.cancel();
+                            result.await
+                        }
+                    };
+                    match result {
+                        Ok(output) => {
+                            let mut projection =
+                                projection::Projection::new(Some(&output.conversation.model));
+                            for update in projection.event(domain::TurnEvent::Usage {
+                                usage: output.conversation.usage(),
+                            }) {
+                                if let Err(error) =
+                                    final_updates.send_notification(SessionNotification::new(
+                                        output.conversation.id.clone(),
+                                        update,
+                                    ))
+                                {
+                                    return responder.respond_with_error(error);
+                                }
+                            }
+                            let stop_reason = if running.cancellation.is_cancelled() {
+                                StopReason::Cancelled
+                            } else {
+                                match output
+                                    .conversation
+                                    .messages
+                                    .last()
+                                    .map(|message| message.status)
+                                {
+                                    Some(domain::MessageStatus::Cancelled) => StopReason::Cancelled,
+                                    Some(domain::MessageStatus::Refused) => StopReason::Refusal,
+                                    Some(domain::MessageStatus::Limited) => {
+                                        StopReason::MaxTurnRequests
+                                    }
+                                    Some(domain::MessageStatus::Incomplete) => {
+                                        StopReason::MaxTokens
+                                    }
+                                    _ => StopReason::EndTurn,
+                                }
+                            };
+                            responder.respond(
+                                PromptResponse::new(stop_reason)
+                                    .meta(conversations::metadata(&output.conversation)),
+                            )
+                        }
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: steering::Request, responder, connection| {
+                if request.text.trim().is_empty()
+                    || request.text.len() > 1_048_576
+                    || !steering::valid_id(&request.id)
+                {
+                    return responder.respond(steering::Response { accepted: false });
+                }
+                let sender = steering_sessions.steering(&request.session_id);
+                let history = steering_history.clone();
+                connection.spawn(async move {
+                    let mut accepted = false;
+                    if let Some(sender) = sender {
+                        let (acknowledgement, result) = tokio::sync::oneshot::channel();
+                        let instruction = application::turn_control::SteeringRequest {
+                            id: request.id.clone(),
+                            text: request.text.clone(),
+                            accepted: acknowledgement,
+                        };
+                        let outcome = async {
+                            sender.try_send(instruction).ok()?;
+                            result.await.ok()
+                        };
+                        accepted =
+                            tokio::time::timeout(std::time::Duration::from_secs(30), outcome)
+                                .await
+                                .ok()
+                                .flatten()
+                                .unwrap_or(false);
+                    }
+                    if !accepted {
+                        accepted = read_conversation::call(history, request.session_id)
+                            .await
+                            .ok()
+                            .is_some_and(|output| {
+                                output
+                                    .conversation
+                                    .steering_accepted(&request.id, &request.text)
+                                    .unwrap_or(false)
+                            });
+                    }
+                    responder.respond(steering::Response { accepted })
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_notification(
+            async move |notification: CancelNotification, _connection| {
+                sessions.cancel(&notification.session_id.to_string());
+                Ok(())
+            },
+            agent_client_protocol::on_receive_notification!(),
+        )
+        .on_receive_request(
+            async move |_: ReadModelSelectionRequest, responder, connection| {
+                let dependencies = read_model_selection.clone();
+                connection.spawn(async move {
+                    match read_model_selection::call(dependencies).await {
+                        Ok(output) => responder.respond(ModelSelectionResponse {
+                            selection: output.selected_model.map(Into::into),
+                        }),
+                        Err(error) => responder.respond_with_error(model_selection::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: UpdateModelSelectionRequest, responder, connection| {
+                let dependencies = update_model_selection.clone();
+                connection.spawn(async move {
+                    match update_model_selection::call(dependencies, request.into()).await {
+                        Ok(output) => responder.respond(ModelSelectionResponse {
+                            selection: Some(output.selected_model.into()),
+                        }),
+                        Err(error) => responder.respond_with_error(model_selection::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .connect_to(Stdio::new())
+        .await
+}
