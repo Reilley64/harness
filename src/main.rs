@@ -29,6 +29,8 @@ async fn run() -> Result<(), AppError> {
         .create_conversation(|_| (&dependencies).into())
         .read_conversation(|_| (&dependencies).into())
         .create_message(|_| (&dependencies).into())
+        .read_model_allowlist(|_| (&dependencies).into())
+        .update_model_allowlist(|_| (&dependencies).into())
         .read_model_selection(|_| (&dependencies).into())
         .update_model_selection(|_| (&dependencies).into())
         .build();

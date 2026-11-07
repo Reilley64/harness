@@ -1,3 +1,4 @@
+use crate::model_access;
 use crate::ports;
 
 #[fundle::deps]
@@ -10,6 +11,8 @@ pub struct Dependencies {
     lock_conversation: ports::LockConversation,
     read_models: ports::ReadModels,
     read_provider_connection: ports::ReadProviderConnection,
+    read_model_allowlist: ports::ReadModelAllowlist,
+    create_model_step_factory: ports::CreateModelStepFactory,
 }
 
 #[ohno::error]
@@ -35,24 +38,22 @@ pub async fn call(
     let id = if let Some(id) = existing {
         id
     } else {
-        let model = dependencies
-            .read_models
-            .call()
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .find(|model| {
-                model.id == selection.model_id && model.provider_id == selection.provider_id
-            })
-            .ok_or_else(|| Error::caused_by("The selected model is unavailable"))?;
-        model
-            .validate_effort(selection.effort)
-            .map_err(Error::caused_by)?;
-        let connection = dependencies
-            .read_provider_connection
-            .call(selection.provider_id)
-            .await
-            .map_err(Error::caused_by)?;
+        let model = model_access::read_model(
+            &dependencies.read_models,
+            &selection.provider_id,
+            &selection.model_id,
+            selection.effort,
+        )
+        .await
+        .map_err(Error::caused_by)?;
+        let connection = model_access::read(
+            &dependencies.read_model_allowlist,
+            &dependencies.read_provider_connection,
+            &dependencies.create_model_step_factory,
+            &model,
+        )
+        .await
+        .map_err(Error::caused_by)?;
         dependencies
             .create_agent
             .call(model, selection.effort, connection, workspace)

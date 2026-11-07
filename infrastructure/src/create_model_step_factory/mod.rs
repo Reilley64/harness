@@ -12,6 +12,7 @@ pub fn create_model_step_factory(
     authentication: &AuthenticationSettings,
     credentials_path: &Path,
     provider_id: &domain::ProviderId,
+    read_model_allowlist: application::ports::ReadModelAllowlist,
 ) -> Result<CreateModelStep, ModelStepError> {
     match provider_id.0.as_str() {
         "openai" => {
@@ -19,6 +20,7 @@ pub fn create_model_step_factory(
                 &settings.openai,
                 &authentication.openai,
                 &credentials_path.join("openai.json"),
+                read_model_allowlist,
             );
             Ok(CreateModelStep::new(create))
         }

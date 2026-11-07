@@ -37,6 +37,11 @@ not a conversation. The next
 message validates and saves the new model/effort and preserves older replies'
 provenance. Switching a conversation to another provider is rejected.
 
+Current application-wide model permission is revalidated before every inference
+step and again at provider HTTP admission after credential resolution. Revocation
+preserves started effects, results and usage but blocks the next disallowed
+request without a replacement. See [model allowlist](model-allowlist.md).
+
 ## Provider requests
 
 OpenAI inference uses `POST https://api.openai.com/v1/responses` with the subscription
@@ -65,6 +70,9 @@ an unknown entry is checkpointed before inference, then filled only with reporte
 counts. Session totals include reported superseded/cancelled generations and tool
 continuations, even when their content is excluded from future context. Missing
 reports remain unknown or a lower bound; steering alone no longer implies a gap.
+A pending generation reservation is removed only when the adapter positively
+reports that no inference request was attempted. This preserves previous reported
+usage and latest context; attempted failures and crash uncertainty stay unknown.
 Legacy replies without a ledger use retained per-step reports conservatively.
 Safe cumulative and latest-request context counters cross ACP after checkpointing.
 Optional model context-window metadata is retained in conversation and preference

@@ -10,6 +10,7 @@ use crate::read_code_matches;
 use crate::read_conversation;
 use crate::read_directory;
 use crate::read_file;
+use crate::read_model_allowlist;
 use crate::read_model_selection;
 use crate::read_paths;
 use crate::read_provider_connection;
@@ -19,6 +20,7 @@ use crate::read_tools;
 use crate::read_web_search;
 use crate::update_conversation;
 use crate::update_file;
+use crate::update_model_allowlist;
 use crate::update_model_selection;
 
 use std::time::Duration;
@@ -45,6 +47,8 @@ pub struct Dependencies {
     read_tools: ports::ReadTools,
     read_tool_invocation: ports::ReadToolInvocation,
     create_tool_output: ports::CreateToolOutput,
+    read_model_allowlist: ports::ReadModelAllowlist,
+    update_model_allowlist: ports::UpdateModelAllowlist,
     read_model_selection: ports::ReadModelSelection,
     update_model_selection: ports::UpdateModelSelection,
     create_agent: ports::CreateAgent,
@@ -152,8 +156,34 @@ impl Dependencies {
                     Box::pin(async move { Ok(result.await?) })
                 })
             })
+            .read_model_allowlist(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_model_allowlist::read_model_allowlist(
+                    &settings
+                        .app_data_path
+                        .join("preferences/model-allowlist.json"),
+                );
+                ports::ReadModelAllowlist::new(move || {
+                    let future = read();
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .update_model_allowlist(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let update = update_model_allowlist::update_model_allowlist(
+                    &settings
+                        .app_data_path
+                        .join("preferences/model-allowlist.json"),
+                );
+                ports::UpdateModelAllowlist::new(move |operation| {
+                    let future = update(operation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
             .create_model_step_factory(|deps| {
                 let settings: &Settings = deps.as_ref();
+                let read_model_allowlist: &ports::ReadModelAllowlist = deps.as_ref();
+                let read_model_allowlist = read_model_allowlist.clone();
                 let reply_settings = settings.replies.clone();
                 let authentication = settings.authentication.clone();
                 let credentials_path = settings.app_data_path.join("auth");
@@ -163,6 +193,7 @@ impl Dependencies {
                         &authentication,
                         &credentials_path,
                         &provider_id,
+                        read_model_allowlist.clone(),
                     )?;
                     Ok(create)
                 })
