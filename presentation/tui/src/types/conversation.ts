@@ -28,8 +28,8 @@ export type Message = {
 
 export type AgentIdentity = {
   id: string;
-  role: "griller";
-  creatorId: null;
+  role: "griller" | "chief_of_staff";
+  creatorId: string | null;
 };
 
 export type Run = {
@@ -38,7 +38,7 @@ export type Run = {
   replyId: string;
   modelId: string;
   effort: ModelEffort | null;
-  task: "grilling" | "specification" | "tickets";
+  task: "grilling" | "specification" | "tickets" | "coordination";
   instructions?: string | null;
   status: "running" | "needs_human" | "stopped" | "failed" | "interrupted";
 };

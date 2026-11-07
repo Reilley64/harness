@@ -7,6 +7,7 @@ import { PromptBox } from "../components/molecules/prompt-box.js";
 import { StartupWordmark } from "../components/molecules/startup-wordmark.js";
 import { WorkingIndicator } from "../components/molecules/working-indicator.js";
 import { AgentMap } from "../components/organisms/agent-map.js";
+import { ApprovedWorkPanel } from "../components/organisms/approved-work-panel.js";
 import { GuidancePanel } from "../components/organisms/guidance-panel.js";
 import { ModelPicker } from "../components/organisms/model-picker.js";
 import { ProviderConnectionStatus } from "../components/organisms/provider-connection-status.js";
@@ -14,6 +15,7 @@ import { ProviderPicker } from "../components/organisms/provider-picker.js";
 import { Transcript } from "../components/organisms/transcript.js";
 import { HarnessLayout } from "../components/templates/harness-layout.js";
 import { useAgentConnection } from "../hooks/use-agent-connection.js";
+import { useApprovedWork } from "../hooks/use-approved-work.js";
 import { useContextNavigation } from "../hooks/use-context-navigation.js";
 import { useContextTitle } from "../hooks/use-context-title.js";
 import { useConversation } from "../hooks/use-conversation.js";
@@ -23,6 +25,7 @@ import { useGuidance } from "../hooks/use-guidance.js";
 import { useModelPicker } from "../hooks/use-model-picker.js";
 import { usePromptDraft } from "../hooks/use-prompt-draft.js";
 import { useProviderPicker } from "../hooks/use-provider-picker.js";
+import { useTranscriptViewport } from "../hooks/use-transcript-viewport.js";
 import type { Agent } from "../services/acp.js";
 import { errorMessage } from "../services/acp.js";
 import { usageLabel } from "../services/usage.js";
@@ -51,8 +54,11 @@ export function HarnessScreen({
       : initialSelection,
     initialModelError,
   );
-  const chat = useConversation(agent, initialConversation);
+  const chat = useConversation(agent, initialConversation, (next) => {
+    models.restore({ model: next.model, effort: next.effort });
+  });
   const guidance = useGuidance(agent, chat.conversation);
+  const approved = useApprovedWork(agent, chat.conversation);
   const workspace =
     chat.conversation?.workspace ??
     agent.workspace ??
@@ -60,21 +66,32 @@ export function HarnessScreen({
     process.cwd();
   const gitBranch = useGitBranch(workspace);
   const connection = useCreateProviderConnection(agent);
-  const draft = usePromptDraft();
+  const draft = usePromptDraft(chat.conversation?.id ?? "initial");
+  const transcript = useTranscriptViewport(chat.conversation?.id ?? "initial");
   const [notice, setNotice] = useState<string | null>(null);
   const [map, setMap] = useState(false);
   const [stopConfirmation, setStopConfirmation] = useState(false);
   const modal =
-    !!models.picker || !!providers.picker || connection.busy || guidance.open;
+    !!models.picker ||
+    !!providers.picker ||
+    connection.busy ||
+    guidance.open ||
+    approved.open;
   useContextNavigation(
     !modal && !stopConfirmation,
     () => {
+      chat.cancelOpen();
       guidance.close();
+      approved.close();
       setMap((value) => !value);
     },
     () => {
+      chat.cancelOpen();
       guidance.close();
-      setMap(false);
+      approved.close();
+      if (chat.conversation?.agent?.role === "chief_of_staff")
+        openConversation();
+      else setMap(false);
     },
   );
   useContextTitle(
@@ -82,7 +99,9 @@ export function HarnessScreen({
       ? "harness - Agent map"
       : chat.conversation && !chat.conversation.agent
         ? "harness - Conversation"
-        : "harness - Griller",
+        : chat.conversation?.agent?.role === "chief_of_staff"
+          ? "harness - Chief of Staff"
+          : "harness - Griller",
   );
 
   useInput((input, key) => {
@@ -101,6 +120,10 @@ export function HarnessScreen({
     ) {
       guidance.close();
       draft.recover();
+      return;
+    }
+    if (approved.open) {
+      if (key.escape) approved.close();
       return;
     }
     if (guidance.open) {
@@ -122,6 +145,7 @@ export function HarnessScreen({
       return;
     }
     if (key.escape && !modal) {
+      chat.cancelOpen();
       guidance.close();
       setMap(true);
       return;
@@ -178,7 +202,14 @@ export function HarnessScreen({
     }
   });
 
+  function openConversation(id?: string) {
+    guidance.close();
+    approved.close();
+    setMap(false);
+    void chat.open(id).catch((error) => setNotice(errorMessage(error)));
+  }
   function submit(value: string) {
+    chat.cancelOpen();
     const command = value.trim();
     if (!command.startsWith("/guidance")) guidance.close();
     if (
@@ -206,6 +237,16 @@ export function HarnessScreen({
     } else if (command === "/map") {
       draft.change("");
       setMap(true);
+    } else if (command.startsWith("/work ")) {
+      draft.change("");
+      setMap(false);
+      void approved.inspect(command.slice(6));
+    } else if (command.startsWith("/open ")) {
+      draft.change("");
+      openConversation(command.slice(6));
+    } else if (command === "/griller") {
+      draft.change("");
+      openConversation();
     } else if (command === "/guidance") {
       draft.change("");
       void guidance.inspect();
@@ -288,7 +329,7 @@ export function HarnessScreen({
         models.selection?.model ?? chat.conversation?.model,
       )}
       contentAlignment={models.picker ? "end" : "start"}
-      showPrompt={!models.picker && !map && !guidance.open}
+      showPrompt={!models.picker && !map && !guidance.open && !approved.open}
       selectedModel={
         models.selection
           ? `${models.selection.model.providerId}/${models.selection.model.id}${models.selection.effort ? ` · ${models.selection.effort}` : ""}`
@@ -309,7 +350,9 @@ export function HarnessScreen({
           }}
           onSubmit={submit}
           onOpenMap={() => {
+            chat.cancelOpen();
             guidance.close();
+            approved.close();
             setMap(true);
           }}
           focused={!modal && !map && !stopConfirmation}
@@ -323,10 +366,26 @@ export function HarnessScreen({
       )}
       {stopConfirmation && (
         <TerminalText>
-          Stop Griller's active leaf run? No descendants. Completed effects
-          remain; uncertain effects are not rolled back. Y/Enter Stop · Esc
-          close
+          {`Stop ${chat.conversation?.agent?.role === "chief_of_staff" ? "Chief of Staff" : "Griller"}'s active leaf run? No descendants. Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
         </TerminalText>
+      )}
+      {approved.open && (
+        <ApprovedWorkPanel
+          key={approved.work?.revision ?? "loading"}
+          work={approved.work}
+          conversation={chat.conversation}
+          loading={approved.loading}
+          saving={approved.saving}
+          error={approved.error}
+          coordinator={approved.coordinator}
+          columns={columns}
+          rows={rows}
+          approve={() => void approved.approve()}
+          openCoordinator={() => {
+            const id = approved.coordinator;
+            if (id) openConversation(id);
+          }}
+        />
       )}
       {guidance.open && (
         <GuidancePanel
@@ -353,7 +412,11 @@ export function HarnessScreen({
       <Box
         flexDirection="column"
         flexGrow={1}
-        display={map || stopConfirmation || guidance.open ? "none" : "flex"}
+        display={
+          map || stopConfirmation || guidance.open || approved.open
+            ? "none"
+            : "flex"
+        }
       >
         {models.picker ? (
           <ModelPicker
@@ -383,6 +446,8 @@ export function HarnessScreen({
             )}
             {chat.messages.length > 0 && (
               <Transcript
+                viewportState={transcript.value}
+                changeViewport={transcript.change}
                 messages={chat.messages}
                 columns={columns}
                 rows={rows}

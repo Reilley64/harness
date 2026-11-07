@@ -1,10 +1,83 @@
 use crate::conversations;
 use crate::conversations::StorageError;
 use crate::instructions;
+use sha2::Digest;
+use sha2::Sha256;
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AssignmentRecord {
+    work_id: String,
+    intent: String,
+    creator_id: String,
+    proposal: ProposalRecord,
+    approved_at: u64,
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProposalRecord {
+    root: String,
+    source_revision: String,
+    spec: String,
+    scope: String,
+    criteria: String,
+    dependencies: String,
+    wiki: Option<String>,
+    context: Option<String>,
+    artifacts: Vec<String>,
+    document: String,
+    version: String,
+}
+
+impl TryFrom<ProposalRecord> for domain::WorkProposal {
+    type Error = StorageError;
+    fn try_from(r: ProposalRecord) -> Result<Self, StorageError> {
+        let p = Self {
+            root: r.root,
+            source_revision: r.source_revision,
+            spec: r.spec,
+            scope: r.scope,
+            criteria: r.criteria,
+            dependencies: r.dependencies,
+            wiki: r.wiki,
+            context: r.context,
+            artifacts: r.artifacts,
+            document: r.document,
+            version: r.version,
+        };
+        p.validate()?;
+        if format!("{:x}", Sha256::digest(p.document.as_bytes())) != p.version {
+            return Err("Proposal document checksum mismatch".into());
+        }
+        let parsed: serde_json::Value = serde_json::from_str(&p.document)?;
+        let actual = serde_json::json!({"root": p.root,"source_revision": p.source_revision,"spec": p.spec,"scope": p.scope,"criteria": p.criteria,"dependencies": p.dependencies,"wiki": p.wiki,"context": p.context,"artifacts": p.artifacts});
+        if parsed != actual {
+            return Err("Proposal fields differ from the source document".into());
+        }
+        Ok(p)
+    }
+}
+
+impl TryFrom<AssignmentRecord> for domain::WorkAssignment {
+    type Error = StorageError;
+    fn try_from(a: AssignmentRecord) -> Result<Self, StorageError> {
+        for id in [&a.work_id, &a.intent, &a.creator_id] {
+            conversations::validate_id(id)?;
+        }
+        Ok(Self {
+            work_id: a.work_id,
+            intent: a.intent,
+            creator_id: a.creator_id,
+            proposal: a.proposal.try_into()?,
+            approved_at: a.approved_at,
+        })
+    }
+}
 
 #[derive(serde::Deserialize)]
 pub(super) struct Record {
     version: u32,
+    #[serde(default)]
+    assignment: Option<AssignmentRecord>,
     #[serde(default)]
     agent: Option<AgentRecord>,
     #[serde(default)]
@@ -68,7 +141,7 @@ impl TryFrom<Record> for domain::Conversation {
     type Error = StorageError;
 
     fn try_from(dto: Record) -> Result<Self, Self::Error> {
-        if !matches!(dto.version, 1..=5) {
+        if !matches!(dto.version, 1..=6) {
             return Err("Unsupported conversation format".into());
         }
         conversations::validate_id(&dto.id)?;
@@ -77,7 +150,7 @@ impl TryFrom<Record> for domain::Conversation {
         let mut ids = std::collections::HashSet::new();
         for (index, message) in dto.messages.into_iter().enumerate() {
             conversations::validate_id(&message.id)?;
-            if dto.version == 5
+            if dto.version >= 5
                 && message
                     .provider_id
                     .as_ref()
@@ -214,12 +287,14 @@ impl TryFrom<Record> for domain::Conversation {
             .agent
             .map(|agent| {
                 conversations::validate_id(&agent.id)?;
-                if agent.role != "griller" {
-                    return Err(StorageError::from("Unsupported agent role"));
-                }
+                let role = match agent.role.as_str() {
+                    "griller" => domain::AgentRole::Griller,
+                    "chief_of_staff" if dto.version >= 6 => domain::AgentRole::ChiefOfStaff,
+                    _ => return Err(StorageError::from("Unsupported agent role")),
+                };
                 Ok(domain::Agent {
                     id: domain::AgentId(agent.id),
-                    role: domain::AgentRole::Griller,
+                    role,
                 })
             })
             .transpose()?;
@@ -267,7 +342,7 @@ impl TryFrom<Record> for domain::Conversation {
                         .as_ref()
                         .is_none_or(|agent| agent.id.0 != run.agent_id)
                     || run.model_id != reply.model_id
-                    || dto.version == 5 && run.provider_id.is_none()
+                    || dto.version >= 5 && run.provider_id.is_none()
                     || run
                         .provider_id
                         .as_ref()
@@ -324,11 +399,34 @@ impl TryFrom<Record> for domain::Conversation {
         if agent.is_some() && runs.len() != messages.len() / 2 {
             return Err("Griller messages must belong to recorded runs".into());
         }
+        let assignment: Option<domain::WorkAssignment> =
+            dto.assignment.map(TryInto::try_into).transpose()?;
+        let coordinator = agent
+            .as_ref()
+            .is_some_and(|a| a.role == domain::AgentRole::ChiefOfStaff);
+        if coordinator != assignment.is_some() || assignment.is_some() && dto.version < 6 {
+            return Err("Invalid durable work/role binding".into());
+        }
+        if let Some(a) = &assignment {
+            let expected =
+                uuid::Uuid::new_v5(&uuid::Uuid::parse_str(&a.work_id)?, a.intent.as_bytes())
+                    .to_string();
+            if expected != dto.id || agent.as_ref().is_none_or(|agent| agent.id.0 != expected) {
+                return Err("Invalid coordinator assignment identity".into());
+            }
+        }
+        if instruction_snapshots
+            .iter()
+            .any(|s| coordinator != (s.phase == "coordination"))
+        {
+            return Err("Instruction snapshot belongs to a different role".into());
+        }
         let model: domain::Model = dto.model.into();
         let effort = dto.effort.map(Into::into);
         model.validate_effort(effort)?;
         Ok(Self {
             id: dto.id,
+            assignment,
             agent,
             runs,
             instruction_snapshots,

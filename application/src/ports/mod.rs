@@ -19,6 +19,18 @@ macro_rules! port {
     };
 }
 
+mod read_work;
+pub use read_work::ReadWork;
+pub use read_work::ReadWorkError;
+mod update_work;
+pub use update_work::UpdateWork;
+pub use update_work::UpdateWorkError;
+mod read_work_proposal;
+pub use read_work_proposal::ReadWorkProposal;
+pub use read_work_proposal::ReadWorkProposalError;
+mod create_coordinator;
+pub use create_coordinator::CreateCoordinator;
+pub use create_coordinator::CreateCoordinatorError;
 mod read_instructions;
 pub use read_instructions::ReadInstructions;
 pub use read_instructions::ReadInstructionsError;

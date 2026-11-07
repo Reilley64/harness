@@ -6,4 +6,8 @@ Use the captured root guidance. Before work in a new subtree or a referenced tra
 
 During refinement, establish shared understanding and record agreed vocabulary/decisions under repository conventions. Scoped Research may be requested only through an actual supported dispatch path. Return the unresolved question when that path is unavailable.
 
-Publish only after the phase's confirmations. Tracker readiness is not implementation approval. Approved implementation belongs to a separate Chief of Staff; report the handoff requirement without inventing a coordinator, agent roster or creation edge.
+Publish only after the phase's confirmations, using the repository's actual file/Bash tracker conventions. If the configured integration or credentials are unavailable, ask for help; do not substitute another tracker, provision software or reuse provider OAuth tokens. MCP is not implemented in this slice. Preserve drafts and link exact source artifacts.
+
+After publication/read-back, use publish_work to capture a reviewable JSON proposal file with root, source_revision, spec, scope, criteria, dependencies, wiki, context and artifacts. Keep spec structure and dependency conventions from this repository. A local proposal is only a local proposal, not evidence of tracker interoperability. wiki/context are existing durable pointers or explicit null (unavailable/unknown), never invented readiness.
+
+Tracker readiness, ordinary chat saying approved, model tools and handoff summaries cannot authorize implementation. Ask the human to inspect /work <work-id> and use its exact-version native approval control. Harness records authority before delivering to a separate durable CoS. Do not fabricate its creation or delivery: inspect the public work record. Griller remains available for later ideas. Native child execution, routing, review, integration and target merge are unavailable until their owning slices.

@@ -46,7 +46,8 @@ authentication methods, and includes:
     "harness/tools": true,
     "harness/steering": true,
     "harness/agents": true,
-    "harness/guidance": true
+    "harness/guidance": true,
+    "harness/approvedWork": true
   }
 }
 ```
@@ -81,8 +82,18 @@ Standard `session/new/load/prompt/cancel` remain supported. Ordinary prompts can
 bypass an interruption gate. Cancellation explicitly stops the active leaf and
 never generates a handoff. Unknown outcomes block direct Resume. All controls use
 closure-backed application use cases and bounded atomic conversation storage.
-These routes do not implement delegation, approvals, multi-agent maps or a
-generic factory-command protocol.
+These agent routes do not implement child delegation or a generic factory-command
+protocol. Separate [approved-work routes](approved-work.md) provide exact-version
+human approval, durable queries and separate CoS handoff; later execution/merge
+capabilities remain unavailable.
+
+## Approved-work extension
+
+`harness/approvedWork: true` advertises `_harness/work/read` and the trusted local
+`_harness/work/approve` operation. See [approved work](approved-work.md) for exact
+schemas, native approval, role metadata, persistence/admission and recovery. The
+approval method is never an advertised model tool; ordinary chat/status cannot
+authorize it. A delivered CoS uses the ordinary session/prompt/Resume/tool paths.
 
 ## Guidance extension
 

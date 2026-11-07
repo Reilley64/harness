@@ -243,10 +243,17 @@ individual fields may be omitted or null. Prices above are illustrative USD per
 million tokens, not published rates for an actual model. A numeric zero means
 free; missing means unavailable.
 
-`server/models.json` is a static catalog, not a live provider inventory. Its prices
-are OpenAI's published Standard, short-context USD rates per million tokens,
-verified on 2026-11-06. Long-context requests, processing modes, cache writes, and
-other fees may differ. See [pricing sources and limitations](docs/research/model-pricing.md).
+`server/models.json` is a static Harness-owned catalog, not a live provider
+inventory or runtime OpenRouter metadata import. Its four original direct-OpenAI
+rows retain OpenAI's published Standard, short-context USD rates per million
+tokens, verified on 2026-11-06. The 168 curated OpenRouter rows come from public
+metadata captured on 2026-11-07 for OpenAI, Anthropic, xAI and TypeSafe, including
+the verified TypeSafe latest alias; their listed per-token prices were converted
+to USD per million tokens. Those rows are not covered by the direct-OpenAI
+verification date or Standard short-context pricing claim. These snapshots do not
+prove entitlement, current availability or actual billing. Long-context requests,
+processing modes, cache writes and other fees may differ. See
+[pricing sources and limitations](docs/research/model-pricing.md).
 
 ## Infrastructure layout
 
