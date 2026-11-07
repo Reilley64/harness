@@ -62,9 +62,10 @@ runs inference.
 ## Inference boundaries and existing effects
 
 The application validates current policy and saved connection when selecting a
-model or creating a conversation, before accepting a new reply, and before every
-model step: initial generation, tool continuation, steering restart, and final
-budget summary. Policy is reloaded from disk, not a process-local catalog cache.
+model or creating a legacy conversation or new durable Griller. Existing Grillers
+remain inspectable while blocked; sends and explicit Resume share the admission
+coordinator. Validation also precedes every model step: initial generation, tool
+continuation, steering restart, and final budget summary. Policy is reloaded from disk, not a process-local catalog cache.
 The provider-bound OpenAI adapter checks it again immediately before the
 Responses HTTP request, after any credential refresh and request preparation.
 A policy write after that admission cannot recall an already-started request.
