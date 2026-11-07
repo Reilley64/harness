@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Throwaway · growing creation map + pilot conversation</title>
+<style>
+@layer prototypeFallback{:root{--foreground:CanvasText;--muted:GrayText;--card:Canvas;--border:GrayText;--primary:LinkText;--accent:AccentColor;--warning:CanvasText;--success:CanvasText;--destructive:CanvasText;--radius:8px;--font-mono:ui-monospace,SFMono-Regular,Consolas,monospace}}
+:root{color-scheme:dark;--muted:var(--muted-foreground,GrayText);--user:var(--info-surface,var(--secondary,ButtonFace));--tool:var(--secondary,ButtonFace)}
+*{box-sizing:border-box}html,body,#prototype{background:transparent;margin:0;padding:0}body{color:var(--foreground);font:13px/1.45 var(--font-mono)}#prototype{--muted:var(--muted-foreground,GrayText);padding-bottom:78px}p{margin:5px 0}h1,h2,h3{font:inherit;font-weight:700;margin:0 0 8px}h1{font-size:15px}button,input,select,textarea{font:inherit;color:inherit}button{background:transparent;border:0;padding:3px 6px;text-align:left;cursor:pointer}button:hover,button:focus-visible{background:var(--tool);outline:1px solid var(--accent)}button[aria-pressed="true"],button.selected{color:var(--accent);background:var(--tool)}button:disabled{opacity:.5;cursor:default}input,select,textarea{background:var(--card);border:1px solid var(--border);border-radius:0;max-width:100%;padding:5px}textarea{resize:none;width:100%}a{color:var(--primary)}.muted{color:var(--muted)}.warn{color:var(--warning)}.good{color:var(--success)}.bad{color:var(--destructive)}.purpose{margin-bottom:10px}.purpose p{color:var(--muted)}.controls{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}.terminal{position:relative;width:100%;max-width:80ch;height:552px;background:var(--card);border-radius:var(--radius);padding:10px;display:flex;flex-direction:column;overflow:hidden;isolation:isolate}.terminal.narrow{max-width:50ch;height:432px}.topline{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:5px;flex-shrink:0}.topline strong{color:var(--accent);margin-right:auto}.workspace{min-height:0;flex:1;display:flex;position:relative;gap:10px;padding-top:7px}.tree{width:25ch;flex-shrink:0;overflow:auto;border-right:1px solid var(--border);padding-right:5px}.tree h2{color:var(--muted);margin:4px 0}.agent-row{width:100%;display:block;overflow-wrap:anywhere;padding:4px 3px}.agent-row .state{display:block;color:var(--muted);font-size:11px}.agent-row.active{background:var(--tool);color:var(--accent)}.depth1{padding-left:12px}.depth2{padding-left:22px}.conversation{display:flex;flex-direction:column;min-height:0;min-width:0;flex:1}.crumb{color:var(--muted);font-size:11px;margin-bottom:5px}.conversation-title{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.conversation-title strong{margin-right:auto}.transcript{overflow:auto;min-height:0;flex:1;scrollbar-color:var(--border) var(--card)}.message{white-space:pre-wrap;overflow-wrap:anywhere;padding:8px 7px;margin:5px 0}.message.user{background:var(--user);color:var(--foreground)}.message.tool{background:var(--tool);color:var(--muted);padding:5px 7px}.message.assistant{background:transparent}.activity{color:var(--accent);font-size:11px;padding:5px 0}.prompt{border-top:1px solid var(--accent);padding-top:4px;flex-shrink:0}.prompt textarea{border:0;outline:none;padding:3px;height:40px}.prompt label{color:var(--accent);font-size:11px}.footer{color:var(--muted);font-size:10px;display:flex;gap:8px;justify-content:space-between;overflow-wrap:anywhere;flex-shrink:0}.cos-strip{font-size:11px;color:var(--muted);border-top:1px solid var(--border);padding-top:4px;margin-top:5px;flex-shrink:0}.cos-strip button{color:var(--primary)}.ledger{min-height:0;flex:1;overflow:auto}.ledger .agent-row{display:grid;grid-template-columns:19ch 1fr;gap:6px;border-bottom:1px solid var(--tool)}.ledger .state{font-size:12px}.layout-c{display:flex;flex-direction:column;gap:6px;width:100%;min-height:0}.layout-c .conversation{flex:1.2;border-top:1px solid var(--accent);padding-top:5px}.layout-c .ledger{flex:1}.narrow .tree{display:none}.compact-tree{display:none}.narrow .compact-tree{display:block;color:var(--accent)}.overlay{position:absolute;inset:0;z-index:3;background:var(--card);display:flex;flex-direction:column;border:1px solid var(--accent);padding:10px;overflow:auto}.overlay-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;gap:5px}.overlay-body{overflow:auto;min-height:0;flex:1}.overlay .agent-row{border-bottom:1px solid var(--tool)}.overlay label{display:block;margin:7px 0}.overlay h3{margin-top:10px;color:var(--accent)}.overlay .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.overlay .actions button{border:1px solid var(--border)}.inspect-grid{display:grid;grid-template-columns:12ch 1fr;gap:6px;margin:5px 0}.inspect-grid dt{color:var(--muted)}.inspect-grid dd{margin:0;overflow-wrap:anywhere}.status-line{padding:5px 0;color:var(--warning)}.diagnostics{max-width:80ch;margin-top:10px;overflow-wrap:anywhere}.diagnostics summary{cursor:pointer;color:var(--accent)}#state-summary{font-size:11px;color:var(--muted)}#event-log{max-height:140px;overflow:auto;margin:5px 0;padding-left:20px}.switcher{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:9;display:flex;align-items:center;gap:8px;background:var(--tool);color:var(--foreground);border:1px solid var(--border);border-radius:var(--radius);padding:5px;max-width:calc(100% - 12px)}.switcher span{min-width:0;text-align:center;font-size:12px}.switcher button{font-size:18px;flex-shrink:0}.tag{color:var(--primary)}.stack{display:flex;gap:6px;flex-wrap:wrap}.scroll-note{font-size:10px;color:var(--muted)}
+@media(max-width:580px){body{font-size:12px}.terminal{height:490px;padding:7px}.terminal.narrow{height:412px}.tree{display:none}.compact-tree{display:block;color:var(--accent)}.topline{gap:0}.topline button{padding:3px 4px}.ledger .agent-row{grid-template-columns:16ch 1fr}.layout-c.focused .ledger{display:none}.layout-c:not(.focused) .conversation{display:none}.footer{font-size:9px}.overlay{padding:8px}.inspect-grid{grid-template-columns:10ch 1fr}.purpose h1{font-size:13px}}
+.layout-c:not(.focused) .conversation{display:none}.layout-c.focused .ledger{flex:0 0 90px}.layout-c.focused .conversation{flex:1}.narrow .layout-c.focused .ledger{display:none}
+.narrow .crumb,.narrow .activity,.narrow .cos-strip,.narrow .prompt label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.narrow .prompt textarea{height:26px}.narrow .footer span:first-child{display:none}.narrow .footer span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.narrow .footer br,.narrow .cos-strip br{display:none}.narrow .compact-tree button{padding:0}.narrow .prompt .stack button{padding:2px 4px}
+
+.workspace{gap:0;padding-top:0}.chat-workspace{padding-top:8px}.pilot-conversation{width:100%}.pilot-conversation .transcript{padding:0 1px}.pilot-conversation .message{padding:10px 8px;margin:6px 0}.pilot-conversation .message.user{background:color-mix(in srgb,var(--info,var(--primary)) 20%,var(--card))}.pilot-activity{padding:10px 4px;color:var(--accent);font-size:12px}.pilot-conversation .prompt{border:1px solid var(--accent);padding:3px}.pilot-conversation textarea{height:40px}.pilot-footer{color:var(--muted);font-size:10px;padding:5px 1px 0;flex-shrink:0}.pilot-footer>div{display:flex;gap:8px;justify-content:space-between;min-width:0}.pilot-footer span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.creation-map{display:flex;flex-direction:column;width:100%;min-height:0;min-width:0}.map-heading{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap}.map-heading span,.map-path{font-size:11px;color:var(--muted)}.map-path{padding:4px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.map-tools{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:4px}.map-tools button{font-size:11px}.map-viewport{position:relative;overflow:auto;flex:1;min-height:0;min-width:0;outline:none;scrollbar-color:var(--border) var(--card);overscroll-behavior:contain}.map-viewport:focus-visible{outline:1px solid var(--border);outline-offset:-1px}.map-canvas{position:relative;font:12px/17px var(--font-mono);color:var(--muted)}.map-wires{position:absolute;top:0;left:0;margin:0;font:inherit;line-height:17px;white-space:pre;user-select:none;pointer-events:none}.map-node{position:absolute;display:block;padding:0!important;border:0;margin:0;font:inherit;line-height:17px;white-space:pre;text-align:left;color:var(--foreground);background:var(--card);outline:none}.map-node:hover,.map-node:focus-visible{outline:none;background:var(--tool)}.map-node.map-selected{color:var(--accent);background:var(--tool)}.map-selection{padding:6px 0 3px;border-top:1px solid var(--border);font-size:10px;flex-shrink:0;overflow-wrap:anywhere}.map-keys{font-size:10px;color:var(--muted);flex-shrink:0}.simulation-controls{font-size:11px;align-items:center}.simulation-controls label{display:flex;align-items:center;gap:3px}.simulation-controls input{margin:0}.narrow .map-selection{font-size:9px}.narrow .map-tools button{padding:2px 3px}.narrow .pilot-footer{font-size:9px}.narrow .pilot-conversation textarea{height:26px}.narrow .pilot-activity{padding:5px 1px;font-size:10px}
+
+</style>
+</head>
+<body>
+<main id="prototype">
+<section class="purpose"><p>THROWAWAY · all state and effects simulated. Pilot-like conversation; creation arrows are not Stop ownership. No network, storage, providers or tools.</p><p>Add agents with the simulation buttons. Pan the map, open a conversation, then return: existing drafts, identities and map position remain.</p></section>
+<div class="controls"><button data-size="wide" aria-pressed="true">80×24 approx.</button><button data-size="narrow" aria-pressed="false">50×18 approx.</button><button data-view="B">Map</button><button data-view="A">Conversation</button><button data-action="griller">★ Griller</button></div><div class="controls simulation-controls"><span class="muted">Simulate creation:</span><button data-action="grow-implementer">CoS → Implementer</button><button data-action="grow-review">CoS → Reviewer → 2 axes</button><button data-action="grow-research">Griller → Research</button><button data-action="progress-map">Update selected status</button><label><input type="checkbox" id="follow-new"> Follow new agents</label></div>
+<section id="terminal" class="terminal" aria-label="Simulated terminal"></section>
+<section class="diagnostics">
+<p id="state-summary" aria-live="polite"></p>
+<details open><summary>Simulation trace / proposed controls</summary>
+<p>F2 chat/map · F3 Griller · map arrows pan, Tab selects, Enter or double-click opens chat · C collapses a creation branch · /inspect /model /delivery /scenes open mock details.</p>
+<p class="warn">Keys remain proposals: Escape navigates/closes here, unlike the pilot's Escape cancellation. Ctrl+X opens scoped Stop outside editors; /stop works in the prompt. Browser gestures do not validate Ink/PTY input.</p>
+<p>Drafts and transcript scroll offsets survive navigation in this page session. Reset/reload discards everything. CoS visibility is a simulated durable-record design, not actual persistence.</p>
+<ol id="event-log"></ol>
+</details>
+</section>
+</main>
+<nav class="switcher" aria-label="Prototype views"><button id="previous">Map</button><span id="variant-label"></span><button id="next">Conversation</button></nav>
+<script>
+const names={A:'Pilot-like conversation',B:'Growing creation map'};
+const initialVariant=new URLSearchParams(location.search).get('variant');
+let variant=names[initialVariant]?initialVariant:'B',selected='cos',overlay=null,size='wide',focusC=false,highlight=0,restarted=false;
+let patterns=['openai/*','openrouter/anthropic/*','openrouter/demo/native-*'];
+let connections={openai:true,openrouter:true},nativeChoice='openrouter/demo/native-latest';
+let configDraft='',configError='',pendingStop=[],approval=null,candidate='demo-c91',target='demo-t14',pr='draft',cleanup='not yet eligible',mustFix=true,retroPublished=false;
+const events=['Opened simulated repository. Griller is pinned; CoS is a separate spec coordinator, not Griller’s Stop-owned child.'];
+const agents=[
+{id:'griller',name:'Griller',role:'Griller',parent:null,depth:0,status:'idle',task:'Refine the next idea',ticket:'repository conversation',pair:'openai/demo-worker',thinking:'high',origin:'selected'},
+{id:'cos',name:'Chief of Staff',role:'Chief of Staff',parent:null,depth:0,status:'waiting children',task:'Deliver approved demo spec',ticket:'demo-spec/01 · criteria v3',pair:'openai/demo-worker',thinking:'high',origin:'selected'},
+{id:'research',name:'Research',role:'Research',parent:'cos',depth:1,status:'running',task:'Compare provider evidence',ticket:'demo-ticket/02',pair:'openai/demo-research',thinking:'medium',origin:'routed'},
+{id:'implementer',name:'Implementer',role:'Implementer',parent:'cos',depth:1,status:'running',task:'Implement conversation seam',ticket:'demo-ticket/03',pair:'openai/demo-worker',thinking:'high',origin:'parent-fallback'},
+{id:'reviewer',name:'Reviewer',role:'Reviewer coordinator',parent:'cos',depth:1,status:'waiting children',task:'Aggregate two independent axes',ticket:'demo-ticket/04 · base b12 / head c91',pair:'openai/demo-worker',thinking:'high',origin:'inherited'},
+{id:'standards',name:'↳ Standards',role:'Reviewer · Standards axis',parent:'reviewer',depth:2,status:'running',task:'Check documented standards',ticket:'demo-ticket/04 · base b12 / head c91',pair:'openai/demo-worker',thinking:'high',origin:'inherited'},
+{id:'spec',name:'↳ Spec',role:'Reviewer · Spec axis',parent:'reviewer',depth:2,status:'needs-human',task:'Clarify acceptance criterion',ticket:'demo-ticket/04 · criteria v3',pair:'openai/demo-worker',thinking:'high',origin:'inherited'},
+{id:'retro',name:'Retro',role:'Retro · report only',parent:'cos',depth:1,status:'finished',task:'Publish severity-ordered report',ticket:'demo-spec/01 · prior assembly',pair:'openai/demo-worker',thinking:'high',origin:'inherited'},
+{id:'decider',name:'Decider · inspect',role:'Typed decision engine · no chat',parent:null,depth:0,status:'idle',task:'Choose model/thinking; CoS launches',ticket:'demo-spec/01 · routing intent r7',pair:'openrouter/demo/native-latest',thinking:'not selectable (native)',origin:'requested alias'}
+];
+const catalog=[{id:'openai/demo-worker',effort:'high',supported:true},{id:'openai/demo-research',effort:'medium',supported:true},{id:'openrouter/anthropic/demo-worker',effort:'high',supported:true},{id:'openrouter/demo/hosted-router',effort:'unknown',supported:false}];
+for(const a of agents){a.deciderRequested=nativeChoice;a.deciderResolved='openrouter/demo/native-r1';const p=agents.find(x=>x.id===a.parent);a.parentModel=p?.pair??null;a.parentThinking=p?.thinking??null;a.parentSnapshot=p?`${p.pair} · ${p.thinking}`:null;a.draft='';a.scroll=null;a.messages=[['user',a.id==='griller'?'I want to keep planning while the approved spec is being built.':'Keep the approved scope. Report evidence and blockers, not just completion.'],['assistant',a.id==='griller'?'What would make concurrent work understandable enough that you would trust leaving it running? CoS is coordinating the approved spec separately.':`${a.task}. My assignment is ${a.ticket}.`],['tool','read · docs/frontend.md\nConversation-first transcript; prompt remains editable. Simulated output.'],['assistant',a.id==='implementer'?'Routing abstained. Recorded fallback is the exact CoS pair: openai/demo-worker + high. No worker-failure failover.':a.id==='spec'?'Needs human: criterion “ready” is ambiguous. This run ended; a response starts a later run.':a.id==='griller'?'You can speak directly to any participant. Returning here does not stop them.':'Progress and version-bound findings are recorded for Chief of Staff.']];}
+agents[0].draft='What is still blocked?';
+const get=id=>agents.find(a=>a.id===id),current=()=>get(selected);
+const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const btn=(label,action,extra='')=>`<button data-action="${action}" ${extra}>${label}</button>`;
+const pair=a=>`${a.pair} · ${a.thinking}`;
+const live=a=>['running','queued','waiting children','routing pending','quota timed','quota unknown'].includes(a.status);
+const resumeGated=a=>Boolean(a.resumeGate);
+function matchPattern(id,list=patterns){
+const slash=id.indexOf('/'),provider=id.slice(0,slash),model=id.slice(slash+1);
+return list.find(p=>{const i=p.indexOf('/');if(i<1)return false;const glob=s=>new RegExp('^'+s.split('*').map(x=>x.replace(/[.+?^${}()|[\]\\]/g,'\\$&')).join('.*')+'$');return glob(p.slice(0,i)).test(provider)&&glob(p.slice(i+1)).test(model);});
+}
+function eligible(a){return Boolean(connections[a.pair.split('/')[0]]&&matchPattern(a.pair));}
+function record(text){events.unshift(text);events.splice(30);}
+function row(a,ledger=false){return `<button class="agent-row depth${a.depth} ${selected===a.id?'active':''}" data-agent="${a.id}" aria-label="Open ${esc(a.name)}"><span>${a.id==='griller'?'★ ':''}${esc(a.name)}</span><span class="state">${esc(a.status)}${ledger?' · '+esc(a.task):''}</span></button>`;}
+
+function show(which){saveView();overlay=which;configError='';if(which==='models')configDraft=patterns.join('\n');render();}
+function renderOverlay(){
+const a=current();let title='',body='';
+if(overlay==='agents'){
+title=variant==='B'?'Transient agent switcher':'Agent selection';body=`<p class="muted">↑/↓ highlight · Enter open · Escape returns. ★ Griller stays separate from the CoS subtree.</p>${agents.map((x,i)=>`<div class="${i===highlight?'selected':''}" ${i===highlight?'data-highlight="true"':''}>${row(x)}</div>`).join('')}`;
+}
+if(overlay==='inspect'){
+title='Assignment & exact provenance';const parent=a.parent?get(a.parent):null;
+body=`<dl class="inspect-grid"><dt>Created by</dt><dd>${esc(a.createdBy?get(a.createdBy)?.name:a.creatorKnown?'external / repository entry':'not recorded')} · creation is not Stop ownership</dd><dt>Role / owner</dt><dd>${esc(a.role)} / ${parent?esc(parent.name):'none (separate participant)'}</dd><dt>Task / ticket</dt><dd>${esc(a.task)} / ${esc(a.ticket)}</dd><dt>Instructions</dt><dd>Harness bundled demo v3; snapshot retained. Role is procedure, not a security sandbox.</dd><dt>Selected pair</dt><dd>${esc(pair(a))}</dd><dt>Origin</dt><dd>${esc(a.origin)}${a.origin==='parent-fallback'?' · routing abstained; exact eligible parent pair, not a compiled default':''}</dd><dt>Parent snapshot</dt><dd>${a.parentSnapshot?esc(a.parentSnapshot):'not inherited'} · dispatch-time pair, not a live preference</dd><dt>Requested worker</dt><dd>${esc(a.pair)} · ${esc(a.thinking)}</dd><dt>Resolved worker</dt><dd>${a.id==='research'?'openai/demo-research@revision-r2':'unknown underlying revision (not fabricated)'}</dd><dt>Decider request</dt><dd>${esc(a.id==='decider'?nativeChoice:a.deciderRequested)} · thinking not selectable</dd><dt>Decider resolved</dt><dd>${esc(a.deciderResolved)} · alias resolution demo record r7; picker edits do not rewrite prior routing records</dd><dt>Evidence</dt><dd>Policy demo-v2 / candidates e4. Catalog retrieved today; benchmark measured 9 days ago, stale; optional pricing unknown. Not live entitlement.</dd><dt>Accounting</dt><dd>SIMULATED ≥12,400 input / 2,100 output tokens (gaps); actual billed cost unknown. Demo list price $2 / $8 per million is illustrative, not an invoice or subscription marginal cost. Routing/retries/cancelled work included when reported; missing ≠ zero.</dd><dt>Coverage</dt><dd>${esc(matchPattern(a.pair)||'NO matching positive pattern')} · connection ${connections[a.pair.split('/')[0]]?'connected (demo)':'missing (demo)'}</dd></dl>${btn('Discuss with CoS','discuss')}<p class="muted">No hidden gateway failover; worker failure retains the assignment/pair. Missing metadata never fabricates an auth error.</p>`;
+}
+if(overlay==='stop'){
+title='Confirm Stop scope';body=`<p class="warn">Scope: selected ${esc(a.name)} + active descendants only:</p><ul>${pendingStop.map(id=>`<li>${esc(get(id).name)} · ${esc(get(id).status)}</li>`).join('')||'<li>No active execution in this scope</li>'}</ul><p>Idle/completed selections have no active execution to cancel; their outcome stays recorded. Siblings and separate participants are excluded. Completed effects remain. No rollback, silent restart or fabricated handoff.</p><p>CoS is not Griller’s child. Decider Stop cancels the current routing request only, not its coordinator.</p><div class="actions">${btn('Confirm scoped Stop','confirm-stop')}${btn('Keep working / cancel','close')}</div>`;
+}
+if(overlay==='resume'){
+title='Explicit Resume gate';body=`<p>Resume ${esc(a.id==='decider'?'Chief of Staff (for Decider discussion)':a.name)} only. Restart never starts autonomous work. Stored Stop, human-input, model eligibility and approval gates remain authoritative.</p><p>Unknown-reset quota has no invented ETA. Resume retries only when you choose; no model/account switching. A needs-human answer belongs in the prompt.</p><div class="actions">${btn('Resume selected','confirm-resume')}${btn('Not now','close')}</div>`;
+}
+if(overlay==='models'){
+title='Models / providers · demo preferences';body=`<p class="muted">Application-wide, user-local design; in-memory only here. All identities/choices demonstrate controls, not actual catalog releases or entitlement.</p>${Object.keys(connections).map(p=>`<p><strong>${p==='openai'?'OpenAI / ChatGPT':'OpenRouter / PKCE'}</strong> · ${connections[p]?'connected (simulated)':'not connected (simulated)'} ${btn(connections[p]?'Reauth (preserve patterns)':'Connect (add '+p+'/*)','connect',`data-provider="${p}"`)} ${btn('First-setup scenario','first-setup',`data-provider="${p}"`)}</p>`).join('')}<p>No real auth, links or key entry. Connection alone runs no inference. Reauth never broadens narrowed patterns.</p><label>Positive provider/model patterns only<textarea id="patterns" rows="3">${esc(configDraft)}</textarea></label><p class="muted">* is a wildcard. Split at FIRST slash: openrouter / anthropic/demo-worker. Model IDs can contain slashes. Narrow by replacing broad patterns, not adding deny rules.</p><p class="bad" id="config-error">${esc(configError)}</p><h3>Worker assignment · ${esc(a.name)}</h3><p>Current: ${esc(pair(a))}<br>Matching saved pattern: ${esc(matchPattern(a.pair)||'none')} · ${connections[a.pair.split('/')[0]]?'authenticated':'connection missing'}</p>${catalog.map(m=>`<p>${esc(m.id)} · ${esc(m.effort)}<br><span class="muted">${esc(matchPattern(m.id)||'not allowed')} · ${!m.supported?'unsupported hosted router (not executable)':connections[m.id.split('/')[0]]?'demo compatible':'connect provider first'}</span> ${btn('Select explicitly','choose-model',`data-model="${m.id}" ${!m.supported||!connections[m.id.split('/')[0]]||!matchPattern(m.id)||a.id==='decider'?'disabled':''}`)}</p>`).join('')}<h3>Separate native Decider picker</h3><label>Compatible typed-decision demo release / moving alias<select id="native"><option value="openrouter/demo/native-r1" ${nativeChoice.endsWith('r1')?'selected':''}>Demo release r1 · fixed identity</option><option value="openrouter/demo/native-latest" ${nativeChoice.endsWith('latest')?'selected':''}>Demo latest · moving alias → r1</option></select></label><p>Requested ${esc(nativeChoice)} → resolved openrouter/demo/native-r1. No selectable thinking; not a worker/chat model. Selection must be allowed and connected; no silent broadening.</p><div class="actions">${btn('Save patterns + Decider','save-models')}${btn('Cancel; preserve assignment','close')}</div>`;
+}
+if(overlay==='disallowed'){
+title='Selected model disabled by you';body=`<p class="warn">${esc(pair(a))} is still assigned, but no positive pattern permits it. Work is preserved and blocked before the next inference boundary.</p><p>Other models exist; that does NOT authorize a replacement. The provider may still be authenticated. Cancel keeps this assignment blocked. No compiled default-model fallback, auth loop or silent broadening.</p><div class="actions">${btn('Open model/provider configuration','models')}${btn('Cancel; keep blocked','close')}</div>`;
+}
+if(overlay==='delivery'){
+title='CoS delivery record · demo spec 01';body=`<p>PR #42 (simulated) · <strong>${pr}</strong> · candidate ${candidate} · approved criteria v3<br>Verified target context demo-t14; current target ${target}. Later target changes are not claimed verified.</p><p>Ticket acceptance: demo-ticket/02 passed review/checks and integrated. Tracker closure follows repository convention; child completion is not closure.</p><p class="${mustFix?'bad':'good'}">Must-fix · Spec axis / ${candidate}: ${mustFix?'missing acceptance evidence (blocks readiness)':'resolved; checks + both fresh review axes passed'}</p><p>Advisory · Standards axis: clarify prompt naming; not a must-fix defect.</p><p>Retro: ${retroPublished?btn('PR comment #retro-1 / footnote [1]','retro-report'):'report exists for prior assembly; current publication pending'} · report-only, never automatic environment changes.</p><p>Merge approval: ${approval?'explicit scope PR #42 / '+approval.candidate+' / criteria '+approval.criteria:'none; prose, review pass and readiness are not grants'}</p><p>Cleanup: <strong>${esc(cleanup)}</strong> · independent of implementation/merge success. Never discard dirty/unmerged/unowned work.</p><div class="actions">${btn('Simulate checks + review + Retro pass','ready')}${btn('Approve exact merge…','approve',pr==='ready'?'':'disabled')}${btn('CoS simulate authorized merge','merge',pr==='ready'&&approval&&approval.candidate===candidate?'':'disabled')}${btn('Target advances only','target')}${btn('User changes code candidate','candidate')}${btn('Discuss Retro / target with CoS','cos-request')}${btn('Simulate cleanup blocker','cleanup')}</div>`;
+}
+if(overlay==='approval'){
+title='Explicit human merge approval';body=`<p>Approve scope: simulated PR #42, candidate <strong>${candidate}</strong>, approved criteria <strong>v3</strong>. Only this code revision; no future candidates. Ready is not authorization.</p><p>Target movement alone will not invalidate this approval. Git-host checks/policies still apply. No real merge will occur.</p><div class="actions">${btn('Record approval for this scope/version','confirm-approval')}${btn('Cancel approval','delivery')}</div>`;
+}
+if(overlay==='retro-report'){
+title='Durable Retro report pointer · simulated';body=`<p>PR #42 comment #retro-1 · description footnote [1] · assembly ${candidate} / demo history h7. This local overlay substitutes for a real report link; no network.</p><p>1. Advisory: document fixture availability before dispatch.<br>2. Advisory: make request provenance easier to inspect.</p><p>Report-only. Ask CoS to implement selected notes; record authorized work/scope amendments, dispatch Implementer + independent review/checks and refresh Retro before readiness.</p>${btn('Ask CoS about selected notes','cos-request')}`;
+}
+if(overlay==='scenes'){
+title='Compact scenario controls · all simulated';body=`<p>Apply to ${esc(a.name)} unless labelled. These controls stand in for runtime events, not product policy.</p><div class="actions">${btn('Provider quota · timed','quota-timed')}${btn('Provider quota · unknown','quota-unknown')}${btn('Advance demo reset time','reset-time')}${btn('Routing pending (no deadline)','routing')}${btn('Actual routing failure → parent pair','fallback')}${btn('User disables selected model','disable')}${btn('Restart Harness · Resume gate','restart')}${btn('Needs human (run ended)','needs-human')}${btn('Queued','queued')}${btn('Worker failed (no failover)','worker-failed')}${btn('Finished (not tracker closed)','finished')}</div><p>Freeform steering never implicitly approves merge or scope changes. Approval is a separate versioned action under Delivery. No fleet slots or spend/time caps.</p>`;
+}
+document.getElementById('overlay-host').innerHTML=`<section class="overlay" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="overlay-header"><h2>${title}</h2>${btn('× Esc','close')}</div><div class="overlay-body">${body}</div></section>`;
+document.querySelector('.overlay-header [data-action="close"]')?.focus({preventScroll:true});
+const highlightRow=document.querySelector('[data-highlight]');if(highlightRow){highlightRow.style.outline='1px solid var(--accent)';highlightRow.scrollIntoView({block:'nearest'});}
+}
+
+function descendants(id){return agents.filter(a=>a.parent===id).flatMap(a=>[a,...descendants(a.id)]);}
+function send(){
+saveView();const a=current(),recipient=a.id==='decider'?get('cos'):a,text=a.draft;if(!text.trim())return;
+if(resumeGated(recipient)){record('Send held: explicit Resume required after restart/configuration; draft retained.');show('resume');return;}
+if(!eligible(recipient)||recipient.status==='model disabled'){if(a.id==='decider')openAgent('cos');record('Send blocked; exact assignment/draft preserved (Decider draft stays on its panel). Configure the responding agent’s model/provider.');show(recipient.status==='model disabled'?'disallowed':'models');return;}
+if(['quota timed','quota unknown','routing pending'].includes(recipient.status)){record('Instruction queued durably (simulated); wait remains. No model switch or deadline.');recipient.messages.push(['user',text],['tool','Instruction recorded for continuation; no new inference during wait.']);a.draft='';}
+else{const steering=live(recipient);recipient.messages.push(['user',text],['assistant',`${a.id==='decider'?'Chief of Staff answering Decider discussion. ':''}${steering?'Steering accepted in current logical run.':'Later run started on the same durable agent.'} This prose grants no approval.`]);recipient.status='running';a.draft='';record(`${steering?'Steering':'Later-run instruction'} to ${recipient.name}; recorded for CoS visibility (simulated).`);}
+if(recipient.id!=='cos')get('cos').messages.push(['tool',`Direct human instruction to ${recipient.name}: ${text}\nRetained in assignment history; scope/approval gates unchanged.`]);
+a.scroll=null;if(a.id==='decider'){selected='cos';highlight=agents.findIndex(x=>x.id==='cos');get('cos').scroll=null;record('Decider discussion forwarded to Chief of Staff; CoS answer visible here, no native Decider chat.');}
+render();document.getElementById('draft')?.focus();
+}
+function act(action,button){
+const a=current();if(['agents','inspect','models','delivery','scenes','disallowed','retro-report'].includes(action)){show(action);return;}
+if(action==='griller'){openAgent('griller');return;}if(action==='cos'){openAgent('cos');return;}
+if(action==='overview'){saveView();focusC=false;overlay=variant==='C'?null:'agents';record('Returned to activity/agents; no execution stopped.');render();return;}
+if(action==='close'){saveView();overlay=null;record('Overlay dismissed; pending assignment and draft retained. No Stop.');render();return;}
+if(action==='send'){send();return;}
+if(action==='stop'){saveView();pendingStop=[a.id,...descendants(a.id).filter(x=>live(x)||x.status==='resume required').map(x=>x.id)];show('stop');return;}
+if(action==='confirm-stop'){for(const id of pendingStop)if(!['idle','finished','failed'].includes(get(id).status))get(id).status='interrupted';record(`Stop scope applied (inactive/completed outcomes retained): ${pendingStop.map(id=>get(id).name).join(', ')||'no active execution'}. Siblings untouched; effects retained.`);overlay=null;}
+if(action==='resume'){show('resume');return;}
+if(action==='confirm-resume'){
+const recipient=a.id==='decider'?get('cos'):a;
+if(resumeGated(recipient)){recipient.resumeGate=false;if(recipient.status==='resume required')recipient.status=recipient.beforeRestart;}
+restarted=agents.some(resumeGated);
+if(recipient.status==='model disabled'){show('disallowed');return;}
+if(!eligible(recipient)){show('models');return;}
+if(a.id==='decider'){record('CoS discussion Resume gate released; Decider remains a typed engine, never starts a chat.');overlay=null;render();return;}
+if(a.status==='needs-human'){record('Resume gate released, but human-input gate remains. Answer in prompt to start later run.');}
+else if(a.status==='quota timed'&&!a.resetReached){record('Resume gate released; recorded provider reset time still blocks continuation.');}
+else if(a.status==='routing pending'){record('Resume gate released; routing remains pending without a deadline.');}
+else{a.status='running';record(`Explicit Resume of ${a.name}; same model/thinking, other agents remain gated.`);}overlay=null;
+}
+if(action==='ready'){if(pr==='merged'){record('Merged evidence retained; start new authorized work rather than rewriting history.');}else{mustFix=false;retroPublished=true;pr='ready';record(`Required checks, fresh two-axis assembly review and Retro publication simulated for ${candidate}. No merge approval.`);}}
+if(action==='approve'){show('approval');return;}
+if(action==='confirm-approval'){approval={candidate,criteria:'v3',pr:42};overlay='delivery';record(`Explicit approval recorded: PR #42 / ${candidate} / criteria v3.`);}
+if(action==='merge'&&pr==='ready'&&approval?.candidate===candidate){pr='merged';cleanup='blocked: dirty owned worktree';record(`Verified merge simulated for ${candidate}; cleanup independently blocked. No real git/PR effect.`);}
+if(action==='target'){target=target==='demo-t14'?'demo-t15':'demo-t16';record(`Target advanced to ${target}; candidate unchanged, readiness and approval retained. New target not claimed verified.`);}
+if(action==='candidate'){candidate=candidate==='demo-c91'?'demo-c92':'demo-c93';pr='draft';approval=null;mustFix=true;retroPublished=false;record(`User-selected code candidate changed to ${candidate}; readiness and approval invalidated, prior evidence historical.`);}
+if(action==='cleanup'){cleanup='blocked: active user / dirty worktree';record('Cleanup blocker recorded independently; no forced deletion and no invalidation of merged implementation.');}
+if(action==='cos-request'){openAgent('cos');current().draft='Please implement Retro note 1; clarify scope before changes. Also explain optional target re-evaluation.';render();return;}
+if(action==='discuss'){openAgent('cos');current().draft='Explain the recorded Decider selection and evidence limits.';render();return;}
+if(action==='quota-timed'){a.status='quota timed';a.resetReached=false;record(`Provider-reported reset 14:32 (demo clock) for ${a.name}; no inference polling.`);overlay=null;}
+if(action==='quota-unknown'){a.status='quota unknown';record(`Quota reset unknown for ${a.name}; explicit Resume, no invented ETA.`);overlay=null;}
+if(action==='reset-time'){a.resetReached=true;if(a.status==='quota timed'&&!resumeGated(a)&&eligible(a)){a.status='running';record('Demo reset reached; eligible continuation simulated.');}else record('Demo reset reached; Stop/human/restart/model gates still apply.');overlay=null;}
+if(action==='routing'){a.status='routing pending';record('Native routing pending; no application deadline. Stop remains available.');overlay=null;}
+if(action==='fallback'){if(a.status==='model disabled'){show('disallowed');return;}const inherited=a.parentModel?{pair:a.parentModel,thinking:a.parentThinking}:null;if(inherited&&eligible(inherited)){a.pair=inherited.pair;a.thinking=inherited.thinking;a.origin='parent-fallback';a.status='running';record(`Actual routing failure: exact dispatch-time parent pair ${pair(inherited)} retained. Not worker-failure failover.`);overlay=null;}else{record('No eligible dispatch-time parent fallback; configuration required, no compiled default.');show('models');return;}}
+if(action==='disable'){const affected=a.pair;patterns=patterns.filter(p=>!matchPattern(affected,[p]));a.priorStatus=a.status;a.status='model disabled';for(const x of agents)if(!matchPattern(x.pair)){x.priorStatus=x.status==='model disabled'?x.priorStatus:x.status;x.status='model disabled';}record(`User narrowed positive patterns; selected ${affected} disabled, no automatic replacement. Already-started effects not rolled back.`);show('disallowed');return;}
+if(action==='restart'){for(const x of agents){x.resumeGate=true;if(live(x)){x.beforeRestart=x.status;x.status='resume required';}}restarted=true;record('Simulated restart: work suspended, no inference until explicit selected-agent Resume. Human/Stop/approval gates retained.');overlay=null;}
+if(action==='needs-human'){a.status='needs-human';record(`${a.name} requests human input; current run ended. Prose reply starts later run.`);overlay=null;}
+if(action==='queued'){a.status='queued';record('Assignment queued; same identity and pending context retained.');overlay=null;}
+if(action==='worker-failed'){a.status='failed';record(`Worker failure: ${pair(a)} unchanged; not routing fallback authority.`);overlay=null;}
+if(action==='finished'){a.status='finished';record('Assignment finished; does not itself accept/close ticket, merge spec or finish cleanup.');overlay=null;}
+if(action==='first-setup'){const p=button.dataset.provider;connections[p]=false;patterns=patterns.filter(x=>x.split('/')[0]!==p);configDraft=patterns.join('\n');record(`First-setup scenario for ${p}: no existing connection/patterns. No credentials touched.`);}
+if(action==='connect'){const p=button.dataset.provider,reauth=connections[p];connections[p]=true;if(!reauth)patterns.push(p+'/*');configDraft=patterns.join('\n');record(`${p}: ${reauth?'reauth simulated; narrowed patterns preserved':'initial connection simulated; '+p+'/* added'}. No auth/network/inference.`);}
+if(action==='choose-model'){const model=catalog.find(m=>m.id===button.dataset.model);if(model?.supported&&connections[model.id.split('/')[0]]&&matchPattern(model.id)){a.pair=model.id;a.thinking=model.effort;a.origin='selected';a.status='idle';record(`Explicit user selection ${pair(a)}; assignment retained, not automatically dispatched.`);}}
+if(action==='save-models'){
+const raw=document.getElementById('patterns').value.split('\n').map(x=>x.trim()).filter(Boolean),chosen=document.getElementById('native').value;
+if(raw.some(p=>!p.includes('/')||p.startsWith('/')||p.endsWith('/')||/[!\s]/.test(p))){configError='Use positive provider/model patterns; no deny syntax, blank segments or spaces.';configDraft=raw.join('\n');render();return;}
+if(chosen!==nativeChoice&&(!matchPattern(chosen,raw)||!connections.openrouter)){configError='Decider choice requires a matching positive pattern and connected native provider. No broadening performed.';configDraft=raw.join('\n');render();return;}
+patterns=[...new Set(raw)];nativeChoice=chosen;get('decider').pair=chosen;
+for(const x of agents){if(!matchPattern(x.pair)){x.priorStatus=x.status==='model disabled'?x.priorStatus:x.status;x.status='model disabled';}else if(x.status==='model disabled'){x.beforeRestart=x.priorStatus||'idle';x.status='resume required';x.resumeGate=true;}}
+restarted=agents.some(resumeGated);record('Positive patterns + native Decider saved in memory. Disabled selections stay blocked; re-enabled work requires Resume, no silent continuation or replacement.');overlay=eligible(a)?null:matchPattern(a.pair)?'models':'disallowed';
+}
+render();
+}
+let mapLeft=0,mapTop=0,mapLayout=null,mapAnchor=null,followNew=false,newAgents=0,lastAdded=null,serial=1,followTarget=null,needsMapCentre=true;
+const collapsed=new Set();
+const nodeWidth=22,nodeHeight=4,generationGap=6,rowGap=2,lineHeight=17;
+for(const a of agents){a.createdBy=a.id==='cos'?'griller':a.parent;a.creatorKnown=a.id!=='decider';}
+function visibleMapAgents(){return agents.filter(a=>{let p=a.createdBy;while(p){if(collapsed.has(p))return false;p=get(p)?.createdBy;}return true;});}
+function creationPath(a){const path=[];let node=a;while(node){path.unshift(node.name.replace(/^↳\s*/,''));node=node.createdBy?get(node.createdBy):null;}return path.join(' → ');}
+function creationLayout(){
+ const visible=visibleMapAgents(),ids=new Set(visible.map(a=>a.id)),positions=new Map(),heights=new Map();
+ const children=id=>visible.filter(a=>a.createdBy===id);
+ function measure(a){const kids=children(a.id),height=kids.length?Math.max(nodeHeight,kids.reduce((n,c)=>n+measure(c),0)+(kids.length-1)*rowGap):nodeHeight;heights.set(a.id,height);return height;}
+ function place(a,depth,top){const height=heights.get(a.id);positions.set(a.id,{x:2+depth*(nodeWidth+generationGap),y:top+Math.floor((height-nodeHeight)/2)});let next=top;for(const c of children(a.id)){place(c,depth+1,next);next+=heights.get(c.id)+rowGap;}}
+ let top=1;for(const root of visible.filter(a=>!a.createdBy||!ids.has(a.createdBy))){measure(root);place(root,0,top);top+=heights.get(root.id)+4;}
+ const columns=Math.max(50,...[...positions.values()].map(p=>p.x+nodeWidth+3)),rows=Math.max(18,top);
+ return {visible,positions,columns,rows};
+}
+function wires(layout){
+ const grid=Array.from({length:layout.rows},()=>Array(layout.columns).fill(0)),tips=new Map();
+ function segment(x1,y1,x2,y2){const dx=Math.sign(x2-x1),dy=Math.sign(y2-y1);let x=x1,y=y1;while(x!==x2||y!==y2){const nx=x+dx,ny=y+dy;grid[y][x]|=dx===1?2:dx===-1?8:dy===1?4:1;grid[ny][nx]|=dx===1?8:dx===-1?2:dy===1?1:4;x=nx;y=ny;}}
+ for(const a of layout.visible){const p=layout.positions.get(a.createdBy),c=layout.positions.get(a.id);if(!p)continue;const sx=p.x+nodeWidth,sy=p.y+2,bus=sx+3,tx=c.x-2,ty=c.y+2;segment(sx,sy,bus,sy);segment(bus,sy,bus,ty);segment(bus,ty,tx,ty);tips.set(ty+':'+(c.x-1),'>');}
+ const glyph=[' ','│','─','└','│','│','┌','├','─','┘','─','┴','┐','┤','┬','┼'];
+ return grid.map((row,y)=>row.map((bits,x)=>tips.get(y+':'+x)||glyph[bits]).join('')).join('\n');
+}
+function fitCell(text,width){const chars=Array.from(String(text));return chars.length>width?chars.slice(0,width-1).join('')+'…':chars.join('')+' '.repeat(width-chars.length);}
+function mapNode(a,position){
+ const hidden=collapsed.has(a.id)?descendantsByCreation(a.id).length:0,name=a.name.replace(/^↳\s*/,'');
+ const lines=['┌'+'─'.repeat(nodeWidth-2)+'┐','│'+fitCell(name+(hidden?' +'+hidden:''),nodeWidth-2)+'│','│'+fitCell(a.status,nodeWidth-2)+'│','└'+'─'.repeat(nodeWidth-2)+'┘'];
+ return `<button class="map-node ${selected===a.id?'map-selected':''}" data-map-agent="${a.id}" style="left:${position.x}ch;top:${position.y*lineHeight}px;width:${nodeWidth}ch;height:${nodeHeight*lineHeight}px" aria-label="Select ${esc(name)}, ${esc(a.status)}, created by ${esc(a.createdBy?get(a.createdBy)?.name:'unrecorded or external creator')}">${esc(lines.join('\n'))}</button>`;
+}
+function descendantsByCreation(id){return agents.filter(a=>a.createdBy===id).flatMap(a=>[a,...descendantsByCreation(a.id)]);}
+function mapMarkup(){
+ mapLayout=creationLayout();const a=current(),creator=a.createdBy?get(a.createdBy)?.name:a.creatorKnown?'external / repository entry':'not recorded';
+ return `<section class="creation-map"><div class="map-heading"><strong>Agents · creation map</strong><span>${agents.length} agents · ${agents.filter(x=>x.status==='needs-human').length} need you</span></div><div class="map-path">${esc(creationPath(a))}</div><div class="map-tools">${btn('Open conversation ↵','open-map-chat')}${btn('Find agent','find-map')}${btn('Inspect','inspect')}${btn('Centre','centre-map')}${btn(collapsed.has(a.id)?'Expand branch':'Collapse branch','collapse-map')}${newAgents?btn('+'+newAgents+' new · jump','jump-new'):''}</div><div id="map-viewport" class="map-viewport" tabindex="0" aria-label="Agent creation diagram; arrow keys pan, Tab selects, Enter opens conversation"><div id="map-canvas" class="map-canvas" style="width:${mapLayout.columns}ch;height:${mapLayout.rows*lineHeight}px"><pre class="map-wires" aria-hidden="true">${esc(wires(mapLayout))}</pre>${mapLayout.visible.map(x=>mapNode(x,mapLayout.positions.get(x.id))).join('')}</div></div><div class="map-selection"><strong>${esc(a.name)}</strong> · ${esc(a.status)} · ${esc(a.ticket)}<br>Created by ${esc(creator)} · execution owner ${esc(a.parent?get(a.parent).name:'separate participant')}<br><span class="muted">Arrows mean created-by, not Stop ownership. Completed agents stay on the map.</span></div><div class="map-keys">↑↓←→ pan · Tab select · Enter chat · C collapse · F2 chat/map · F3 Griller · Ctrl+X Stop…</div></section>`;
+}
+function cellWidth(){const canvas=document.getElementById('map-canvas');return canvas&&mapLayout?canvas.getBoundingClientRect().width/mapLayout.columns:7.2;}
+function anchorMap(){
+ const viewport=document.getElementById('map-viewport');if(!viewport||!mapLayout)return null;
+ const width=cellWidth(),inView=mapLayout.visible.filter(a=>{const p=mapLayout.positions.get(a.id);return p.x*width+nodeWidth*width>viewport.scrollLeft&&p.x*width<viewport.scrollLeft+viewport.clientWidth&&p.y*lineHeight+nodeHeight*lineHeight>viewport.scrollTop&&p.y*lineHeight<viewport.scrollTop+viewport.clientHeight;});
+ const a=inView.find(x=>x.id===selected)||inView[0];if(!a)return null;const p=mapLayout.positions.get(a.id);return {id:a.id,x:p.x*width-viewport.scrollLeft,y:p.y*lineHeight-viewport.scrollTop};
+}
+function centreNode(id){const viewport=document.getElementById('map-viewport'),p=mapLayout?.positions.get(id);if(!viewport||!p)return;viewport.scrollLeft=Math.max(0,p.x*cellWidth()-(viewport.clientWidth-nodeWidth*cellWidth())/2);viewport.scrollTop=Math.max(0,p.y*lineHeight-(viewport.clientHeight-nodeHeight*lineHeight)/2);mapLeft=viewport.scrollLeft;mapTop=viewport.scrollTop;}
+function saveView(){const t=document.querySelector('.transcript');if(t&&t.getClientRects().length)current().scroll=t.scrollTop;const d=document.getElementById('draft');if(d)current().draft=d.value;const v=document.getElementById('map-viewport');if(v){mapLeft=v.scrollLeft;mapTop=v.scrollTop;}}
+function setUrlView(){const url=new URL(location.href);url.searchParams.set('variant',variant);if(['file:','http:','https:'].includes(location.protocol))history.replaceState(null,'',url);}
+function openMap(){saveView();variant='B';overlay=null;setUrlView();record('Opened creation map; all runs and per-agent drafts continue unchanged.');render();document.getElementById('map-viewport')?.focus({preventScroll:true});}
+function openAgent(id){saveView();selected=id;highlight=agents.findIndex(a=>a.id===id);variant='A';overlay=null;setUrlView();record(`Opened ${current().name}'s existing conversation; no work stopped or agent created.`);render();document.getElementById('draft')?.focus({preventScroll:true});}
+function selectMapAgent(id){saveView();selected=id;highlight=agents.findIndex(a=>a.id===id);record(`Selected ${current().name} on the creation map; Enter opens its conversation.`);render();document.getElementById('map-viewport')?.focus({preventScroll:true});}
+function conversation(){
+ const a=current(),decider=a.id==='decider',recipient=decider?'Chief of Staff':a.name;
+ const activity=decider?'Decider discussion is answered by Chief of Staff':resumeGated(a)?'Resume required · no inference started':a.status==='routing pending'?'Routing pending · no application deadline':a.status==='quota timed'?'Quota wait · provider reset 14:32 (demo clock)':a.status==='quota unknown'?'Quota wait · reset unknown; user Resume':a.status==='model disabled'?'Selected model disabled by you · configure, no replacement':a.status==='waiting children'?'Waiting for child results · no model polling':a.status==='running'?'✳ Working · simulated activity':a.status==='needs-human'?'Needs your answer · previous run ended':'Worked for 2m 14s · simulated';
+ const workspace=a.id==='griller'?'~/harness (main)':a.role==='Implementer'?'~/.harness/worktrees/demo/'+a.id+' (demo/'+a.id+')':'~/harness (demo/spec-01)';
+ return `<section class="conversation pilot-conversation"><div class="transcript" tabindex="0" aria-label="Transcript for ${esc(a.name)}">${decider?`<p class="warn">Decider is a typed engine, not a chat agent. Input here is answered visibly by Chief of Staff.</p><p>Requested ${esc(nativeChoice)} → resolved openrouter/demo/native-r1. No Decider thinking control.</p>`:a.messages.map(([kind,text])=>`<div class="message ${kind}">${esc(text)}</div>`).join('')}</div><div class="pilot-activity">${esc(activity)}</div><form id="prompt" class="prompt"><textarea id="draft" rows="2" aria-label="Message ${esc(recipient)}" placeholder="Message ${esc(recipient)}…">${esc(a.draft)}</textarea></form><div class="pilot-footer"><div><span>${esc(workspace)}</span><span>≥ 12,400 in / 2,100 out · ctx —</span></div><div><span>${esc(recipient)} · Enter send · F2 map · /</span><span>${esc(pair(a))}</span></div></div></section>`;
+}
+function render(){
+ const a=current(),terminal=document.getElementById('terminal');terminal.className='terminal '+(size==='narrow'?'narrow':'');
+ terminal.innerHTML=`<div class="workspace ${variant==='B'?'map-workspace':'chat-workspace'}">${variant==='B'?mapMarkup():conversation()}<div id="overlay-host"></div></div>`;
+ const transcript=document.querySelector('.transcript');if(transcript)transcript.scrollTop=a.scroll===null?transcript.scrollHeight:a.scroll;
+ const viewport=document.getElementById('map-viewport');if(viewport){viewport.scrollLeft=mapLeft;viewport.scrollTop=mapTop;if(mapAnchor){const p=mapLayout.positions.get(mapAnchor.id);if(p){viewport.scrollLeft=p.x*cellWidth()-mapAnchor.x;viewport.scrollTop=p.y*lineHeight-mapAnchor.y;}mapAnchor=null;}if(needsMapCentre){centreNode(selected);needsMapCentre=false;}if(followTarget){centreNode(followTarget);followTarget=null;}mapLeft=viewport.scrollLeft;mapTop=viewport.scrollTop;}
+ if(overlay)renderOverlay();
+ document.getElementById('variant-label').textContent=variant==='B'?'Creation map':'Pilot-like conversation';
+ document.querySelectorAll('[data-size]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.size===size));
+ document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===variant));
+ document.getElementById('state-summary').textContent=`SIMULATED STATE · ${agents.length} durable agents · ${newAgents} new · ${variant==='B'?'map':'conversation'} · selected ${a.name} / ${a.status} · draft ${a.draft.length} chars · ${events[0]}`;
+ document.getElementById('event-log').innerHTML=events.slice(0,8).map(x=>`<li>${esc(x)}</li>`).join('');
+}
+function createDemoAgent(role,parentId){
+ const parent=get(parentId),id='demo-'+serial++,name=role+' '+serial;
+ const a={id,name,role,parent:parentId,createdBy:parentId,creatorKnown:true,depth:parent.depth+1,status:'queued',task:'New '+role.toLowerCase()+' assignment',ticket:'demo-ticket/'+String(serial+10),pair:parent.pair,thinking:parent.thinking,origin:'routed',parentModel:parent.pair,parentThinking:parent.thinking,parentSnapshot:pair(parent),deciderRequested:nativeChoice,deciderResolved:'openrouter/demo/native-r1',draft:'',scroll:null,messages:[['user','Work within the approved scope.'],['assistant','New assignment recorded. No provider or tool execution occurred in this storyboard.']]};
+ agents.push(a);newAgents++;lastAdded=id;return a;
+}
+function growMap(kind){
+ saveView();mapAnchor=anchorMap();
+ if(kind==='implementer')createDemoAgent('Implementer','cos');
+ if(kind==='research')createDemoAgent('Research','griller');
+ if(kind==='review'){const reviewer=createDemoAgent('Reviewer','cos');reviewer.status='waiting children';createDemoAgent('Standards',reviewer.id);createDemoAgent('Spec',reviewer.id);}
+ if(followNew){for(let p=get(lastAdded)?.createdBy;p;p=get(p)?.createdBy)collapsed.delete(p);followTarget=lastAdded;}
+ record(`Recorded new creation events; map grew to ${agents.length} agents. Existing identities/drafts remain; ${followNew?'follow-new enabled':'viewport anchor retained'}.`);
+ render();
+}
+const baseAct=act;
+act=function(action,button){
+ if(['overview','agents','map'].includes(action)){openMap();return;}
+ if(action==='open-map-chat'){openAgent(selected);return;}
+ if(action==='find-map'){show('agents');return;}
+ if(action==='centre-map'){centreNode(selected);return;}
+ if(action==='collapse-map'){saveView();mapAnchor=anchorMap();if(collapsed.has(selected))collapsed.delete(selected);else collapsed.add(selected);record('Creation branch visibility changed; no agent stopped or removed.');render();return;}
+ if(action==='jump-new'){if(lastAdded){selected=lastAdded;for(let p=get(selected)?.createdBy;p;p=get(p)?.createdBy)collapsed.delete(p);newAgents=0;render();centreNode(selected);}return;}
+ if(action==='grow-implementer'){growMap('implementer');return;}
+ if(action==='grow-review'){growMap('review');return;}
+ if(action==='grow-research'){growMap('research');return;}
+ if(action==='progress-map'){const a=current();a.status=a.status==='queued'?'running':a.status==='running'?'finished':'running';record(`Status updated in place for ${a.name}; no new agent/node created.`);render();return;}
+ return baseAct(action,button);
+};
+const baseSend=send;
+send=function(){
+ saveView();const command=current().draft.trim(),commands={'/map':'map','/agents':'map','/model':'models','/inspect':'inspect','/stop':'stop','/griller':'griller','/scenes':'scenes','/delivery':'delivery'};
+ if(commands[command]){current().draft='';act(commands[command]);return;}
+ baseSend();
+};
+
+document.addEventListener('click',e=>{
+ const b=e.target.closest('button');if(!b)return;
+ if(b.dataset.mapAgent){selectMapAgent(b.dataset.mapAgent);return;}
+ if(b.dataset.agent){openAgent(b.dataset.agent);return;}
+ if(b.dataset.view){if(b.dataset.view==='B')openMap();else openAgent(selected);return;}
+ if(b.dataset.size){saveView();mapAnchor=anchorMap();size=b.dataset.size;needsMapCentre=true;record('Terminal approximation changed; map remains pannable.');render();return;}
+ if(b.dataset.action){e.preventDefault();act(b.dataset.action,b);}
+});
+document.addEventListener('dblclick',e=>{const b=e.target.closest('[data-map-agent]');if(b)openAgent(b.dataset.mapAgent);});
+document.addEventListener('input',e=>{
+ if(e.target.id==='draft'){current().draft=e.target.value;document.getElementById('state-summary').textContent=`Draft retained for ${current().name}: ${current().draft.length} characters; navigation creates no agent.`;}
+ if(e.target.id==='patterns'){configDraft=e.target.value;document.getElementById('state-summary').textContent='Unsaved model-pattern draft; work unchanged.';}
+});
+document.addEventListener('change',e=>{if(e.target.id==='follow-new'){followNew=e.target.checked;record('Follow newly created agents '+(followNew?'enabled':'disabled')+'; existing work unchanged.');}});
+document.addEventListener('scroll',e=>{
+ if(e.target.classList?.contains('transcript')&&e.target.getClientRects().length)current().scroll=e.target.scrollTop;
+ if(e.target.id==='map-viewport'){mapLeft=e.target.scrollLeft;mapTop=e.target.scrollTop;}
+},true);
+document.addEventListener('submit',e=>{if(e.target.id==='prompt'){e.preventDefault();send();}});
+document.addEventListener('keydown',e=>{
+ if(e.key==='F2'){e.preventDefault();if(variant==='B')openAgent(selected);else openMap();return;}
+ if(e.key==='F3'){e.preventDefault();openAgent('griller');return;}
+ const editing=e.target.matches('input,textarea,select,[contenteditable="true"]');
+ if(e.key==='Escape'){e.preventDefault();if(overlay){saveView();overlay=null;render();}else if(variant==='B')openAgent(selected);else openMap();return;}
+ if(editing){if(e.target.id==='draft'&&e.key==='Enter'&&!e.shiftKey&&!e.altKey&&!e.ctrlKey){e.preventDefault();send();}return;}
+ if(e.ctrlKey&&e.key.toLowerCase()==='x'){e.preventDefault();act('stop');return;}
+ if(overlay==='agents'){
+  if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();highlight=(highlight+(e.key==='ArrowUp'?-1:1)+agents.length)%agents.length;render();return;}
+  if(e.key==='Enter'){e.preventDefault();openAgent(agents[highlight].id);return;}
+ }
+ if(overlay)return;
+ if(variant==='B'){
+  const viewport=document.getElementById('map-viewport');
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const step=e.shiftKey?8:3;viewport.scrollLeft+=(e.key==='ArrowLeft'?-1:e.key==='ArrowRight'?1:0)*cellWidth()*step;viewport.scrollTop+=(e.key==='ArrowUp'?-1:e.key==='ArrowDown'?1:0)*lineHeight*step;mapLeft=viewport.scrollLeft;mapTop=viewport.scrollTop;return;}
+  if(e.key==='Tab'){e.preventDefault();const visible=visibleMapAgents(),index=visible.findIndex(a=>a.id===selected);selected=visible[(index+(e.shiftKey?-1:1)+visible.length)%visible.length].id;render();centreNode(selected);return;}
+  if(e.key==='Enter'){e.preventDefault();openAgent(selected);return;}
+  if(e.key===' '){e.preventDefault();show('inspect');return;}
+  if(e.key.toLowerCase()==='c'){e.preventDefault();act('collapse-map');return;}
+  if(e.key.toLowerCase()==='n'){e.preventDefault();act('jump-new');return;}
+  if(e.key==='Home'){e.preventDefault();centreNode(selected);return;}
+ }
+});
+document.getElementById('previous').onclick=openMap;
+document.getElementById('next').onclick=()=>openAgent(selected);
+render();
+
+</script>
+</body>
+</html>
