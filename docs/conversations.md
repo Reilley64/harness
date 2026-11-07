@@ -181,7 +181,9 @@ survive completion.
 ## Repository Griller and interrupted runs
 
 A canonical Git worktree root identifies a repository context (a non-Git directory
-uses its canonical path). Subdirectories resolve to that root. The repository
+uses its canonical path). Subdirectories resolve to that root. Git output loses
+only its single newline terminator; legitimate trailing pathname whitespace is
+preserved, never trimmed into a sibling repository. The repository
 conversation key is a namespace UUID derived from that path; its actual Griller
 agent ID is separately generated and persisted. A repository move is a new context;
 linked Git worktrees are separate contexts. Opening an existing Griller retains its

@@ -16,7 +16,10 @@ pub(crate) async fn identity(
     let workspace = match tokio::time::timeout(std::time::Duration::from_secs(5), result).await {
         Ok(Ok(output)) if output.status.success() && output.stdout.len() <= 16_384 => {
             let path = String::from_utf8(output.stdout)?;
-            tokio::fs::canonicalize(path.trim_end()).await?
+            let path = path
+                .strip_suffix('\n')
+                .ok_or("Invalid Git workspace response")?;
+            tokio::fs::canonicalize(path).await?
         }
         _ => workspace,
     };
