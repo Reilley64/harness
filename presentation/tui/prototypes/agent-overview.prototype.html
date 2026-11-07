@@ -125,7 +125,7 @@ document.getElementById('overlay-host').innerHTML=`<section class="overlay" role
 document.querySelector('.overlay-header [data-action="close"]')?.focus({preventScroll:true});
 const highlightRow=document.querySelector('[data-highlight]');if(highlightRow){highlightRow.style.outline='1px solid var(--accent)';highlightRow.scrollIntoView({block:'nearest'});}
 }
-function switchVariant(delta){saveView();variant=['A','B','C'][(['A','B','C'].indexOf(variant)+delta+3)%3];overlay=null;focusC=variant!=='C';const url=new URL(location.href);url.searchParams.set('variant',variant);history.replaceState(null,'',url);record(`Variant ${variant}: ${names[variant]}; work, drafts and scroll positions retained.`);render();}
+function switchVariant(delta){saveView();variant=['A','B','C'][(['A','B','C'].indexOf(variant)+delta+3)%3];overlay=null;focusC=variant!=='C';const url=new URL(location.href);url.searchParams.set('variant',variant);if(['file:','http:','https:'].includes(location.protocol))history.replaceState(null,'',url);record(`Variant ${variant}: ${names[variant]}; work, drafts and scroll positions retained.`);render();}
 function descendants(id){return agents.filter(a=>a.parent===id).flatMap(a=>[a,...descendants(a.id)]);}
 function send(){
 saveView();const a=current(),recipient=a.id==='decider'?get('cos'):a,text=a.draft;if(!text.trim())return;
