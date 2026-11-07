@@ -26,7 +26,26 @@ export type Message = {
   effort: ModelEffort | null;
 };
 
+export type AgentIdentity = {
+  id: string;
+  role: "griller";
+  creatorId: null;
+};
+
+export type Run = {
+  id: string;
+  agentId: string;
+  replyId: string;
+  modelId: string;
+  effort: ModelEffort | null;
+  task: "grilling";
+  status: "running" | "needs_human" | "stopped" | "failed" | "interrupted";
+};
+
 export type Conversation = {
+  agent?: AgentIdentity | null;
+  runs?: Run[];
+  resumeRequired?: boolean;
   workspace?: string | null;
   usage?: Usage;
   id: string;

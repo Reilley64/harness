@@ -5,6 +5,12 @@ use crate::conversations::StorageError;
 pub(super) struct Record {
     version: u32,
     #[serde(default)]
+    agent: Option<AgentRecord>,
+    #[serde(default)]
+    runs: Vec<RunRecord>,
+    #[serde(default)]
+    resume_required: bool,
+    #[serde(default)]
     workspace: Option<std::path::PathBuf>,
     id: String,
     provider_connection_id: String,
@@ -14,6 +20,21 @@ pub(super) struct Record {
     created_at: u64,
     updated_at: u64,
     revision: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct AgentRecord {
+    id: String,
+    role: String,
+}
+#[derive(serde::Deserialize)]
+struct RunRecord {
+    id: String,
+    agent_id: String,
+    reply_id: String,
+    model_id: String,
+    effort: Option<EffortRecord>,
+    status: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -36,7 +57,7 @@ impl TryFrom<Record> for domain::Conversation {
     type Error = StorageError;
 
     fn try_from(dto: Record) -> Result<Self, Self::Error> {
-        if !matches!(dto.version, 1 | 2) {
+        if !matches!(dto.version, 1..=3) {
             return Err("Unsupported conversation format".into());
         }
         conversations::validate_id(&dto.id)?;
@@ -162,11 +183,89 @@ impl TryFrom<Record> for domain::Conversation {
         if messages.len() % 2 != 0 {
             return Err("Incomplete conversation record".into());
         }
+        let agent = dto
+            .agent
+            .map(|agent| {
+                conversations::validate_id(&agent.id)?;
+                if agent.role != "griller" {
+                    return Err(StorageError::from("Unsupported agent role"));
+                }
+                Ok(domain::Agent {
+                    id: domain::AgentId(agent.id),
+                    role: domain::AgentRole::Griller,
+                })
+            })
+            .transpose()?;
+        let mut run_ids = std::collections::HashSet::new();
+        let mut replies = std::collections::HashSet::new();
+        let runs = dto
+            .runs
+            .into_iter()
+            .map(|run| {
+                conversations::validate_id(&run.id)?;
+                conversations::validate_id(&run.agent_id)?;
+                conversations::validate_id(&run.reply_id)?;
+                let reply = messages
+                    .iter()
+                    .find(|message| {
+                        message.id == run.reply_id && message.role == domain::MessageRole::Assistant
+                    })
+                    .ok_or("Run reply was not found")?;
+                let effort = run.effort.map(Into::into);
+                if !run_ids.insert(run.id.clone())
+                    || !replies.insert(run.reply_id.clone())
+                    || agent
+                        .as_ref()
+                        .is_none_or(|agent| agent.id.0 != run.agent_id)
+                    || run.model_id != reply.model_id
+                    || effort != reply.effort
+                {
+                    return Err(StorageError::from("Invalid run association"));
+                }
+                let status = match run.status.as_str() {
+                    "running" if reply.status == domain::MessageStatus::InProgress => {
+                        domain::RunStatus::Running
+                    }
+                    "needs_human"
+                        if matches!(
+                            reply.status,
+                            domain::MessageStatus::Completed
+                                | domain::MessageStatus::Limited
+                                | domain::MessageStatus::Incomplete
+                                | domain::MessageStatus::Refused
+                        ) =>
+                    {
+                        domain::RunStatus::NeedsHuman
+                    }
+                    "stopped" if reply.status == domain::MessageStatus::Cancelled => {
+                        domain::RunStatus::Stopped
+                    }
+                    "failed" if reply.status == domain::MessageStatus::Failed => {
+                        domain::RunStatus::Failed
+                    }
+                    "interrupted" if reply.status == domain::MessageStatus::Interrupted => {
+                        domain::RunStatus::Interrupted
+                    }
+                    _ => return Err("Invalid run status".into()),
+                };
+                Ok(domain::Run {
+                    id: run.id,
+                    agent_id: domain::AgentId(run.agent_id),
+                    reply_id: run.reply_id,
+                    model_id: run.model_id,
+                    effort,
+                    status,
+                })
+            })
+            .collect::<Result<Vec<_>, StorageError>>()?;
         let model: domain::Model = dto.model.into();
         let effort = dto.effort.map(Into::into);
         model.validate_effort(effort)?;
         Ok(Self {
             id: dto.id,
+            agent,
+            runs,
+            resume_required: dto.resume_required,
             provider_connection_id: dto.provider_connection_id,
             workspace: dto.workspace,
             model,

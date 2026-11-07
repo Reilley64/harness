@@ -1,3 +1,4 @@
+use crate::Agent;
 use crate::MAX_MODEL_STEPS;
 use crate::Message;
 use crate::MessageRole;
@@ -5,13 +6,19 @@ use crate::MessageStatus;
 use crate::Model;
 use crate::ModelEffort;
 use crate::ModelStep;
+use crate::Run;
+use crate::RunStatus;
 use crate::SteeringInstruction;
 use crate::ToolCall;
+use crate::ToolStatus;
 use crate::UsageSummary;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conversation {
     pub id: String,
+    pub agent: Option<Agent>,
+    pub runs: Vec<Run>,
+    pub resume_required: bool,
     pub provider_connection_id: String,
     pub workspace: Option<std::path::PathBuf>,
     pub model: Model,
@@ -82,6 +89,9 @@ impl Conversation {
         reply_id: String,
         content: String,
     ) -> Result<(), &'static str> {
+        if self.resume_required {
+            return Err("Interrupted work requires explicit Resume before another prompt");
+        }
         if content.trim().is_empty() {
             return Err("A message cannot be empty");
         }
@@ -121,6 +131,61 @@ impl Conversation {
         Ok(())
     }
 
+    pub fn begin_run(&mut self, id: String) -> Result<(), &'static str> {
+        if let Some(agent) = &self.agent {
+            let reply = self.active_reply()?;
+            self.runs.push(Run {
+                id,
+                agent_id: agent.id.clone(),
+                reply_id: reply.id.clone(),
+                model_id: self.model.id.clone(),
+                effort: self.effort,
+                status: RunStatus::Running,
+            });
+        }
+        Ok(())
+    }
+
+    pub fn resume(&mut self) -> Result<(), &'static str> {
+        if !self.resume_required {
+            return Err("There is no interrupted work to Resume");
+        }
+        let reply = self
+            .messages
+            .last_mut()
+            .ok_or("There is no interrupted reply")?;
+        if reply.status != MessageStatus::Interrupted {
+            return Err("Only interrupted work can Resume");
+        }
+        if reply
+            .steps
+            .iter()
+            .flat_map(|step| &step.calls)
+            .any(|call| call.status == ToolStatus::Unknown)
+        {
+            return Err(
+                "An uncertain tool outcome requires inspection; submit a new instruction after acknowledging the interruption",
+            );
+        }
+        reply.status = MessageStatus::InProgress;
+        if let Some(run) = self.runs.last_mut() {
+            if run.reply_id != reply.id || run.status != RunStatus::Interrupted {
+                return Err("Interrupted run does not match its conversation");
+            }
+            run.status = RunStatus::Running;
+        }
+        self.resume_required = false;
+        Ok(())
+    }
+
+    pub fn acknowledge_interruption(&mut self) -> Result<(), &'static str> {
+        if !self.resume_required {
+            return Err("There is no interruption to acknowledge");
+        }
+        self.resume_required = false;
+        Ok(())
+    }
+
     pub fn finish_reply(
         &mut self,
         content: String,
@@ -135,6 +200,14 @@ impl Conversation {
         }
         reply.content = content;
         reply.status = status;
+        if let Some(run) = self.runs.last_mut() {
+            run.status = match status {
+                MessageStatus::Cancelled => RunStatus::Stopped,
+                MessageStatus::Failed => RunStatus::Failed,
+                MessageStatus::Interrupted => RunStatus::Interrupted,
+                _ => RunStatus::NeedsHuman,
+            };
+        }
         Ok(())
     }
 
@@ -284,6 +357,14 @@ impl Conversation {
             if message.status == MessageStatus::InProgress {
                 message.status = MessageStatus::Interrupted;
                 changed = true;
+            }
+        }
+        if changed {
+            self.resume_required = true;
+            if let Some(run) = self.runs.last_mut()
+                && run.status == RunStatus::Running
+            {
+                run.status = RunStatus::Interrupted;
             }
         }
         changed

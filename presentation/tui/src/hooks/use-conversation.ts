@@ -36,6 +36,7 @@ export function useConversation(agent: Agent, initial?: Conversation) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<{
     content: string;
+    resume: boolean;
     reply: string;
     modelId: string;
     effort: ModelSelection["effort"];
@@ -45,8 +46,9 @@ export function useConversation(agent: Agent, initial?: Conversation) {
   async function send(
     content: string,
     selection: ModelSelection | null,
+    resume = false,
   ): Promise<SendResult> {
-    if (!content.trim()) return { accepted: false, draft: content };
+    if (!resume && !content.trim()) return { accepted: false, draft: content };
     if (new TextEncoder().encode(content).length > 1_048_576) {
       setError("Prompt exceeds 1 MiB of UTF-8 text; your draft was preserved.");
       return { accepted: false, draft: content };
@@ -85,6 +87,12 @@ export function useConversation(agent: Agent, initial?: Conversation) {
       );
       return { accepted: false, draft: content };
     }
+    if (!resume && current.current?.resumeRequired) {
+      setError(
+        "Interrupted work is paused. Use /resume, or /resume inspect to acknowledge uncertain effects before a new instruction.",
+      );
+      return { accepted: false, draft: content };
+    }
     active.current = true;
     cancelled.current = false;
     let ready!: (id: string | null) => void;
@@ -96,23 +104,26 @@ export function useConversation(agent: Agent, initial?: Conversation) {
     setCancelling(false);
     setError(null);
     setWork({ startedAt, duration: null });
-    const count = current.current?.messages.length ?? 0;
+    let count = current.current?.messages.length ?? 0;
     let accepted = false;
     try {
       if (!current.current) {
         if (!selection)
           throw new PresentationError("Choose a model before sending.");
-        current.current = await agent.createConversation(selection);
+        current.current = await agent.startAgent(selection);
         setConversation(current.current);
       }
+      count = current.current.messages.length;
       if (cancelled.current) return { accepted: false, draft: content };
+      const prior = resume ? current.current.messages.at(-1) : undefined;
       setPending({
         content,
-        reply: "",
+        resume,
+        reply: prior?.content ?? "",
         modelId: selection?.model.id ?? current.current.model.id,
         effort: selection ? selection.effort : current.current.effort,
-        tools: [],
-        steering: [],
+        tools: prior?.tools ?? [],
+        steering: prior?.steering ?? [],
       });
       const reply = agent.createMessage(
         current.current.id,
@@ -132,13 +143,14 @@ export function useConversation(agent: Agent, initial?: Conversation) {
               : null,
           ),
         setUsage,
+        resume,
       );
       ready(current.current.id);
       const updated = await reply;
       setUsage(updated.usage ?? null);
       current.current = updated;
       setConversation(updated);
-      accepted = updated.messages.length > count;
+      accepted = resume || updated.messages.length > count;
     } catch (error) {
       setError(errorMessage(error));
       if (current.current) {
@@ -179,15 +191,21 @@ export function useConversation(agent: Agent, initial?: Conversation) {
   }
   const messages: Message[] = pending
     ? [
-        ...(conversation?.messages ?? []),
-        {
-          id: "pending-user",
-          role: "user",
-          content: pending.content,
-          status: "completed",
-          modelId: pending.modelId,
-          effort: pending.effort,
-        },
+        ...(pending.resume
+          ? (conversation?.messages.slice(0, -1) ?? [])
+          : (conversation?.messages ?? [])),
+        ...(!pending.resume
+          ? [
+              {
+                id: "pending-user",
+                role: "user" as const,
+                content: pending.content,
+                status: "completed" as const,
+                modelId: pending.modelId,
+                effort: pending.effort,
+              },
+            ]
+          : []),
         {
           id: "pending-assistant",
           role: "assistant",
@@ -209,6 +227,18 @@ export function useConversation(agent: Agent, initial?: Conversation) {
     work,
     error,
     send,
+    resume: () => send("", null, true),
+    acknowledge: async () => {
+      if (!current.current || active.current) return;
+      try {
+        const updated = await agent.acknowledgeInterruption(current.current.id);
+        current.current = updated;
+        setConversation(updated);
+        setError(null);
+      } catch (error) {
+        setError(errorMessage(error));
+      }
+    },
     cancel,
   };
 }

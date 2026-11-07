@@ -122,6 +122,22 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
     [("harness/conversation".into(), serde_json::json!({
         "id": conversation.id,
         "workspace": conversation.workspace,
+        "resumeRequired": conversation.resume_required,
+        "agent": conversation.agent.as_ref().map(|agent| serde_json::json!({
+            "id": agent.id.0, "role": "griller", "creatorId": null,
+        })),
+        "runs": conversation.runs.iter().map(|run| serde_json::json!({
+            "id": run.id, "agentId": run.agent_id.0, "replyId": run.reply_id,
+            "modelId": run.model_id, "effort": effort(run.effort),
+            "task": "grilling",
+            "status": match run.status {
+                domain::RunStatus::Running => "running",
+                domain::RunStatus::NeedsHuman => "needs_human",
+                domain::RunStatus::Stopped => "stopped",
+                domain::RunStatus::Failed => "failed",
+                domain::RunStatus::Interrupted => "interrupted",
+            },
+        })).collect::<Vec<_>>(),
         "usage": super::usage::Summary::from(conversation.usage()),
         "providerConnectionId": conversation.provider_connection_id,
         "model": model,

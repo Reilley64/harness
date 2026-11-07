@@ -38,13 +38,44 @@ advertises the agent-handled
     "harness/modelCatalog": true,
     "harness/modelSelection": true,
     "harness/tools": true,
-    "harness/steering": true
+    "harness/steering": true,
+    "harness/agents": true
   }
 }
 ```
 
 The frontend checks both the negotiated protocol version and the extension marker
 before requesting providers, and checks the model marker before requesting models.
+
+## Repository-agent extension
+
+`harness/agents: true` advertises the narrow durable Griller controls:
+
+- `_harness/agent/read` accepts `{cwd}` and returns
+  `{conversation: null | <safe conversation>}`. A missing Griller is normal.
+- `_harness/agent/start` accepts `{cwd, selection: {"harness/modelSelection":
+  {providerId, modelId, effort}}}` and returns an existing or newly created Griller,
+  without inference. Existing context wins over the supplied creation selection.
+- `_harness/agent/resume` accepts `{sessionId}` after read/load/start and returns a
+  standard-shaped prompt response with safe conversation metadata. It resumes the
+  same interrupted run/reply through the ordinary coordinator/streaming updates,
+  without a fabricated user message.
+- `_harness/agent/acknowledge` accepts `{sessionId}` and returns `{conversation}`.
+  It explicitly releases the interruption gate for a new human inspection
+  instruction, without inference or altering recorded uncertain effects.
+
+Safe conversation metadata adds nullable `agent: {id, role: "griller",
+creatorId: null}`, `runs: [{id, agentId, replyId, task: "grilling", modelId,
+effort, status}]`, and `resumeRequired`. Runs expose running, needs_human, stopped,
+failed and interrupted states; provider call identities/continuation stay private.
+Legacy records have no agent/runs rather than inferred factory lineage.
+
+Standard `session/new/load/prompt/cancel` remain supported. Ordinary prompts cannot
+bypass an interruption gate. Cancellation explicitly stops the active leaf and
+never generates a handoff. Unknown outcomes block direct Resume. All controls use
+closure-backed application use cases and bounded atomic conversation storage.
+These routes do not implement delegation, approvals, multi-agent maps or a
+generic factory-command protocol.
 
 ## Provider catalog extension
 
@@ -201,8 +232,8 @@ unimplemented; enabled tools execute in the agent. See
 
 Standard ACP v1 methods present the conversation use cases:
 
-- `session/new` calls `create_conversation`. Ink waits until the first message
-  before requesting it. Its `_meta["harness/modelSelection"]` is required:
+- `session/new` calls `create_conversation` for unassociated pilot sessions.
+  Native Griller creation uses the repository-agent extension instead. Its `_meta["harness/modelSelection"]` is required:
   `{ "providerId": "openai", "modelId": "<catalog-id>", "effort": "medium" }`.
   Effort may be null. The backend resolves the saved provider connection; no
   credentials or tokens are supplied by the frontend.
@@ -232,7 +263,8 @@ and per-reply model/effort, timestamps, and revision. This is a safe presentatio
 snapshot, never the credential record. Incomplete and refused replies map to
 `max_tokens` and `refusal`; normal completion maps to `end_turn`.
 
-Sessions must be created or loaded in this ACP process before prompting. Prompt
+Sessions must be created, loaded, or opened through agent read/start in this ACP
+process before prompting. Prompt
 overlap is rejected locally and by the cross-process conversation lock.
 Conversation errors use `-32004` with message `Conversation request failed` and
 diagnostic text in `data`; malformed selection/content uses `-32602`. Generation

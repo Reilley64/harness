@@ -15,7 +15,7 @@ try {
   try {
     const conversation = resumeId
       ? await agent.loadConversation(resumeId)
-      : undefined;
+      : await agent.readAgent();
     let initialSelection: ModelSelection | null = null;
     let initialModelError: string | null = null;
     if (!conversation) {
