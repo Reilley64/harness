@@ -66,8 +66,9 @@ model or creating a legacy conversation or new durable Griller. Existing Griller
 remain inspectable while blocked; sends and explicit Resume share the admission
 coordinator. Validation also precedes every model step: initial generation, tool
 continuation, steering restart, and final budget summary. Policy is reloaded from disk, not a process-local catalog cache.
-The provider-bound OpenAI adapter checks it again immediately before the
-Responses HTTP request, after any credential refresh and request preparation.
+Both provider-bound adapters check it again immediately before the Responses
+HTTP request, after credential resolution/refresh and request preparation. The
+current catalog, worker compatibility and effort are also checked at HTTP admission.
 A policy write after that admission cannot recall an already-started request.
 
 Revocation does not cancel an in-flight inference or an already-started tool.
@@ -88,8 +89,15 @@ The Serde-free domain `ModelPattern` and `ModelAllowlist` contain the positive
 matching rule plus customization and initialize-once transitions. Storage owns
 record conversion, locking and atomic replacement, not permission decisions.
 Application admission is shared by workers and model settings.
-Future native Decider/OpenRouter slices can reuse those values and policy ports;
-neither provider nor native decision inference is implemented here.
+OpenRouter workers reuse these policy ports and require positive Responses,
+text input/output, non-router tokenizer, tools and bounded context metadata from
+OpenRouter's own public catalog. Missing metadata is unknown, not permission.
+Hosted router identities, router tokenizers and tilde aliases are not workers.
+Selectable efforts are only the intersection of explicit provider effort metadata
+with Harness's low/medium/high/extra-high controls; omitted metadata exposes no
+effort. Explicit null supported efforts means the documented gateway effort set,
+not an invented native thinking setting. Native Decider inference is separate and
+is not implemented by this worker adapter.
 
 ## Storage and public interfaces
 

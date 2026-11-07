@@ -122,6 +122,7 @@ impl Conversation {
                 content,
                 status,
                 model_id: self.model.id.clone(),
+                provider_id: self.model.provider_id.clone(),
                 effort: self.effort,
                 steps: Vec::new(),
                 steering: Vec::new(),
@@ -146,6 +147,7 @@ impl Conversation {
                 agent_id: agent.id.clone(),
                 reply_id: reply.id.clone(),
                 model_id: self.model.id.clone(),
+                provider_id: self.model.provider_id.clone(),
                 effort: self.effort,
                 status: RunStatus::Running,
             });

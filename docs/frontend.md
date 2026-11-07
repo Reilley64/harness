@@ -115,7 +115,9 @@ transport implementation is necessary.
 
 ## Provider connections
 
-Selecting ChatGPT in the provider picker calls ACP `authenticate`. The connection
+Selecting ChatGPT or OpenRouter in the provider picker calls ACP `authenticate`
+with its separately advertised method. OpenRouter authorizes a separately billed
+API key via backend PKCE; connecting does not make a paid inference probe. The connection
 hook presents starting, browser-authorization, failed, and connected states.
 Escape cancels a pending flow; `o` explicitly reopens the sign-in URL. The prompt
 is unfocused while authorization is pending, but global quit hotkeys still work.
@@ -172,7 +174,12 @@ input/cached-input/output pricing block.
 - Pending requests are aborted on dismissal, disconnect, reload, or unmount.
 
 Data comes from `_harness/models` through the existing application `read_models`
-use case. The frontend never fetches the HTTP catalog directly.
+use case, combining pilot and public OpenRouter catalogs with independently bounded
+fallbacks. OpenRouter entries without compatible protocol/tool/context metadata
+and hosted routers remain capability-blocked; missing effort metadata adds no
+thinking controls. Explicit provider/model switches apply on the next prompt,
+preserving history and usage while backend translation excludes incompatible
+private continuation. The frontend never fetches the HTTP catalog directly.
 
 Temporary external probes cover the real Rust/SDK path, catalog metadata,
 fallback/retry, parser rejection, search, effort changes and limits, confirmation

@@ -3,6 +3,7 @@ use std::path::Path;
 
 use application::ports::PortFuture;
 
+mod openrouter;
 mod record;
 
 pub fn read_provider_connection(
@@ -17,6 +18,9 @@ pub fn read_provider_connection(
     move |provider_id| {
         let directory = directory.clone();
         Box::pin(async move {
+            if provider_id.0 == "openrouter" {
+                return openrouter::read(&directory.join("openrouter.json")).await;
+            }
             if provider_id.0 != "openai" {
                 return Err("Provider is not supported".into());
             }
