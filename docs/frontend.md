@@ -208,7 +208,7 @@ wordmark depends on actual visible messages, not commands or picker activity.
 During a reply the prompt stays focused and editable. Enter submits an acknowledged
 instruction to Rust's control channel. It continues the same logical turn, without
 duplicating the user message or replaying unfinished prose. Running tools finish
-before remaining batch calls are skipped. Escape cancels only. Rejected submissions
+before remaining batch calls are skipped. Escape closes/back-navigates only. Rejected submissions
 retain their exact submitted whitespace. The latest rejection restores directly to
 an empty editor when no rejected drafts are already queued. Otherwise it enters a
 session-local rejected-draft queue without replacing newer text, even if newer
@@ -221,7 +221,7 @@ errors, cancellation before acceptance, missing-model and oversized rejections.
 Queued drafts are held in memory until recovered or the screen exits, not saved to
 conversation history. Late send results do not update draft state after unmount.
 Completion does not erase text being edited. Slash commands other than quit
-require cancelling first.
+require explicit Stop first, except navigation and Stop itself.
 
 Tool notifications update stable call IDs in place. Padded grey panels become
 muted green on success or muted red on failure/Unknown; cancelled/skipped calls
@@ -236,8 +236,8 @@ escape sequences from tool output or changes panel backgrounds.
 Ctrl+O expands/collapses output; resume reconstructs the same panels from snapshots.
 Mouse wheel, PgUp/PgDn, and Shift+Up/Down scroll during both generation and idle.
 The viewport fills its measured available height, bottom-aligns short transcripts,
-and preserves its anchor while output streams; reaching the bottom or
-pressing Escape resumes following new output. Native terminal selection uses
+and preserves its anchor while output streams; reaching the bottom resumes
+following new output. Escape preserves the anchor while navigating. Native terminal selection uses
 Shift+drag while mouse reporting is enabled. Mouse modes are restored on unmount.
 Unchanged immutable message objects retain cached row layouts; each message keeps
 only its current width/expansion layout in a weak cache. Visible rows are memoized,
@@ -286,8 +286,8 @@ character-to-token guesses or fabricated model limits are used.
 
 The entry point accepts `--resume <conversation-id>` and loads it before rendering.
 Invalid/missing/nonexistent identifiers fail visibly. The saved model/effort seeds
-the picker without requiring the catalog. No arguments always start fresh.
-Fresh startup restores the last selected model/effort snapshot through
+the picker without requiring the catalog. No arguments open the saved repository Griller, or an empty view when absent.
+When no repository Griller exists, startup restores the last model/effort through
 `_harness/model-selection/read`, without credentials, catalog access, or history.
 Explicit resume takes precedence and does not overwrite this default just by
 reading a conversation. A missing preference is normal; an invalid one produces
@@ -299,6 +299,56 @@ The ACP service translates standard sessions/prompts/updates/cancellation, parse
 safe conversation metadata, and never receives credentials. On exit it cancels
 active replies and waits for their durable finalization before closing the
 subprocess. See [conversations](conversations.md).
+
+## One-agent context and navigation
+
+The native map contains the actual repository Griller identity returned by Rust,
+not a static role roster. The node persists across human answers, model changes,
+stopped/completed runs and reloads. It shows the latest run status (or live local
+work status) and an explicitly unknown creator; no creation arrow or descendant
+is fabricated. While local work is pending, unavailable live run details are
+explicitly marked pending; saved run identity/model/status are labelled historical
+rather than presented as the active run. Legacy pilot conversations remain
+unassociated. Multi-agent growth, pan/collapse and execution subtrees belong to
+later slices.
+
+Plain Left from the empty focused editor opens the map; whitespace, modifiers,
+paste and picker input retain their editing meaning. Function-key-shaped bytes
+inside bracketed paste never execute navigation, including fragmented markers
+and large paste chunks. Paste tracking survives picker activation changes.
+Ink retains its 20 ms ambiguity timeout for incomplete escape prefixes; recognized
+bracketed paste is not timeout-flushed. Synchronous event-batch
+editing state prevents coalesced space-plus-Left from navigating accidentally.
+F2 toggles chat/map; F3 returns to chat in the one-Griller context. Enter opens
+the sole selected node; Tab/arrows retain that selection. A single mouse click
+selects it; a same-node double-click within 400 ms opens it. Ink-measured hit bounds
+handle split SGR reports and invalidate pending double-clicks on geometry changes.
+
+Titles are exactly `harness - Griller` and `harness - Agent map`; an explicitly
+loaded unassociated pilot uses `harness - Conversation`. Only static context labels
+enter title escapes. Background updates cannot change selection/title. Title,
+mouse and raw/alternate-screen modes pair with cleanup. The transcript stays
+mounted behind the map to retain its anchor and unsent drafts are untouched.
+
+Escape closes a picker, Stop confirmation or authentication flow, or navigates
+between conversation and map; it never stops a run. Use `/stop` or Ctrl+X on the
+map for leaf Stop confirmation. Y/Enter confirms; Escape/N closes without
+cancelling. Confirmation explains that completed effects remain and uncertainty
+is not rollback. Ctrl+X inside the editor cuts its current logical line, not the
+run. ACP cancellation remains available without adding a human approval gate
+to backend/tool authority.
+
+Interrupted work displays Resume-required state. `/resume` explicitly continues
+the same run. For uncertain effects, `/resume inspect` acknowledges the interruption
+without generation, retaining Unknown results and permitting a new inspection
+instruction. Reopening, map navigation or ordinary prompts cannot start recovered
+work. See [conversations](conversations.md).
+
+External stock-launcher PTY probes cover 80×24/50×18, exact title bytes, actual
+backend kill/restart/Resume, empty versus whitespace/modified Left, Unicode
+multiline paste/draft retention, F2/F3, split SGR clicks, Escape during inference,
+confirmed Stop and normal terminal-mode restoration. These byte-report
+observations are not a human terminal-emulator visual signoff.
 
 ## TanStack AI
 

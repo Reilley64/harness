@@ -1,5 +1,5 @@
 import { Box, Text, useInput, usePaste, useWindowSize } from "ink";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { commands } from "../../commands.js";
 import { useRainbowColor } from "../../hooks/use-rainbow-color.js";
 import {
@@ -16,6 +16,7 @@ type Props = {
   working?: boolean;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  onOpenMap: () => void;
 };
 
 export function PromptBox({
@@ -24,6 +25,7 @@ export function PromptBox({
   working = false,
   onChange,
   onSubmit,
+  onOpenMap,
 }: Props) {
   const { columns, rows } = useWindowSize();
   const borderColor = useRainbowColor(focused || working);
@@ -47,11 +49,16 @@ export function PromptBox({
           (command) => command.startsWith(value) && command !== value,
         )
       : undefined;
+  const current = useRef({ value, cursor });
+  current.current = { value, cursor };
   const change = (next: string, position: number) => {
-    setEditor({ value: next, cursor: position });
+    current.current = { value: next, cursor: position };
+    setEditor(current.current);
     onChange(next);
   };
   const insert = (text: string) => {
+    const { value, cursor } = current.current;
+    const characters = Array.from(value);
     const normalized = text.replace(/\r\n?/g, "\n");
     change(
       characters.slice(0, cursor).join("") +
@@ -60,20 +67,34 @@ export function PromptBox({
       cursor + Array.from(normalized).length,
     );
   };
-  const move = (position: number) =>
-    setEditor({
-      value,
-      cursor: Math.max(0, Math.min(characters.length, position)),
-    });
-  const start = cursor === 0 ? 0 : characters.lastIndexOf("\n", cursor - 1) + 1;
-  const nextBreak = characters.indexOf("\n", cursor);
-  const end = nextBreak < 0 ? characters.length : nextBreak;
-  const adjacent = (direction: number) =>
-    horizontalCursor(value, cursor, direction, width);
+  const move = (position: number) => {
+    current.current = {
+      value: current.current.value,
+      cursor: Math.max(
+        0,
+        Math.min(Array.from(current.current.value).length, position),
+      ),
+    };
+    setEditor(current.current);
+  };
 
   usePaste(insert, { isActive: focused });
   useInput(
     (input, key) => {
+      const { value, cursor } = current.current;
+      const characters = Array.from(value);
+      const start =
+        cursor === 0 ? 0 : characters.lastIndexOf("\n", cursor - 1) + 1;
+      const nextBreak = characters.indexOf("\n", cursor);
+      const end = nextBreak < 0 ? characters.length : nextBreak;
+      const adjacent = (direction: number) =>
+        horizontalCursor(value, cursor, direction, width);
+      const completion =
+        value.length > 0
+          ? commands.find(
+              (command) => command.startsWith(value) && command !== value,
+            )
+          : undefined;
       if (
         key.eventType === "release" ||
         key.escape ||
@@ -81,6 +102,18 @@ export function PromptBox({
         key.pageDown
       )
         return;
+      if (
+        key.leftArrow &&
+        value === "" &&
+        !key.ctrl &&
+        !key.meta &&
+        !key.shift &&
+        !key.super &&
+        !key.hyper
+      ) {
+        onOpenMap();
+        return;
+      }
       if (key.return) {
         if (key.shift || key.meta) insert("\n");
         else if (key.eventType !== "repeat") onSubmit(value);
@@ -118,6 +151,14 @@ export function PromptBox({
         else if (input === "a") move(start);
         else if (input === "e") move(end);
         else if (input === "u") change("", 0);
+        else if (input === "x") {
+          const after = end < characters.length ? end + 1 : end;
+          change(
+            characters.slice(0, start).join("") +
+              characters.slice(after).join(""),
+            start,
+          );
+        }
         return;
       }
       if (key.meta) return;

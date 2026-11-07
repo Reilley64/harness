@@ -20,6 +20,8 @@
       "includes": [
         "src/components/atoms/terminal-text.tsx",
         "src/hooks/use-model-picker.ts",
+        "src/hooks/use-map-pointer.ts",
+        "src/hooks/use-context-navigation.ts",
         "src/services/terminal-scroll.ts",
         "src/services/transcript.ts"
       ],

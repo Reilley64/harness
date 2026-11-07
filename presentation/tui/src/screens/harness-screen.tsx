@@ -1,4 +1,4 @@
-import { useApp, useInput, useWindowSize } from "ink";
+import { Box, useApp, useInput, useWindowSize } from "ink";
 import { useState } from "react";
 import { commands } from "../commands.js";
 import { TerminalText } from "../components/atoms/terminal-text.js";
@@ -6,12 +6,15 @@ import { MessageLine } from "../components/molecules/message-line.js";
 import { PromptBox } from "../components/molecules/prompt-box.js";
 import { StartupWordmark } from "../components/molecules/startup-wordmark.js";
 import { WorkingIndicator } from "../components/molecules/working-indicator.js";
+import { AgentMap } from "../components/organisms/agent-map.js";
 import { ModelPicker } from "../components/organisms/model-picker.js";
 import { ProviderConnectionStatus } from "../components/organisms/provider-connection-status.js";
 import { ProviderPicker } from "../components/organisms/provider-picker.js";
 import { Transcript } from "../components/organisms/transcript.js";
 import { HarnessLayout } from "../components/templates/harness-layout.js";
 import { useAgentConnection } from "../hooks/use-agent-connection.js";
+import { useContextNavigation } from "../hooks/use-context-navigation.js";
+import { useContextTitle } from "../hooks/use-context-title.js";
 import { useConversation } from "../hooks/use-conversation.js";
 import { useCreateProviderConnection } from "../hooks/use-create-provider-connection.js";
 import { useGitBranch } from "../hooks/use-git-branch.js";
@@ -55,6 +58,21 @@ export function HarnessScreen({
   const connection = useCreateProviderConnection(agent);
   const draft = usePromptDraft();
   const [notice, setNotice] = useState<string | null>(null);
+  const [map, setMap] = useState(false);
+  const [stopConfirmation, setStopConfirmation] = useState(false);
+  const modal = !!models.picker || !!providers.picker || connection.busy;
+  useContextNavigation(
+    !modal && !stopConfirmation,
+    () => setMap((value) => !value),
+    () => setMap(false),
+  );
+  useContextTitle(
+    map
+      ? "harness - Agent map"
+      : chat.conversation && !chat.conversation.agent
+        ? "harness - Conversation"
+        : "harness - Griller",
+  );
 
   useInput((input, key) => {
     if (key.eventType === "release") return;
@@ -72,8 +90,21 @@ export function HarnessScreen({
       draft.recover();
       return;
     }
-    if (chat.busy) {
-      if (key.escape) chat.cancel();
+    if (stopConfirmation) {
+      if (key.escape || input === "n") setStopConfirmation(false);
+      else if (input === "y" || key.return) {
+        setStopConfirmation(false);
+        chat.cancel();
+      }
+      return;
+    }
+    if (map && !modal) {
+      if (key.escape || key.return) setMap(false);
+      else if (key.ctrl && input === "x") setStopConfirmation(true);
+      return;
+    }
+    if (key.escape && !modal) {
+      setMap(true);
       return;
     }
     if (connection.busy) {
@@ -121,9 +152,13 @@ export function HarnessScreen({
       chat.busy &&
       command.startsWith("/") &&
       command !== "/quit" &&
-      command !== "/exit"
+      command !== "/exit" &&
+      command !== "/stop" &&
+      command !== "/map"
     ) {
-      setNotice("Press Esc to cancel the reply before using commands.");
+      setNotice(
+        "Use /stop to stop this Griller before using commands. Escape only navigates.",
+      );
       return;
     }
     if (command) {
@@ -131,6 +166,18 @@ export function HarnessScreen({
     }
     if (command === "/quit" || command === "/exit") {
       exit();
+    } else if (command === "/stop") {
+      draft.change("");
+      setStopConfirmation(true);
+    } else if (command === "/map") {
+      draft.change("");
+      setMap(true);
+    } else if (command === "/resume") {
+      draft.change("");
+      void chat.resume();
+    } else if (command === "/resume inspect") {
+      draft.change("");
+      void chat.acknowledge();
     } else if (command === "/auth") {
       draft.change("");
       setNotice(null);
@@ -160,7 +207,7 @@ export function HarnessScreen({
         models.selection?.model ?? chat.conversation?.model,
       )}
       contentAlignment={models.picker ? "end" : "start"}
-      showPrompt={!models.picker}
+      showPrompt={!models.picker && !map}
       selectedModel={
         models.selection
           ? `${models.selection.model.providerId}/${models.selection.model.id}${models.selection.effort ? ` · ${models.selection.effort}` : ""}`
@@ -177,7 +224,8 @@ export function HarnessScreen({
           value={draft.value}
           onChange={draft.change}
           onSubmit={submit}
-          focused={!providers.picker && !models.picker && !connection.busy}
+          onOpenMap={() => setMap(true)}
+          focused={!modal && !map && !stopConfirmation}
         />
       }
     >
@@ -186,57 +234,88 @@ export function HarnessScreen({
           {connectionError}
         </TerminalText>
       )}
-      {models.picker ? (
-        <ModelPicker
-          picker={models.picker}
-          query={models.query}
-          models={models.models}
-          selected={models.selected}
-          selection={models.selection}
-          effortFor={models.effortFor}
-          visibleOptions={Math.min(8, rows - 15)}
-        />
-      ) : providers.picker ? (
-        <ProviderPicker picker={providers.picker} visibleOptions={rows - 17} />
-      ) : connection.state ? (
-        <ProviderConnectionStatus state={connection.state} />
-      ) : (
-        <>
-          {chat.messages.length === 0 && !connectionError && (
-            <StartupWordmark />
-          )}
-          {chat.messages.length > 0 && (
-            <Transcript
-              messages={chat.messages}
-              columns={columns}
-              rows={rows}
-              focused={true}
-            />
-          )}
-          {chat.error && (
-            <MessageLine
-              line={{
-                id: "conversation-error",
-                kind: "status",
-                tone: "error",
-                content: chat.error,
-              }}
-            />
-          )}
-          {models.error && (
-            <MessageLine
-              line={{
-                id: "model-selection-error",
-                kind: "status",
-                tone: "error",
-                content: models.error,
-              }}
-            />
-          )}
-          {notice && <TerminalText wrap="truncate-end">{notice}</TerminalText>}
-          {draft.notice && <TerminalText>{draft.notice}</TerminalText>}
-        </>
+      {stopConfirmation && (
+        <TerminalText>
+          Stop Griller's active leaf run? No descendants. Completed effects
+          remain; uncertain effects are not rolled back. Y/Enter Stop · Esc
+          close
+        </TerminalText>
       )}
+      {map && !stopConfirmation && (
+        <AgentMap
+          conversation={chat.conversation}
+          busy={chat.busy}
+          open={() => setMap(false)}
+        />
+      )}
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        display={map || stopConfirmation ? "none" : "flex"}
+      >
+        {models.picker ? (
+          <ModelPicker
+            picker={models.picker}
+            query={models.query}
+            models={models.models}
+            selected={models.selected}
+            selection={models.selection}
+            effortFor={models.effortFor}
+            visibleOptions={Math.min(8, rows - 15)}
+          />
+        ) : providers.picker ? (
+          <ProviderPicker
+            picker={providers.picker}
+            visibleOptions={rows - 17}
+          />
+        ) : connection.state ? (
+          <ProviderConnectionStatus state={connection.state} />
+        ) : (
+          <>
+            {chat.messages.length === 0 && !connectionError && (
+              <StartupWordmark />
+            )}
+            {chat.messages.length > 0 && (
+              <Transcript
+                messages={chat.messages}
+                columns={columns}
+                rows={rows}
+                focused={!modal && !map && !stopConfirmation}
+              />
+            )}
+            {chat.conversation?.resumeRequired && (
+              <TerminalText>
+                Interrupted · /resume explicitly continues · /resume inspect
+                acknowledges without inference for a new inspection instruction.
+              </TerminalText>
+            )}
+            {chat.error && (
+              <MessageLine
+                line={{
+                  id: "conversation-error",
+                  kind: "status",
+                  tone: "error",
+                  content: chat.error,
+                }}
+              />
+            )}
+            {models.error && (
+              <MessageLine
+                line={{
+                  id: "model-selection-error",
+                  kind: "status",
+                  tone: "error",
+                  content: models.error,
+                }}
+              />
+            )}
+            {notice && (
+              <TerminalText wrap="truncate-end">{notice}</TerminalText>
+            )}
+            {draft.notice && <TerminalText>{draft.notice}</TerminalText>}
+          </>
+        )}
+      </Box>
     </HarnessLayout>
   );
 }

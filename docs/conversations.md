@@ -15,11 +15,13 @@ See [tool calls](tool-calls.md) for the execution and permissions contract.
 
 ## Workflow
 
-1. Fresh startup renders an empty view and creates no conversation file.
+1. Startup reads this repository's Griller when one exists, without inference.
+   Otherwise it renders an empty view and creates no conversation file.
 2. The user signs in with `/auth` and chooses a model with `/model`.
-3. On the first message, Ink requests ACP `session/new`, backed by
-   `create_conversation`. The use case validates model/provider/effort against the
-   catalog, resolves the saved provider connection, and creates a versioned record.
+3. On the first idea, Ink requests `_harness/agent/start`, backed by
+   `create_agent`. It validates model/provider/effort, resolves the saved connection,
+   and atomically creates the repository Griller or opens its existing conversation.
+   Standard ACP `session/new` remains the unassociated pilot conversation interface.
 4. ACP `session/prompt` invokes `create_message`. A per-conversation file lock
    rejects overlapping replies, including from another process. The user message
    and an empty in-progress assistant are saved before contacting the provider.
@@ -89,9 +91,15 @@ callers cannot supply paths. Port-owned JSON records stay in infrastructure, dom
 no Serde dependency, and unknown versions/corrupt records are rejected unchanged.
 Creation owns encode-only records, reading owns decode-only records, and updating
 owns both directions; no serialized representation is shared between adapters.
-The optional generation ledger is additive to version two; absent fields retain
-legacy usage semantics, while invalid counts, bounds and step/report mismatches
-are rejected.
+Version three adds an optional Griller identity, runs linked to assistant replies,
+and an interruption gate. Each run records its own stable identity, agent identity,
+model/effort snapshot and lifecycle status. Reading/updating validates associations
+and chronological reply/status consistency, including complete run coverage for
+Griller messages. An associated Griller requires an absolute stored workspace;
+missing/null workspaces are corrupt records, not legacy workspace binding.
+Versions one and two retain legacy usage semantics;
+invalid counts, bounds and step/report mismatches are rejected. Legacy messages
+are not retroactively assigned runs, creators or approvals.
 
 Directories/files are owner-only (0700/0600). Existing unsafe paths and symlink
 records are rejected. Secure storage currently requires Unix. Writes use a private
@@ -147,10 +155,11 @@ cache-write warnings contain no raw errors, URLs, paths, or response content.
 The frontend parses exactly one ID, and Rust loads it through standard ACP
 `session/load`. Bad/missing arguments, absent files, unsupported versions, and
 corrupt records are visible startup errors, never a silent fresh fallback. No
-argument starts fresh even when previous files exist.
+argument opens this repository's saved Griller if present; it never picks an
+arbitrary legacy conversation.
 
-Resume restores history, provider-connection reference, model, and effort without
-sending a prompt. Credentials and catalog availability are not needed for reading.
+The `--resume` startup option loads history, provider-connection reference, model,
+and effort without sending a prompt; it is not execution authorization. Credentials and catalog availability are not needed for reading.
 Sending validates the selected catalog model and resolves the original connection;
 if unavailable, choose a model or reauthorize the same account. The transcript
 omits identity/provenance headings; PgUp/PgDn still browse saved/current text.
@@ -163,11 +172,52 @@ follows persistence; duplicate IDs are idempotent. Inference may restart within
 the same turn, while a running tool finishes before remaining batch calls are
 recorded Skipped. There is no frontend cancel/finalize/resend loop.
 
-Escape cancels without a follow-up. Partial prose remains saved but is not
+Explicit Stop cancels without a follow-up. Escape only closes/back-navigates. Partial prose remains saved but is not
 replayed as completed provider output. Actual tool calls/results survive
 interruption; recovery marks unfinished mutations Unknown and unfinished reads
 Interrupted. Unknown actions are never automatically replayed. Unsubmitted drafts
 survive completion.
+
+## Repository Griller and interrupted runs
+
+A canonical Git worktree root identifies a repository context (a non-Git directory
+uses its canonical path). Subdirectories resolve to that root. Git output loses
+only its single newline terminator; legitimate trailing pathname whitespace is
+preserved, never trimmed into a sibling repository. The repository
+conversation key is a namespace UUID derived from that path; its actual Griller
+agent ID is separately generated and persisted. A repository move is a new context;
+linked Git worktrees are separate contexts. Opening an existing Griller retains its
+saved connection/model/workspace; no history scan, role inference from prose, or
+legacy adoption occurs. An explicit `--resume` continues an old pilot conversation
+without inventing an agent association.
+
+The Griller uses the stock provider factory, ordinary tools, and Harness-owned
+`griller-v1.txt` role guidance. It refines ideas and asks for human input; this slice
+does not publish specs, delegate work, create CoS, or infer implementation/merge
+approval. Each submitted answer starts a later grilling run on the same agent;
+steering stays within the active run. A successful response ends the run for human
+input, not as factory completion. Model steps and generations remain the existing
+durable message-level records.
+
+A recovered in-progress reply/run becomes Interrupted and requires explicit
+Resume. Read/load/start never dispatch inference or tools. An ordinary prompt
+cannot bypass the gate. `/resume` uses the public Resume operation, preserving the
+same run/reply and saved model while continuing only from recorded provider items
+and honest results. It keeps generation/execution budgets across recovery and
+never re-executes pending/interrupted calls.
+
+Unknown tool outcomes block direct continuation. `/resume inspect` explicitly
+acknowledges the interruption **without inference**, allowing a new human
+inspection instruction/run; it does not mark an effect reconciled or successful.
+The Unknown result remains in history. Inspect external facts before deciding
+whether to retry a mutation. This is a narrow leaf recovery path, not automatic
+reconciliation or an exactly-once remote-effect guarantee.
+
+Agent/run metadata commits in the same bounded atomic conversation replacement
+as its messages and tool checkpoints. The existing per-conversation process lock
+also serializes repository creation and execution; concurrent owners are rejected.
+There is no multi-agent engine, creator graph or subtree expansion in this slice.
+The Griller is a leaf, and Stop affects its active execution only.
 
 ## Fresh-session model preference
 
@@ -177,7 +227,8 @@ The last selected/used model and effort are stored as a versioned snapshot in
 shared with conversation creation/sends. Application read/update use cases use
 closure-backed ports; infrastructure owns serialization and filesystem I/O.
 
-Fresh startup reads this snapshot without loading history, creating a conversation,
+When there is no saved repository Griller, startup reads this snapshot without
+loading history or creating a conversation,
 checking credentials, fetching catalogs, or starting inference. Picker commits
 validate against the catalog and save the selection. Sending also remembers the
 validated model/effort actually used, including in resumed conversations. The

@@ -18,8 +18,9 @@ Follow [the repository coding standards](../../CODING_STANDARDS.md).
 - Preserve submitted whitespace except CRLF/CR normalization. Use shared prompt
   geometry for rendering and navigation: terminal cells and whole graphemes, not
   string length. Clip the viewport, not the draft.
-- Enter submits or steers; Escape cancels without discarding the editable draft.
-  Retain Alt+Enter/Ctrl+J newline fallbacks for terminals without Shift+Enter.
+- Enter submits or steers; Escape closes or back-navigates while preserving drafts.
+  Use explicit scoped Stop; Ctrl+X in the editor remains cut. Retain
+  Alt+Enter/Ctrl+J newline fallbacks for terminals without Shift+Enter.
 - Keep terminal modes and asynchronous resources paired with cleanup. Verify
   startup/input changes in a real PTY; component snapshots cannot detect echoed
   capability replies or raw-mode leaks.

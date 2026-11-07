@@ -67,7 +67,6 @@ export function Transcript({ messages, columns, rows, focused }: Props) {
       else if (key.pageDown) scrollBy(Math.max(1, height - 1));
       else if (key.shift && key.upArrow) scrollBy(-1);
       else if (key.shift && key.downArrow) scrollBy(1);
-      else if (key.escape) setAnchor(null);
     },
     { isActive: focused },
   );

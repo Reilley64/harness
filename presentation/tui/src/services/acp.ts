@@ -313,6 +313,35 @@ export function connectAgent() {
     return pending.finally(() => pendingSelections--);
   }
 
+  async function readAgent(): Promise<Conversation | undefined> {
+    await initialize();
+    const response = await connection.agent.request<{ conversation: unknown }>(
+      "_harness/agent/read",
+      { cwd: workspace },
+    );
+    return response.conversation == null
+      ? undefined
+      : parseConversation(response.conversation);
+  }
+
+  async function startAgent(selection: ModelSelection): Promise<Conversation> {
+    await initialize();
+    await selectionWrites;
+    const response = await connection.agent.request<{ conversation: unknown }>(
+      "_harness/agent/start",
+      { cwd: workspace, selection: selectionMetadata(selection) },
+    );
+    return parseConversation(response.conversation);
+  }
+
+  async function acknowledgeInterruption(id: string): Promise<Conversation> {
+    const response = await connection.agent.request<{ conversation: unknown }>(
+      "_harness/agent/acknowledge",
+      { sessionId: id },
+    );
+    return parseConversation(response.conversation);
+  }
+
   async function createConversation(
     selection: ModelSelection,
   ): Promise<Conversation> {
@@ -361,6 +390,7 @@ export function connectAgent() {
     present: (delta: string) => void,
     tool?: (call: ToolCall) => void,
     usage?: (usage: Usage) => void,
+    resume = false,
   ): Promise<Conversation> {
     if (closing || replies.has(id))
       throw new PresentationError(
@@ -384,13 +414,17 @@ export function connectAgent() {
         return loadConversation(id);
       }
       reply.started = true;
-      const responsePromise = connection.agent.request(
-        methods.agent.session.prompt,
-        {
-          sessionId: id,
-          prompt: [{ type: "text", text: content }],
-          ...(selection ? { _meta: selectionMetadata(selection) } : {}),
-        },
+      const responsePromise = connection.agent.request<{
+        _meta?: Record<string, unknown>;
+      }>(
+        resume ? "_harness/agent/resume" : methods.agent.session.prompt,
+        resume
+          ? { sessionId: id }
+          : {
+              sessionId: id,
+              prompt: [{ type: "text", text: content }],
+              ...(selection ? { _meta: selectionMetadata(selection) } : {}),
+            },
       );
       ready(true);
       const response = await responsePromise;
@@ -491,6 +525,9 @@ export function connectAgent() {
     createProviderConnection,
     readModelSelection,
     updateModelSelection,
+    readAgent,
+    startAgent,
+    acknowledgeInterruption,
     createConversation,
     loadConversation,
     createMessage,
