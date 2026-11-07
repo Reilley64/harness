@@ -199,7 +199,7 @@ function fitCell(text,width){const chars=Array.from(String(text));return chars.l
 function mapNode(a,position){
  const hidden=collapsed.has(a.id)?descendantsByCreation(a.id).length:0,name=a.name.replace(/^↳\s*/,'');
  const lines=['┌'+'─'.repeat(nodeWidth-2)+'┐','│'+fitCell(name+(hidden?' +'+hidden:''),nodeWidth-2)+'│','│'+fitCell(a.status,nodeWidth-2)+'│','└'+'─'.repeat(nodeWidth-2)+'┘'];
- return `<button class="map-node ${selected===a.id?'map-selected':''}" data-map-agent="${a.id}" style="left:${position.x}ch;top:${position.y*lineHeight}px;width:${nodeWidth}ch;height:${nodeHeight*lineHeight}px" aria-label="Select ${esc(name)}, ${esc(a.status)}, created by ${esc(a.createdBy?get(a.createdBy)?.name:'unrecorded or external creator')}">${esc(lines.join('\n'))}</button>`;
+ return `<button class="map-node ${selected===a.id?'map-selected':''}" data-map-agent="${a.id}" style="left:${position.x}ch;top:${position.y*lineHeight}px;width:${nodeWidth}ch;height:${nodeHeight*lineHeight}px" aria-pressed="${selected===a.id}" aria-label="Select ${esc(name)}, ${esc(a.status)}, created by ${esc(a.createdBy?get(a.createdBy)?.name:'unrecorded or external creator')}">${esc(lines.join('\n'))}</button>`;
 }
 function descendantsByCreation(id){return agents.filter(a=>a.createdBy===id).flatMap(a=>[a,...descendantsByCreation(a.id)]);}
 function mapMarkup(){
@@ -217,17 +217,21 @@ function saveView(){const t=document.querySelector('.transcript');if(t&&t.getCli
 function setUrlView(){const url=new URL(location.href);url.searchParams.set('variant',variant);if(['file:','http:','https:'].includes(location.protocol))history.replaceState(null,'',url);}
 function openMap(){saveView();variant='B';overlay=null;setUrlView();record('Opened creation map; all runs and per-agent drafts continue unchanged.');render();document.getElementById('map-viewport')?.focus({preventScroll:true});}
 function openAgent(id){saveView();selected=id;highlight=agents.findIndex(a=>a.id===id);variant='A';overlay=null;setUrlView();record(`Opened ${current().name}'s existing conversation; no work stopped or agent created.`);render();document.getElementById('draft')?.focus({preventScroll:true});}
-function selectMapAgent(id){saveView();selected=id;highlight=agents.findIndex(a=>a.id===id);record(`Selected ${current().name} on the creation map; Enter opens its conversation.`);render();document.getElementById('map-viewport')?.focus({preventScroll:true});}
+function selectMapAgent(id){saveView();selected=id;highlight=agents.findIndex(a=>a.id===id);record(`Selected ${current().name} on the creation map; Enter or double-click opens its conversation.`);render(true);document.getElementById('map-viewport')?.focus({preventScroll:true});}
 function conversation(){
  const a=current(),decider=a.id==='decider',recipient=decider?'Chief of Staff':a.name;
  const activity=decider?'Decider discussion is answered by Chief of Staff':resumeGated(a)?'Resume required · no inference started':a.status==='routing pending'?'Routing pending · no application deadline':a.status==='quota timed'?'Quota wait · provider reset 14:32 (demo clock)':a.status==='quota unknown'?'Quota wait · reset unknown; user Resume':a.status==='model disabled'?'Selected model disabled by you · configure, no replacement':a.status==='waiting children'?'Waiting for child results · no model polling':a.status==='running'?'✳ Working · simulated activity':a.status==='needs-human'?'Needs your answer · previous run ended':'Worked for 2m 14s · simulated';
  const workspace=a.id==='griller'?'~/harness (main)':a.role==='Implementer'?'~/.harness/worktrees/demo/'+a.id+' (demo/'+a.id+')':'~/harness (demo/spec-01)';
  return `<section class="conversation pilot-conversation"><div class="transcript" tabindex="0" aria-label="Transcript for ${esc(a.name)}">${decider?`<p class="warn">Decider is a typed engine, not a chat agent. Input here is answered visibly by Chief of Staff.</p><p>Requested ${esc(nativeChoice)} → resolved openrouter/demo/native-r1. No Decider thinking control.</p>`:a.messages.map(([kind,text])=>`<div class="message ${kind}">${esc(text)}</div>`).join('')}</div><div class="pilot-activity">${esc(activity)}</div><form id="prompt" class="prompt"><textarea id="draft" rows="2" aria-label="Message ${esc(recipient)}" placeholder="Message ${esc(recipient)}…">${esc(a.draft)}</textarea></form><div class="pilot-footer"><div><span>${esc(workspace)}</span><span>≥ 12,400 in / 2,100 out · ctx —</span></div><div><span>${esc(recipient)} · Enter send · ← empty: map · /</span><span>${esc(pair(a))}</span></div></div></section>`;
 }
-function render(){
+function render(keepMapNodes=false){
  const a=current(),terminal=document.getElementById('terminal');terminal.className='terminal '+(size==='narrow'?'narrow':'');
  document.title='harness - '+(variant==='B'?'Agent map':a.name.replace(/^↳\s*/,'').replace(/ · inspect$/,'')).replace(/[\u0000-\u001f\u007f-\u009f]/g,'');
- terminal.innerHTML=`<div class="workspace ${variant==='B'?'map-workspace':'chat-workspace'}">${variant==='B'?mapMarkup():conversation()}<div id="overlay-host"></div></div>`;
+ if(keepMapNodes&&variant==='B'&&terminal.querySelector('.map-canvas')){
+  const updated=document.createElement('template');updated.innerHTML=mapMarkup();
+  for(const selector of ['.map-path','.map-tools','.map-selection'])terminal.querySelector(selector).replaceWith(updated.content.querySelector(selector));
+  terminal.querySelectorAll('[data-map-agent]').forEach(node=>{node.classList.toggle('map-selected',node.dataset.mapAgent===selected);node.setAttribute('aria-pressed',String(node.dataset.mapAgent===selected));});
+ }else terminal.innerHTML=`<div class="workspace ${variant==='B'?'map-workspace':'chat-workspace'}">${variant==='B'?mapMarkup():conversation()}<div id="overlay-host"></div></div>`;
  const transcript=document.querySelector('.transcript');if(transcript)transcript.scrollTop=a.scroll===null?transcript.scrollHeight:a.scroll;
  const viewport=document.getElementById('map-viewport');if(viewport){viewport.scrollLeft=mapLeft;viewport.scrollTop=mapTop;if(mapAnchor){const p=mapLayout.positions.get(mapAnchor.id);if(p){viewport.scrollLeft=p.x*cellWidth()-mapAnchor.x;viewport.scrollTop=p.y*lineHeight-mapAnchor.y;}mapAnchor=null;}if(needsMapCentre){centreNode(selected);needsMapCentre=false;}if(followTarget){centreNode(followTarget);followTarget=null;}mapLeft=viewport.scrollLeft;mapTop=viewport.scrollTop;}
  if(overlay)renderOverlay();
