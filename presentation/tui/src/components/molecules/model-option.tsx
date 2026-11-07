@@ -22,7 +22,7 @@ export function ModelOption({
     <Box>
       <Box flexGrow={1} flexShrink={1} minWidth={0}>
         <TerminalText color={selected ? "cyan" : undefined} wrap="truncate-end">
-          {`${selected ? "›" : " "} ${model.name}${active ? " ✓" : ""}`}
+          {`${selected ? "›" : " "} ${model.name}${model.blocked ? " [blocked]" : ""}${active ? " ✓" : ""}`}
         </TerminalText>
       </Box>
       <Box width={22} flexShrink={0} justifyContent="flex-end">

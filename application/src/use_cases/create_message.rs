@@ -5,6 +5,7 @@ mod dependencies;
 mod error;
 mod output;
 
+use crate::model_access;
 pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
@@ -109,28 +110,33 @@ async fn coordinate(
     if conversation.workspace.is_none() {
         conversation.workspace = Some(workspace);
     }
-    if let Some(selection) = selection {
-        if selection.provider_id != conversation.model.provider_id {
-            return Err(Error::caused_by(
-                "Changing providers requires a new conversation",
-            ));
-        }
-        let model = dependencies
-            .read_models
-            .call()
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .find(|model| {
-                model.id == selection.model_id && model.provider_id == selection.provider_id
-            })
-            .ok_or_else(|| Error::caused_by("The selected model is unavailable"))?;
-        model
-            .validate_effort(selection.effort)
-            .map_err(Error::caused_by)?;
-        conversation.model = model;
-        conversation.effort = selection.effort;
+    let selection = selection.unwrap_or_else(|| domain::ModelSelection {
+        provider_id: conversation.model.provider_id.clone(),
+        model_id: conversation.model.id.clone(),
+        effort: conversation.effort,
+    });
+    if selection.provider_id != conversation.model.provider_id {
+        return Err(Error::caused_by(
+            "Changing providers requires a new conversation",
+        ));
     }
+    conversation.model = model_access::read_model(
+        &dependencies.read_models,
+        &selection.provider_id,
+        &selection.model_id,
+        selection.effort,
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    conversation.effort = selection.effort;
+    model_access::read(
+        &dependencies.read_model_allowlist,
+        &dependencies.read_provider_connection,
+        &dependencies.create_model_step_factory,
+        &conversation.model,
+    )
+    .await
+    .map_err(Error::caused_by)?;
     if conversation.agent.is_some() {
         if content.is_none() {
             conversation.run_instructions().context("Required run instruction snapshot is unknown; inspect /guidance, acknowledge the interruption and adopt instructions for new work").map_err(Error::caused_by)?.validate().context("Required run instruction snapshot is invalid").map_err(Error::caused_by)?;
@@ -365,6 +371,22 @@ async fn run(
         if deadline.elapsed().as_secs() > 1200 {
             return Err(Error::caused_by("Turn exceeded 20 minutes"));
         }
+        conversation.model = model_access::read_model(
+            &dependencies.read_models,
+            &conversation.model.provider_id,
+            &conversation.model.id,
+            conversation.effort,
+        )
+        .await
+        .map_err(Error::caused_by)?;
+        model_access::read(
+            &dependencies.read_model_allowlist,
+            &dependencies.read_provider_connection,
+            &dependencies.create_model_step_factory,
+            &conversation.model,
+        )
+        .await
+        .map_err(Error::caused_by)?;
         let reply = conversation.active_reply_mut().map_err(Error::caused_by)?;
         reply.content = buffer.lock().clone();
         reply.begin_generation().map_err(Error::caused_by)?;
@@ -400,14 +422,22 @@ async fn run(
                 }
             }
         };
-        conversation
-            .active_reply_mut()
-            .map_err(Error::caused_by)?
-            .report_generation(match &result {
-                Ok(step) => step.usage,
-                Err(error) => error.reported_usage,
-            })
-            .map_err(Error::caused_by)?;
+        let reply = conversation.active_reply_mut().map_err(Error::caused_by)?;
+        if result
+            .as_ref()
+            .is_err_and(|error| error.not_attempted && error.reported_usage.is_none())
+        {
+            reply
+                .discard_generation_before_attempt()
+                .map_err(Error::caused_by)?;
+        } else {
+            reply
+                .report_generation(match &result {
+                    Ok(step) => step.usage,
+                    Err(error) => error.reported_usage,
+                })
+                .map_err(Error::caused_by)?;
+        }
         if restart || cancellation.is_cancelled() || result.is_err() {
             checkpoint(dependencies, conversation).await?;
             present

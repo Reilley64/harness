@@ -20,6 +20,7 @@ pub(crate) struct ModelsResponse {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModelSummary {
+    pub blocked: Option<String>,
     pub id: String,
     pub name: String,
     pub context_window: Option<u64>,
@@ -48,6 +49,7 @@ pub(crate) struct ModelPricing {
 impl From<domain::Model> for ModelSummary {
     fn from(model: domain::Model) -> Self {
         Self::from(application::use_cases::read_models::Output {
+            blocked: None,
             id: model.id,
             name: model.name,
             context_window: model.context_window,
@@ -83,6 +85,7 @@ impl From<ModelEffort> for domain::ModelEffort {
 impl From<application::use_cases::read_models::Output> for ModelSummary {
     fn from(model: application::use_cases::read_models::Output) -> Self {
         Self {
+            blocked: model.blocked,
             id: model.id,
             name: model.name,
             context_window: model.context_window,

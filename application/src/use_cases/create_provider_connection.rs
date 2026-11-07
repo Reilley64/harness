@@ -2,6 +2,8 @@ mod dependencies;
 mod error;
 mod output;
 
+use crate::error_context::ResultExt;
+use crate::ports::ModelAllowlistUpdate;
 pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
@@ -21,6 +23,14 @@ pub async fn call(
     let connection = create_provider_connection
         .call(present_authorization)
         .await
+        .map_err(Error::caused_by)?;
+    dependencies
+        .update_model_allowlist
+        .call(ModelAllowlistUpdate::InitializeProvider(
+            connection.provider_id.clone(),
+        ))
+        .await
+        .context("Provider credentials were saved, but model policy initialization failed; reload /model settings before inference")
         .map_err(Error::caused_by)?;
     Ok(connection.into())
 }

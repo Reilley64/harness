@@ -1,3 +1,7 @@
+mod model_allowlist;
+mod model_pattern;
+pub use model_allowlist::ModelAllowlist;
+pub use model_pattern::ModelPattern;
 mod agent;
 mod agent_id;
 mod agent_role;

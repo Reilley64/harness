@@ -99,6 +99,7 @@ export function connectAgent() {
   let selectionWrites: Promise<void> = Promise.resolve();
   let pendingSelections = 0;
   const pendingReplies = new Set<Promise<Conversation>>();
+  const pendingPolicyWrites = new Set<Promise<string[]>>();
   const connection = client({ name: "harness-tui" })
     .onNotification(methods.client.session.update, ({ params }) => {
       const update = params.update;
@@ -209,6 +210,51 @@ export function connectAgent() {
       },
     );
     return parseModels(response);
+  }
+
+  function modelAllowlist(
+    patterns?: string[],
+    signal?: AbortSignal,
+  ): Promise<string[]> {
+    if (closing)
+      return Promise.reject(new PresentationError("The agent is closing."));
+    const cancellationSignal =
+      patterns === undefined && signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+        : AbortSignal.timeout(30000);
+    const pending = (async () => {
+      cancellationSignal.throwIfAborted();
+      const initialized = await initialize();
+      cancellationSignal.throwIfAborted();
+      if (initialized._meta?.["harness/modelAllowlist"] !== true)
+        throw new PresentationError(
+          "The agent does not support model permission settings.",
+        );
+      const response = await connection.agent.request<unknown>(
+        patterns === undefined
+          ? "_harness/model-allowlist/read"
+          : "_harness/model-allowlist/update",
+        patterns === undefined ? {} : { patterns },
+        {
+          cancellationSignal,
+          stopWaitingOnCancel: true,
+        },
+      );
+      if (
+        typeof response !== "object" ||
+        response === null ||
+        !("patterns" in response) ||
+        !Array.isArray(response.patterns) ||
+        response.patterns.some((value: unknown) => typeof value !== "string")
+      )
+        throw new PresentationError(
+          "Invalid model allowlist returned by the agent.",
+        );
+      return response.patterns;
+    })();
+    if (patterns === undefined) return pending;
+    pendingPolicyWrites.add(pending);
+    return pending.finally(() => pendingPolicyWrites.delete(pending));
   }
 
   async function createProviderConnection(
@@ -522,12 +568,16 @@ export function connectAgent() {
   async function close(): Promise<void> {
     if (closing) return;
     closing = true;
-    if (replies.size || pendingSelections) {
+    if (replies.size || pendingSelections || pendingPolicyWrites.size) {
       await Promise.allSettled([...replies.keys()].map(cancelReply));
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
-          Promise.allSettled([...pendingReplies, selectionWrites]),
+          Promise.allSettled([
+            ...pendingReplies,
+            selectionWrites,
+            ...pendingPolicyWrites,
+          ]),
           new Promise<void>((resolve) => {
             timer = setTimeout(resolve, 60000);
           }),
@@ -557,6 +607,7 @@ export function connectAgent() {
     initialize,
     listProviders,
     listModels,
+    modelAllowlist,
     createProviderConnection,
     readModelSelection,
     updateModelSelection,

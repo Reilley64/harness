@@ -1,22 +1,10 @@
-use crate::ports;
+mod dependencies;
+mod error;
+mod output;
 
-#[fundle::deps]
-#[derive(Clone)]
-pub struct Dependencies {
-    read_agent: ports::ReadAgent,
-    read_conversation: ports::ReadConversation,
-    update_conversation: ports::UpdateConversation,
-    lock_conversation: ports::LockConversation,
-}
-
-#[ohno::error]
-#[derive(Default)]
-#[display("Could not read repository Griller")]
-pub struct Error;
-
-pub struct Output {
-    pub conversation: Option<domain::Conversation>,
-}
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,

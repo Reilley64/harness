@@ -112,6 +112,7 @@ pub(crate) fn selection(meta: Option<&Meta>) -> Result<Option<domain::ModelSelec
 
 pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
     let model = ModelSummary::from(application::use_cases::read_models::Output {
+        blocked: None,
         id: conversation.model.id.clone(),
         name: conversation.model.name.clone(),
         context_window: conversation.model.context_window,

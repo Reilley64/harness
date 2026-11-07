@@ -1,4 +1,6 @@
 use crate::ports;
+use crate::ports::ReadModelAllowlist;
+use crate::ports::ReadProviderConnection;
 
 use crate::ports::CreateModelStepFactory;
 use crate::ports::LockConversation;
@@ -10,6 +12,8 @@ use crate::ports::UpdateModelSelection;
 #[fundle::deps]
 #[derive(Clone)]
 pub struct Dependencies {
+    pub(super) read_model_allowlist: ReadModelAllowlist,
+    pub(super) read_provider_connection: ReadProviderConnection,
     pub(super) read_conversation: ReadConversation,
     pub(super) read_instructions: ports::ReadInstructions,
     pub(super) lock_conversation: LockConversation,

@@ -9,6 +9,7 @@ mod steering;
 mod tools;
 mod usage;
 
+mod model_allowlist;
 mod model_selection;
 mod models;
 
@@ -16,6 +17,9 @@ mod providers;
 
 pub use dependencies::Dependencies;
 
+use crate::model_allowlist::ModelAllowlistResponse;
+use crate::model_allowlist::ReadModelAllowlistRequest;
+use crate::model_allowlist::UpdateModelAllowlistRequest;
 use agent_client_protocol::Agent;
 use agent_client_protocol::Error;
 use agent_client_protocol::Stdio;
@@ -40,9 +44,11 @@ use application::ports::PresentAuthorization;
 use application::use_cases::create_conversation;
 use application::use_cases::create_provider_connection;
 use application::use_cases::read_conversation;
+use application::use_cases::read_model_allowlist;
 use application::use_cases::read_model_selection;
 use application::use_cases::read_models;
 use application::use_cases::read_providers;
+use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
 
 use crate::model_selection::ModelSelectionResponse;
@@ -70,6 +76,8 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         create_message,
         read_model_selection,
         update_model_selection,
+        read_model_allowlist,
+        update_model_allowlist,
     } = dependencies.into();
     let sessions = conversations::Sessions::default();
     let agent_sessions = sessions.clone();
@@ -92,6 +100,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/providerCatalog".into(), serde_json::json!(true)),
                     ("harness/modelCatalog".into(), serde_json::json!(true)),
                     ("harness/modelSelection".into(), serde_json::json!(true)),
+                    ("harness/modelAllowlist".into(), serde_json::json!(true)),
                     ("harness/tools".into(), serde_json::json!(true)),
                     ("harness/steering".into(), serde_json::json!(true)),
                     ("harness/usage".into(), serde_json::json!(true)),
@@ -368,6 +377,34 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
+        )
+        .on_receive_request(
+            async move |_: ReadModelAllowlistRequest, responder, connection| {
+                let dependencies = read_model_allowlist.clone();
+                connection.spawn(async move {
+                    match read_model_allowlist::call(dependencies).await {
+                        Ok(output) => {
+                            responder.respond(ModelAllowlistResponse::from(output.policy))
+                        }
+                        Err(error) => responder.respond_with_error(model_allowlist::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: UpdateModelAllowlistRequest, responder, connection| {
+                let dependencies = update_model_allowlist.clone();
+                connection.spawn(async move {
+                    match update_model_allowlist::call(dependencies, request.patterns).await {
+                        Ok(output) => {
+                            responder.respond(ModelAllowlistResponse::from(output.policy))
+                        }
+                        Err(error) => responder.respond_with_error(model_allowlist::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |_: ReadModelSelectionRequest, responder, connection| {

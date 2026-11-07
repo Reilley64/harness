@@ -1,21 +1,10 @@
-use crate::ports;
+mod dependencies;
+mod error;
+mod output;
 
-#[fundle::deps]
-#[derive(Clone)]
-pub struct Dependencies {
-    read_conversation: ports::ReadConversation,
-    update_conversation: ports::UpdateConversation,
-    lock_conversation: ports::LockConversation,
-}
-
-#[ohno::error]
-#[derive(Default)]
-#[display("Could not acknowledge interruption")]
-pub struct Error;
-
-pub struct Output {
-    pub conversation: domain::Conversation,
-}
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
 
 pub async fn call(dependencies: impl Into<Dependencies>, id: String) -> Result<Output, Error> {
     let dependencies = dependencies.into();
