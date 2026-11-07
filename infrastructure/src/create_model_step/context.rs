@@ -14,7 +14,12 @@ pub(super) fn input(
         .as_ref()
         .is_some_and(|agent| agent.role == domain::AgentRole::Griller)
     {
-        input.push(json!({"role":"developer","content":include_str!("griller-v1.txt")}));
+        let snapshot = conversation.run_instructions()?;
+        snapshot.validate()?;
+        input.push(json!({"role":"developer","content":format!("Captured Harness instructions: {}. Phase: {}. Repository root/scoped guidance takes precedence over bundled/adapted procedures. Other instruction files on disk are available updates, not silently adopted authority.", snapshot.id, snapshot.phase)}));
+        for instruction in &snapshot.instructions {
+            input.push(json!({"role":"developer","content":format!("Instruction: {}\\nVersion: {}\\nSource: {}\\nUpstream: {}\\n\\n{}", instruction.id, instruction.version, instruction.source, instruction.upstream.join(", "), instruction.body)}));
+        }
     }
     for pair in conversation.messages.as_chunks::<2>().0 {
         let user = &pair[0];

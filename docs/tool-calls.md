@@ -68,8 +68,9 @@ and results remain. Reused provider call IDs are rejected before new execution.
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 3 with additive agent/run associations; versions 1
-and 2 are read without rewriting until mutation or recovery.
+Records are schema version 4 with agent/run associations and immutable instruction
+snapshots; versions 1–3 are read without inventing historical instruction provenance
+or rewriting until mutation/recovery. See [role guidance](role-guidance.md).
 Read/create/update conversation adapters and preference adapters each own their
 serialized `Record` types. Shared filesystem helpers operate on bytes, not DTOs.
 

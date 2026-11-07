@@ -1,5 +1,6 @@
 use crate::conversations;
 use crate::conversations::StorageError;
+use crate::instructions;
 
 #[derive(serde::Deserialize)]
 pub(super) struct Record {
@@ -8,6 +9,10 @@ pub(super) struct Record {
     agent: Option<AgentRecord>,
     #[serde(default)]
     runs: Vec<RunRecord>,
+    #[serde(default)]
+    instruction_snapshots: Vec<SnapshotRecord>,
+    #[serde(default)]
+    selected_instructions: Option<String>,
     #[serde(default)]
     resume_required: bool,
     #[serde(default)]
@@ -35,6 +40,8 @@ struct RunRecord {
     model_id: String,
     effort: Option<EffortRecord>,
     status: String,
+    #[serde(default)]
+    instructions: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -57,7 +64,7 @@ impl TryFrom<Record> for domain::Conversation {
     type Error = StorageError;
 
     fn try_from(dto: Record) -> Result<Self, Self::Error> {
-        if !matches!(dto.version, 1..=3) {
+        if !matches!(dto.version, 1..=4) {
             return Err("Unsupported conversation format".into());
         }
         conversations::validate_id(&dto.id)?;
@@ -199,6 +206,27 @@ impl TryFrom<Record> for domain::Conversation {
                 })
             })
             .transpose()?;
+        if dto.instruction_snapshots.len() > 128 {
+            return Err("Instruction snapshot history exceeds its limit".into());
+        }
+        let instruction_snapshots = dto
+            .instruction_snapshots
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<domain::InstructionSnapshot>, StorageError>>()?;
+        let mut snapshot_ids = std::collections::HashSet::new();
+        for snapshot in &instruction_snapshots {
+            if !snapshot_ids.insert(&snapshot.id) {
+                return Err("Duplicate instruction snapshot identity".into());
+            }
+        }
+        if dto
+            .selected_instructions
+            .as_ref()
+            .is_some_and(|id| !snapshot_ids.contains(id))
+        {
+            return Err("Selected instruction snapshot is missing".into());
+        }
         let mut run_ids = std::collections::HashSet::new();
         let mut replies = std::collections::HashSet::new();
         let runs = dto
@@ -252,7 +280,15 @@ impl TryFrom<Record> for domain::Conversation {
                     }
                     _ => return Err("Invalid run status".into()),
                 };
+                if run
+                    .instructions
+                    .as_ref()
+                    .is_some_and(|id| !snapshot_ids.contains(id))
+                {
+                    return Err(StorageError::from("Run instruction snapshot is missing"));
+                }
                 Ok(domain::Run {
+                    instructions: run.instructions,
                     id: run.id,
                     agent_id: domain::AgentId(run.agent_id),
                     reply_id: run.reply_id,
@@ -272,6 +308,8 @@ impl TryFrom<Record> for domain::Conversation {
             id: dto.id,
             agent,
             runs,
+            instruction_snapshots,
+            selected_instructions: dto.selected_instructions,
             resume_required: dto.resume_required,
             provider_connection_id: dto.provider_connection_id,
             workspace: dto.workspace,
@@ -282,6 +320,52 @@ impl TryFrom<Record> for domain::Conversation {
             updated_at: dto.updated_at,
             revision: dto.revision,
         })
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SnapshotRecord {
+    id: String,
+    phase: String,
+    scopes: Vec<String>,
+    references: Vec<String>,
+    instructions: Vec<InstructionRecord>,
+}
+
+#[derive(serde::Deserialize)]
+struct InstructionRecord {
+    id: String,
+    version: String,
+    source: String,
+    upstream: Vec<String>,
+    requires: Vec<String>,
+    body: String,
+}
+
+impl TryFrom<SnapshotRecord> for domain::InstructionSnapshot {
+    type Error = StorageError;
+
+    fn try_from(record: SnapshotRecord) -> Result<Self, Self::Error> {
+        let snapshot = Self {
+            id: record.id,
+            phase: record.phase,
+            scopes: record.scopes,
+            references: record.references,
+            instructions: record
+                .instructions
+                .into_iter()
+                .map(|instruction| domain::Instruction {
+                    id: instruction.id,
+                    version: instruction.version,
+                    source: instruction.source,
+                    upstream: instruction.upstream,
+                    requires: instruction.requires,
+                    body: instruction.body,
+                })
+                .collect(),
+        };
+        instructions::validate(&snapshot)?;
+        Ok(snapshot)
     }
 }
 
