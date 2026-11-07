@@ -1,4 +1,5 @@
 use crate::error_context::ResultExt;
+use tokio_util::sync::CancellationToken;
 mod dependencies;
 mod error;
 mod output;
@@ -12,6 +13,7 @@ pub async fn call(
     intent: String,
     path: String,
     revision: Option<u64>,
+    cancellation: CancellationToken,
 ) -> Result<Output, Error> {
     let d = dependencies.into();
     for id in [&id, &intent] {
@@ -32,7 +34,7 @@ pub async fn call(
         .ok_or_else(|| Error::caused_by("Publication requires a workspace"))?;
     let proposal = d
         .read_work_proposal
-        .call(workspace.clone(), path)
+        .call(workspace.clone(), path, cancellation.clone())
         .await
         .map_err(Error::caused_by)?;
     let mut work = d
@@ -58,6 +60,12 @@ pub async fn call(
         .context("Publication conflict or stale work revision; reload work, retain the original payload for retries, or use a new intent for an amendment")
         .map_err(Error::caused_by)?
     {
+        if cancellation.is_cancelled() {
+            return Err(Error::caused_by(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Publication cancelled before committing",
+            )));
+        }
         work = d
             .update_work
             .call(work, prior)

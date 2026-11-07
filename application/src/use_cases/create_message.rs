@@ -601,7 +601,7 @@ async fn execute(
         Ok(match invocation {
             domain::ToolInvocation::PublishWork(arguments) => {
                 if cancellation.is_cancelled() { return Ok(domain::ToolResult::cancelled()); }
-                let result=create_work::call(dependencies.create_work.clone(),&conversation,arguments.work_id,arguments.intent,arguments.path,arguments.revision).await?;
+                let result=create_work::call(dependencies.create_work.clone(),&conversation,arguments.work_id,arguments.intent,arguments.path,arguments.revision,cancellation).await?;
                 domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Child dispatch, review and merge are unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
             }
             domain::ToolInvocation::ReadFile(arguments) => {

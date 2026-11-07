@@ -1,4 +1,5 @@
 use crate::WorkApproval;
+use crate::WorkAssignment;
 use crate::WorkProposal;
 use crate::WorkPublication;
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +66,22 @@ impl ApprovedWork {
         }
         self.approvals.push(approval);
         Ok(true)
+    }
+    pub fn authorize_assignment(
+        &self,
+        assignment: &WorkAssignment,
+        coordinator_id: &str,
+    ) -> Result<(), &'static str> {
+        let approval = self.authorize(&assignment.intent, &assignment.proposal.version)?;
+        if self.id != assignment.work_id
+            || self.creator_id != assignment.creator_id
+            || approval.coordinator_id != coordinator_id
+            || approval.approved_at != assignment.approved_at
+            || self.current()? != &assignment.proposal
+        {
+            return Err("Approved handoff no longer matches backend authority");
+        }
+        Ok(())
     }
     pub fn authorize(&self, intent: &str, version: &str) -> Result<&WorkApproval, &'static str> {
         if self.current()?.version != version {

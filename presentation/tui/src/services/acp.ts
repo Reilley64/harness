@@ -412,11 +412,21 @@ export function connectAgent() {
     return pending.finally(() => pendingSelections--);
   }
 
-  async function readAgent(): Promise<Conversation | undefined> {
+  async function readAgent(
+    signal?: AbortSignal,
+  ): Promise<Conversation | undefined> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const cancellationSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000);
+    cancellationSignal.throwIfAborted();
     await initialize();
+    cancellationSignal.throwIfAborted();
+    if (closing) throw new PresentationError("The agent is closing.");
     const response = await connection.agent.request<{ conversation: unknown }>(
       "_harness/agent/read",
       { cwd: workspace },
+      { cancellationSignal, stopWaitingOnCancel: true },
     );
     return response.conversation == null
       ? undefined
@@ -506,15 +516,22 @@ export function connectAgent() {
     return conversation;
   }
 
-  async function loadConversation(id: string): Promise<Conversation> {
+  async function loadConversation(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<Conversation> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const cancellationSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000);
+    cancellationSignal.throwIfAborted();
     await initialize();
+    cancellationSignal.throwIfAborted();
+    if (closing) throw new PresentationError("The agent is closing.");
     const response = await connection.agent.request(
       methods.agent.session.load,
       { sessionId: id, cwd: workspace, mcpServers: [] },
-      {
-        cancellationSignal: AbortSignal.timeout(15000),
-        stopWaitingOnCancel: true,
-      },
+      { cancellationSignal, stopWaitingOnCancel: true },
     );
     const conversation = parseConversation(
       response?._meta?.["harness/conversation"],

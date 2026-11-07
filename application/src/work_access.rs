@@ -9,14 +9,7 @@ pub async fn read(
             .call(a.work_id.clone())
             .await?
             .ok_or("Approved work is unavailable")?;
-        let approval = work.authorize(&a.intent, &a.proposal.version).context("Approved work changed or authority is missing; inspect and approve the current scope/criteria version before new work")?;
-        if work.creator_id != a.creator_id
-            || approval.coordinator_id != conversation.id
-            || approval.approved_at != a.approved_at
-            || work.current()? != &a.proposal
-        {
-            return Err("Approved handoff no longer matches backend authority".into());
-        }
+        work.authorize_assignment(a, &conversation.id).context("Approved work changed or authority is missing; inspect and approve the current scope/criteria version before new work")?;
     }
     Ok(())
 }

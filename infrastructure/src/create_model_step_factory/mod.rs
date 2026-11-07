@@ -7,7 +7,6 @@ use crate::create_model_step::Settings;
 use crate::create_model_step::openai;
 use crate::create_model_step::openrouter;
 use crate::create_provider_connection::Settings as AuthenticationSettings;
-use crate::read_work;
 
 pub fn create_model_step_factory(
     settings: &Settings,
@@ -16,17 +15,8 @@ pub fn create_model_step_factory(
     provider_id: &domain::ProviderId,
     read_model_allowlist: application::ports::ReadModelAllowlist,
     read_models: application::ports::ReadModels,
+    read_work: application::ports::ReadWork,
 ) -> Result<CreateModelStep, ModelStepError> {
-    let read = read_work::read_work(
-        &credentials_path
-            .parent()
-            .ok_or("Credentials directory has no app-data root")?
-            .join("work"),
-    );
-    let read_work = application::ports::ReadWork::new(move |id| {
-        let future = read(id);
-        Box::pin(async move { Ok(future.await?) })
-    });
     match provider_id.0.as_str() {
         "openai" => {
             let create = openai::create_model_step(

@@ -118,8 +118,8 @@ impl Dependencies {
             })
             .read_work_proposal(|_| {
                 let implementation = read_work_proposal::read_work_proposal();
-                ports::ReadWorkProposal::new(move |workspace, path| {
-                    let result = implementation(workspace, path);
+                ports::ReadWorkProposal::new(move |workspace, path, cancellation| {
+                    let result = implementation(workspace, path, cancellation);
                     Box::pin(async move { Ok(result.await?) })
                 })
             })
@@ -262,6 +262,8 @@ impl Dependencies {
                 let authentication = settings.authentication.clone();
                 let read_models: &ports::ReadModels = deps.as_ref();
                 let read_models = read_models.clone();
+                let read_work: &ports::ReadWork = deps.as_ref();
+                let read_work = read_work.clone();
                 let credentials_path = settings.app_data_path.join("auth");
                 ports::CreateModelStepFactory::new(move |provider_id| {
                     let create = create_model_step_factory::create_model_step_factory(
@@ -271,6 +273,7 @@ impl Dependencies {
                         &provider_id,
                         read_model_allowlist.clone(),
                         read_models.clone(),
+                        read_work.clone(),
                     )?;
                     Ok(create)
                 })

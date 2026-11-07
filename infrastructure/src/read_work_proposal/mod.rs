@@ -2,6 +2,7 @@ use application::ports::PortFuture;
 use sha2::Digest;
 use sha2::Sha256;
 use tokio::io::AsyncReadExt;
+use tokio_util::sync::CancellationToken;
 type Error = Box<dyn std::error::Error + Send + Sync>;
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -42,41 +43,56 @@ struct Response {
     context: Option<String>,
     artifacts: Vec<String>,
 }
-pub fn read_work_proposal()
--> impl Fn(std::path::PathBuf, String) -> PortFuture<Result<domain::WorkProposal, Error>> + Send + Sync
-{
-    move |workspace, path| {
+pub fn read_work_proposal() -> impl Fn(
+    std::path::PathBuf,
+    String,
+    CancellationToken,
+) -> PortFuture<Result<domain::WorkProposal, Error>>
++ Send
++ Sync {
+    move |workspace, path, cancellation| {
         Box::pin(async move {
-            let file = tokio::fs::File::open(workspace.join(path)).await?;
-            if !file.metadata().await?.is_file() {
-                return Err("Proposal must be a regular UTF-8 file".into());
+            let read = async move {
+                let mut options = tokio::fs::OpenOptions::new();
+                options.read(true);
+                #[cfg(unix)]
+                options.custom_flags(libc::O_NONBLOCK);
+                let file = options.open(workspace.join(path)).await?;
+                if !file.metadata().await?.is_file() {
+                    return Err("Proposal must be a regular UTF-8 file".into());
+                }
+                let mut bytes = Vec::new();
+                file.take(262_145).read_to_end(&mut bytes).await?;
+                if bytes.len() > 262_144 {
+                    return Err("Proposal exceeds 256 KiB".into());
+                }
+                tokio::task::spawn_blocking(move || {
+                    let document = String::from_utf8(bytes)?;
+                    let r: Response = serde_json::from_str(&document)?;
+                    let version = format!("{:x}", Sha256::digest(document.as_bytes()));
+                    let p = domain::WorkProposal {
+                        root: r.root,
+                        source_revision: r.source_revision,
+                        spec: r.spec,
+                        scope: r.scope,
+                        criteria: r.criteria,
+                        dependencies: r.dependencies,
+                        wiki: r.wiki,
+                        context: r.context,
+                        artifacts: r.artifacts,
+                        document,
+                        version,
+                    };
+                    p.validate()?;
+                    Ok(p)
+                })
+                .await?
+            };
+            tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "Proposal read cancelled").into()),
+                result = read => result,
             }
-            let mut bytes = Vec::new();
-            file.take(262_145).read_to_end(&mut bytes).await?;
-            if bytes.len() > 262_144 {
-                return Err("Proposal exceeds 256 KiB".into());
-            }
-            tokio::task::spawn_blocking(move || {
-                let document = String::from_utf8(bytes)?;
-                let r: Response = serde_json::from_str(&document)?;
-                let version = format!("{:x}", Sha256::digest(document.as_bytes()));
-                let p = domain::WorkProposal {
-                    root: r.root,
-                    source_revision: r.source_revision,
-                    spec: r.spec,
-                    scope: r.scope,
-                    criteria: r.criteria,
-                    dependencies: r.dependencies,
-                    wiki: r.wiki,
-                    context: r.context,
-                    artifacts: r.artifacts,
-                    document,
-                    version,
-                };
-                p.validate()?;
-                Ok(p)
-            })
-            .await?
         })
     }
 }

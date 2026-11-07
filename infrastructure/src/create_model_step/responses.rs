@@ -88,10 +88,7 @@ where
                     }
                     if let Some(a)=&conversation.assignment {
                         let work=read_work.call(a.work_id.clone()).await?.ok_or("Approved work is unavailable")?;
-                        let approval=work.authorize(&a.intent,&a.proposal.version).context("Approved work changed; inspect and approve the current scope/criteria version")?;
-                        if work.current()?!=&a.proposal || approval.coordinator_id!=conversation.id || work.creator_id!=a.creator_id || approval.approved_at!=a.approved_at {
-                            return Err("Approved handoff differs from backend authority".into());
-                        }
+                        work.authorize_assignment(a,&conversation.id).context("Approved work changed; inspect and approve the current scope/criteria version")?;
                     }
                     attempted = true;
                     let mut response = http

@@ -53,7 +53,9 @@ export function HarnessScreen({
       : initialSelection,
     initialModelError,
   );
-  const chat = useConversation(agent, initialConversation);
+  const chat = useConversation(agent, initialConversation, (next) => {
+    models.restore({ model: next.model, effort: next.effort });
+  });
   const guidance = useGuidance(agent, chat.conversation);
   const approved = useApprovedWork(agent, chat.conversation);
   const workspace =
@@ -85,18 +87,9 @@ export function HarnessScreen({
       chat.cancelOpen();
       guidance.close();
       approved.close();
-      if (chat.conversation?.agent?.role === "chief_of_staff") {
-        void agent
-          .readAgent()
-          .then((next) => (next ? chat.open(next.id) : null))
-          .then((next) => {
-            if (next) {
-              models.restore({ model: next.model, effort: next.effort });
-              setMap(false);
-            }
-          })
-          .catch((error) => setNotice(errorMessage(error)));
-      } else setMap(false);
+      if (chat.conversation?.agent?.role === "chief_of_staff")
+        openConversation();
+      else setMap(false);
     },
   );
   useContextTitle(
@@ -207,6 +200,12 @@ export function HarnessScreen({
     }
   });
 
+  function openConversation(id?: string) {
+    guidance.close();
+    approved.close();
+    setMap(false);
+    void chat.open(id).catch((error) => setNotice(errorMessage(error)));
+  }
   function submit(value: string) {
     chat.cancelOpen();
     const command = value.trim();
@@ -242,31 +241,10 @@ export function HarnessScreen({
       void approved.inspect(command.slice(6));
     } else if (command.startsWith("/open ")) {
       draft.change("");
-      guidance.close();
-      approved.close();
-      void chat
-        .open(command.slice(6))
-        .then((next) => {
-          if (next) {
-            setMap(false);
-            models.restore({ model: next.model, effort: next.effort });
-          }
-        })
-        .catch((error) => setNotice(errorMessage(error)));
+      openConversation(command.slice(6));
     } else if (command === "/griller") {
       draft.change("");
-      guidance.close();
-      approved.close();
-      void agent
-        .readAgent()
-        .then((next) => (next ? chat.open(next.id) : null))
-        .then((next) => {
-          if (next) {
-            setMap(false);
-            models.restore({ model: next.model, effort: next.effort });
-          }
-        })
-        .catch((error) => setNotice(errorMessage(error)));
+      openConversation();
     } else if (command === "/guidance") {
       draft.change("");
       void guidance.inspect();
@@ -401,16 +379,7 @@ export function HarnessScreen({
           approve={() => void approved.approve()}
           openCoordinator={() => {
             const id = approved.coordinator;
-            if (id) {
-              approved.close();
-              void chat
-                .open(id)
-                .then((next) => {
-                  if (next)
-                    models.restore({ model: next.model, effort: next.effort });
-                })
-                .catch((error) => setNotice(errorMessage(error)));
-            }
+            if (id) openConversation(id);
           }}
         />
       )}

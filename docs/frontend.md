@@ -196,7 +196,11 @@ at a non-older revision; a delayed reply cannot erase a newer completed turn or
 regress the map's run state. A stale initial Griller-creation acknowledgement is
 rejected before adopting instructions, without replacing newer history; inspect
 again to adopt against the current conversation. Durable commits are not rolled
-back by these presentation guards.
+back by these presentation guards. The hook also owns Griller lookup through
+conversation load and model restoration, aborting/invalidation on replacement,
+navigation, send and unmount. Interruption acknowledgements require the same
+selected actor, current navigation ownership and a non-older revision; a durable
+acknowledgement cannot overwrite newer history or another actor's context/model.
 The first send creates a session; opening a picker or choosing a model does not.
 After failure the hook reloads saved history so it does not mistake optimistic
 text for persisted messages or automatically resend a failed turn.

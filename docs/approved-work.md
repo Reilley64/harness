@@ -57,6 +57,12 @@ fields and SHA-256 version. It never treats a model's digest or summary as the
 source of truth. Source root/revision remain assertions about the named artifact;
 remote read-back must be established using the repository's actual tools.
 
+Proposal capture accepts regular files only. Unix opens are nonblocking before
+checking the opened descriptor, so a writerless FIFO or replacement with one
+cannot hold Stop hostage. Cancellation follows the file read and is checked
+again before admitting a durable publication. Cancellation after an admitted
+atomic write is not a promise to undo that write.
+
 First publication omits `revision`. Amendments use the current durable revision
 and a new publication intent. Same intent/exact document reuses the publication;
 changed payload under that intent conflicts. Work identity, creator, originating
@@ -147,7 +153,9 @@ with private dependencies/error/output children. Closure-backed ports are
 `ReadWorkProposal`, `ReadWork`, `UpdateWork` and `CreateCoordinator`, each with its
 matching infrastructure adapter and independently owned wire/storage records.
 Domain owns proposal bounds, intent/payload conflict, amendment and authorization
-rules without Serde. Reads/changes are bounded, storage parsing/encoding/locking
+rules without Serde, including exact work/creator/coordinator/proposal/approval-time
+assignment matching. Application and HTTP admission each independently read the
+composed work port before applying that same domain predicate. Reads/changes are bounded, storage parsing/encoding/locking
 runs on blocking workers, filesystem I/O uses Tokio, and no work-storage lock or
 repository-wide scheduler lock is held across inference.
 
@@ -175,7 +183,13 @@ change after admission cannot recall an already-started request/effect, but its
 usage/results are preserved and subsequent work is blocked. Current model policy
 and capability admission are not widened by work approval.
 
-Cancelled UI reads are aborted and late results ignored. An admitted durable
+Cancelled UI reads are aborted and late results ignored. The conversation hook
+owns the whole Griller lookup, conversation load and model restoration operation;
+newer navigation, sends, transport replacement and unmount invalidate it before a
+superseded lookup can initiate a load. Interruption acknowledgements update only
+their still-selected target at a non-older revision under the same navigation
+ownership. A late acknowledgement cannot replace newer history, another actor's
+selection or its model; backend acknowledgement is not rolled back by ignoring it. An admitted durable
 approval/handoff may finish after dismissal/disconnection; it cannot overwrite a
 newer target/view. Query before retrying, keeping the original intent. A pending
 claim is not an active run, a completed handoff is not inference, and restart never
