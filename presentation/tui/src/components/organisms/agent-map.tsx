@@ -30,7 +30,11 @@ export function AgentMap({
         borderColor="cyan"
       >
         <TerminalText bold>
-          {agent ? "› Griller" : "No repository Griller yet"}
+          {agent
+            ? "› Griller"
+            : conversation
+              ? "Unassociated pilot history"
+              : "No repository Griller yet"}
         </TerminalText>
         <TerminalText>
           {busy
@@ -44,8 +48,24 @@ export function AgentMap({
       <TerminalText dimColor>
         {agent
           ? "Creator unknown · leaf execution"
-          : "Send an idea to create this repository's Griller."}
+          : conversation
+            ? "This pilot history has no recorded agent association."
+            : "Send an idea to create this repository's Griller."}
       </TerminalText>
+      {conversation && (
+        <>
+          <TerminalText wrap="truncate-end">
+            {conversation.workspace ?? "Workspace not yet bound"}
+          </TerminalText>
+          <TerminalText wrap="truncate-end">{`${agent ? "grilling · " : ""}${conversation.model.providerId}/${run?.modelId ?? conversation.model.id} · ${(run ? run.effort : conversation.effort) ?? "no effort"}`}</TerminalText>
+          {run && (
+            <TerminalText
+              dimColor
+              wrap="truncate-end"
+            >{`Run ${run.id}`}</TerminalText>
+          )}
+        </>
+      )}
       <TerminalText>Enter open · Esc back · Ctrl+X Stop</TerminalText>
     </Box>
   );

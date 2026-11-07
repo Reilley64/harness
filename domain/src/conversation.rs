@@ -133,6 +133,13 @@ impl Conversation {
 
     pub fn begin_run(&mut self, id: String) -> Result<(), &'static str> {
         if let Some(agent) = &self.agent {
+            if self
+                .runs
+                .iter()
+                .any(|run| run.id == id || run.status == RunStatus::Running)
+            {
+                return Err("An agent can have only one controlling run with a fresh identity");
+            }
             let reply = self.active_reply()?;
             self.runs.push(Run {
                 id,

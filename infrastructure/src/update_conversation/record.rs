@@ -331,13 +331,14 @@ impl TryFrom<Record> for domain::Conversation {
         let runs = dto
             .runs
             .into_iter()
-            .map(|run| {
+            .enumerate()
+            .map(|(index, run)| {
                 conversations::validate_id(&run.id)?;
                 conversations::validate_id(&run.agent_id)?;
                 conversations::validate_id(&run.reply_id)?;
                 let reply = messages
-                    .iter()
-                    .find(|message| {
+                    .get(index * 2 + 1)
+                    .filter(|message| {
                         message.id == run.reply_id && message.role == domain::MessageRole::Assistant
                     })
                     .ok_or("Run reply was not found")?;
@@ -388,6 +389,9 @@ impl TryFrom<Record> for domain::Conversation {
                 })
             })
             .collect::<Result<Vec<_>, StorageError>>()?;
+        if agent.is_some() && runs.len() != messages.len() / 2 {
+            return Err("Griller messages must belong to recorded runs".into());
+        }
         let model: domain::Model = dto.model.into();
         let effort = dto.effort.map(Into::into);
         model.validate_effort(effort)?;

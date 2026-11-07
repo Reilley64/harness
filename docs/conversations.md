@@ -94,7 +94,8 @@ owns both directions; no serialized representation is shared between adapters.
 Version three adds an optional Griller identity, runs linked to assistant replies,
 and an interruption gate. Each run records its own stable identity, agent identity,
 model/effort snapshot and lifecycle status. Reading/updating validates associations
-and reply/status consistency. Versions one and two retain legacy usage semantics;
+and chronological reply/status consistency, including complete run coverage for
+Griller messages. Versions one and two retain legacy usage semantics;
 invalid counts, bounds and step/report mismatches are rejected. Legacy messages
 are not retroactively assigned runs, creators or approvals.
 
