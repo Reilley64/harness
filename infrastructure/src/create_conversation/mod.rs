@@ -32,6 +32,9 @@ pub fn create_conversation(
             let now = conversations::now()?;
             let conversation = domain::Conversation {
                 id,
+                agent: None,
+                runs: Vec::new(),
+                resume_required: false,
                 provider_connection_id: connection.id,
                 workspace: Some(tokio::fs::canonicalize(workspace).await?),
                 model,

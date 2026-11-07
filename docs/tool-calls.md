@@ -68,7 +68,8 @@ and results remain. Reused provider call IDs are rejected before new execution.
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 2; version 1 is read without rewriting it.
+Records are schema version 3 with additive agent/run associations; versions 1
+and 2 are read without rewriting until mutation or recovery.
 Read/create/update conversation adapters and preference adapters each own their
 serialized `Record` types. Shared filesystem helpers operate on bytes, not DTOs.
 
@@ -84,8 +85,8 @@ saved but is not replayed as completed model output. During a tool, the current
 operation finishes; remaining calls in that batch are recorded Skipped before
 continuing with the new instruction. Rapid instructions retain their order.
 
-Escape cancels the current turn, including subprocess cleanup, without initiating
-another request. Failed/unaccepted instructions remain drafts. Unsaved draft text
+Explicit Stop cancels the current turn, including subprocess cleanup, without
+initiating another request. Escape only closes or back-navigates. Failed/unaccepted instructions remain drafts. Unsaved draft text
 is not cleared by completion. Neither React nor the transport automatically
 replays a failed request.
 
@@ -139,8 +140,8 @@ statuses remain labelled without relying on colour. Read/write code has syntax
 highlighting for supported file types; edits have unified-diff colouring. Unknown
 languages remain plain text. Bounded output and artifact/truncation notices are
 displayed. Ctrl+O expands/collapses stored output. Mouse wheel, PgUp/PgDn, and Shift+Up/Down scroll even during a turn;
-new output preserves the viewed history until scrolling back to the bottom or
-pressing Escape. Shift+drag uses native terminal text selection while mouse
+new output preserves the viewed history until scrolling back to the bottom.
+Escape preserves the anchor while navigating. Shift+drag uses native terminal text selection while mouse
 reporting is enabled. The prompt remains full-sized and editable.
 
 ## Bounds and artifacts

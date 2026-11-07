@@ -1,9 +1,11 @@
+use crate::create_agent;
 use crate::create_conversation;
 use crate::create_file;
 use crate::create_model_step_factory;
 use crate::create_process;
 use crate::create_tool_output;
 use crate::lock_conversation;
+use crate::read_agent;
 use crate::read_code_matches;
 use crate::read_conversation;
 use crate::read_directory;
@@ -49,6 +51,8 @@ pub struct Dependencies {
     update_model_allowlist: ports::UpdateModelAllowlist,
     read_model_selection: ports::ReadModelSelection,
     update_model_selection: ports::UpdateModelSelection,
+    create_agent: ports::CreateAgent,
+    read_agent: ports::ReadAgent,
     create_conversation: ports::CreateConversation,
     read_conversation: ports::ReadConversation,
     update_conversation: ports::UpdateConversation,
@@ -83,6 +87,23 @@ impl Dependencies {
                             })
                         },
                     ))
+                })
+            })
+            .create_agent(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let create =
+                    create_agent::create_agent(&settings.app_data_path.join("conversations"));
+                ports::CreateAgent::new(move |model, effort, connection, workspace| {
+                    let result = create(model, effort, connection, workspace);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_agent(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_agent::read_agent(&settings.app_data_path.join("conversations"));
+                ports::ReadAgent::new(move |workspace| {
+                    let result = read(workspace);
+                    Box::pin(async move { Ok(result.await?) })
                 })
             })
             .create_conversation(|deps| {

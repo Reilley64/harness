@@ -1,7 +1,9 @@
+mod agents;
 mod authentication;
 mod conversations;
 mod dependencies;
 mod projection;
+mod prompt;
 mod steering;
 mod tools;
 mod usage;
@@ -35,14 +37,10 @@ use agent_client_protocol::v1::schema::LoadSessionResponse;
 use agent_client_protocol::v1::schema::NewSessionRequest;
 use agent_client_protocol::v1::schema::NewSessionResponse;
 use agent_client_protocol::v1::schema::PromptRequest;
-use agent_client_protocol::v1::schema::PromptResponse;
 use agent_client_protocol::v1::schema::SessionNotification;
-use agent_client_protocol::v1::schema::StopReason;
 use application::error_context::ResultExt;
 use application::ports::PresentAuthorization;
-use application::ports::PresentTurnEvent;
 use application::use_cases::create_conversation;
-use application::use_cases::create_message;
 use application::use_cases::create_provider_connection;
 use application::use_cases::read_conversation;
 use application::use_cases::read_model_allowlist;
@@ -67,6 +65,9 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         providers,
         authentication,
         models,
+        create_agent,
+        read_agent,
+        update_agent,
         create_conversation,
         read_conversation,
         create_message,
@@ -76,6 +77,11 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         update_model_allowlist,
     } = dependencies.into();
     let sessions = conversations::Sessions::default();
+    let agent_sessions = sessions.clone();
+    let read_agent_sessions = sessions.clone();
+    let resume_sessions = sessions.clone();
+    let resume_history = read_conversation.clone();
+    let resume_dependencies = create_message.clone();
     let new_sessions = sessions.clone();
     let loaded_sessions = sessions.clone();
     let prompted_sessions = sessions.clone();
@@ -95,6 +101,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/tools".into(), serde_json::json!(true)),
                     ("harness/steering".into(), serde_json::json!(true)),
                     ("harness/usage".into(), serde_json::json!(true)),
+                    ("harness/agents".into(), serde_json::json!(true)),
                 ]
                 .into_iter()
                 .collect();
@@ -302,122 +309,15 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         )
         .on_receive_request(
             async move |request: PromptRequest, responder, connection| {
-                let selection = match conversations::selection(request.meta.as_ref()) {
-                    Ok(selection) => selection,
-                    Err(error) => return responder.respond_with_error(error),
-                };
-                let text = match projection::prompt(request.prompt) {
-                    Ok(text) => text,
-                    Err(error) => return responder.respond_with_error(error),
-                };
-                let mut running = match prompted_sessions.start(&request.session_id.to_string()) {
-                    Ok(running) => running,
-                    Err(error) => return responder.respond_with_error(error),
-                };
-                let dependencies = create_message.clone();
-                let history = projection_history.clone();
-                let updates = connection.clone();
-                let final_updates = connection.clone();
-                connection.spawn(async move {
-                    let id = request.session_id.to_string();
-                    let model = read_conversation::call(history, id.clone())
-                        .await
-                        .ok()
-                        .map(|output| output.conversation.model)
-                        .filter(|model| {
-                            selection.as_ref().is_none_or(|selection| {
-                                selection.model_id == model.id
-                                    && selection.provider_id == model.provider_id
-                            })
-                        });
-                    let projection =
-                        parking_lot::Mutex::new(projection::Projection::new(model.as_ref()));
-                    let updated_session = id.clone();
-                    let present = PresentTurnEvent::new(move |event| {
-                        if let domain::TurnEvent::Usage { usage } = &event {
-                            updates
-                                .send_notification(usage::Notification {
-                                    session_id: updated_session.clone(),
-                                    usage: usage.clone().into(),
-                                })
-                                .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
-                        }
-                        for update in projection.lock().event(event) {
-                            updates
-                                .send_notification(SessionNotification::new(
-                                    updated_session.clone(),
-                                    update,
-                                ))
-                                .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
-                        }
-                        Ok(())
-                    });
-                    let result = create_message::call(
-                        dependencies,
-                        id,
-                        text,
-                        selection,
-                        present,
-                        running
-                            .steering
-                            .take()
-                            .expect("Newly started reply owns its steering receiver"),
-                        running.workspace.clone(),
-                        running.cancellation.clone(),
-                    );
-                    tokio::pin!(result);
-                    let request_cancellation = responder.cancellation();
-                    let result = tokio::select! {
-                        result = &mut result => result,
-                        _ = request_cancellation.cancelled() => {
-                            running.cancellation.cancel();
-                            result.await
-                        }
-                    };
-                    match result {
-                        Ok(output) => {
-                            let mut projection =
-                                projection::Projection::new(Some(&output.conversation.model));
-                            for update in projection.event(domain::TurnEvent::Usage {
-                                usage: output.conversation.usage(),
-                            }) {
-                                if let Err(error) =
-                                    final_updates.send_notification(SessionNotification::new(
-                                        output.conversation.id.clone(),
-                                        update,
-                                    ))
-                                {
-                                    return responder.respond_with_error(error);
-                                }
-                            }
-                            let stop_reason = if running.cancellation.is_cancelled() {
-                                StopReason::Cancelled
-                            } else {
-                                match output
-                                    .conversation
-                                    .messages
-                                    .last()
-                                    .map(|message| message.status)
-                                {
-                                    Some(domain::MessageStatus::Cancelled) => StopReason::Cancelled,
-                                    Some(domain::MessageStatus::Refused) => StopReason::Refusal,
-                                    Some(domain::MessageStatus::Limited) => {
-                                        StopReason::MaxTurnRequests
-                                    }
-                                    Some(domain::MessageStatus::Incomplete) => {
-                                        StopReason::MaxTokens
-                                    }
-                                    _ => StopReason::EndTurn,
-                                }
-                            };
-                            responder.respond(
-                                PromptResponse::new(stop_reason)
-                                    .meta(conversations::metadata(&output.conversation)),
-                            )
-                        }
-                        Err(error) => responder.respond_with_error(conversations::error(error)),
-                    }
-                })
+                prompt::receive(
+                    request,
+                    responder,
+                    connection,
+                    create_message.clone(),
+                    projection_history.clone(),
+                    prompted_sessions.clone(),
+                    false,
+                )
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -525,6 +425,104 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                             selection: Some(output.selected_model.into()),
                         }),
                         Err(error) => responder.respond_with_error(model_selection::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: agents::ReadRequest, responder, connection| {
+                let dependencies = read_agent.clone();
+                let sessions = read_agent_sessions.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_agent::call(dependencies, request.cwd).await
+                    {
+                        Ok(output) => {
+                            if let Some(conversation) = output.conversation {
+                                sessions.register(
+                                    &conversation.id,
+                                    conversation
+                                        .workspace
+                                        .clone()
+                                        .expect("Griller has a workspace"),
+                                );
+                                responder.respond(agents::response(&conversation))
+                            } else {
+                                responder.respond(agents::Response { conversation: None })
+                            }
+                        }
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: agents::StartRequest, responder, connection| {
+                let dependencies = create_agent.clone();
+                let sessions = agent_sessions.clone();
+                connection.spawn(async move {
+                    let result = async {
+                        let selection = conversations::selection(Some(&request.selection))?
+                            .ok_or_else(|| Error::invalid_params().data("Choose a model first"))?;
+                        let output = application::use_cases::create_agent::call(
+                            dependencies,
+                            selection,
+                            request.cwd,
+                        )
+                        .await
+                        .map_err(conversations::error)?;
+                        sessions.register(
+                            &output.conversation.id,
+                            output
+                                .conversation
+                                .workspace
+                                .clone()
+                                .expect("Griller has a workspace"),
+                        );
+                        Ok(agents::response(&output.conversation))
+                    }
+                    .await;
+                    match result {
+                        Ok(response) => responder.respond(response),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: agents::ResumeRequest, responder, connection| {
+                let request = PromptRequest::new(
+                    request.session_id,
+                    vec![agent_client_protocol::v1::schema::ContentBlock::Text(
+                        agent_client_protocol::v1::schema::TextContent::new("Resume"),
+                    )],
+                );
+                prompt::receive(
+                    request,
+                    responder,
+                    connection,
+                    resume_dependencies.clone(),
+                    resume_history.clone(),
+                    resume_sessions.clone(),
+                    true,
+                )
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: agents::AcknowledgeRequest, responder, connection| {
+                let dependencies = update_agent.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_agent::call(
+                        dependencies,
+                        request.session_id,
+                    )
+                    .await
+                    {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
                     }
                 })
             },

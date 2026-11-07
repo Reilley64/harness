@@ -23,12 +23,58 @@ pub async fn call(
     content: String,
     selection: Option<domain::ModelSelection>,
     present_turn_event: PresentTurnEvent,
+    steering: tokio::sync::mpsc::Receiver<SteeringRequest>,
+    workspace: std::path::PathBuf,
+    cancellation: CancellationToken,
+) -> Result<Output, Error> {
+    coordinate(
+        dependencies.into(),
+        id,
+        Some(content),
+        selection,
+        present_turn_event,
+        steering,
+        workspace,
+        cancellation,
+    )
+    .await
+}
+
+pub(crate) async fn resume(
+    dependencies: Dependencies,
+    id: String,
+    present_turn_event: PresentTurnEvent,
+    steering: tokio::sync::mpsc::Receiver<SteeringRequest>,
+    workspace: std::path::PathBuf,
+    cancellation: CancellationToken,
+) -> Result<Output, Error> {
+    coordinate(
+        dependencies,
+        id,
+        None,
+        None,
+        present_turn_event,
+        steering,
+        workspace,
+        cancellation,
+    )
+    .await
+}
+
+async fn coordinate(
+    dependencies: Dependencies,
+    id: String,
+    content: Option<String>,
+    selection: Option<domain::ModelSelection>,
+    present_turn_event: PresentTurnEvent,
     mut steering: tokio::sync::mpsc::Receiver<SteeringRequest>,
     workspace: std::path::PathBuf,
     cancellation: CancellationToken,
 ) -> Result<Output, Error> {
-    let dependencies = dependencies.into();
-    if content.trim().is_empty() || content.len() > 1_048_576 {
+    if content
+        .as_ref()
+        .is_some_and(|content| content.trim().is_empty() || content.len() > 1_048_576)
+    {
         return Err(Error::caused_by(
             "Messages must contain text and be at most 1 MiB",
         ));
@@ -43,7 +89,23 @@ pub async fn call(
         .call(id)
         .await
         .map_err(Error::caused_by)?;
-    conversation.recover();
+    if conversation.recover() {
+        checkpoint(&dependencies, &mut conversation).await?;
+    }
+    if content.is_some() && conversation.resume_required {
+        return Err(Error::caused_by(
+            "Interrupted work requires explicit Resume",
+        ));
+    }
+    let selection = if content.is_none() {
+        Some(domain::ModelSelection {
+            provider_id: conversation.model.provider_id.clone(),
+            model_id: conversation.model.id.clone(),
+            effort: conversation.effort,
+        })
+    } else {
+        selection
+    };
     if conversation.workspace.is_none() {
         conversation.workspace = Some(workspace);
     }
@@ -92,19 +154,32 @@ pub async fn call(
     if cancellation.is_cancelled() {
         return Ok(Output { conversation });
     }
-    conversation
-        .begin_message(
-            uuid::Uuid::new_v4().to_string(),
-            uuid::Uuid::new_v4().to_string(),
-            content,
-        )
-        .map_err(Error::caused_by)?;
+    if let Some(content) = content {
+        conversation
+            .begin_message(
+                uuid::Uuid::new_v4().to_string(),
+                uuid::Uuid::new_v4().to_string(),
+                content,
+            )
+            .map_err(Error::caused_by)?;
+        conversation
+            .begin_run(uuid::Uuid::new_v4().to_string())
+            .map_err(Error::caused_by)?;
+    } else {
+        conversation.resume().map_err(Error::caused_by)?;
+    }
     conversation = dependencies
         .update_conversation
         .call(conversation)
         .await
         .map_err(Error::caused_by)?;
-    let buffer = Arc::new(Mutex::new(String::new()));
+    let buffer = Arc::new(Mutex::new(
+        conversation
+            .active_reply()
+            .map_err(Error::caused_by)?
+            .content
+            .clone(),
+    ));
     let streamed = buffer.clone();
     let visible = present_turn_event.clone();
     let present = PresentTurnEvent::new(move |event| {
@@ -216,6 +291,22 @@ async fn run(
     steering: &mut tokio::sync::mpsc::Receiver<SteeringRequest>,
     cancellation: &CancellationToken,
 ) -> Result<domain::MessageStatus, Error> {
+    let reply = conversation.active_reply().map_err(Error::caused_by)?;
+    if let Some(step) = reply.steps.last()
+        && step.calls.is_empty()
+    {
+        return Ok(
+            if reply
+                .generation_usage
+                .as_ref()
+                .is_some_and(|usage| usage.len() >= domain::MAX_MODEL_STEPS)
+            {
+                domain::MessageStatus::Limited
+            } else {
+                step.status
+            },
+        );
+    }
     let tools = dependencies
         .read_tools
         .call()
@@ -225,8 +316,25 @@ async fn run(
         Error::caused_by("Resume this conversation with an explicit workspace before using tools")
     })?;
     let deadline = std::time::Instant::now();
-    let mut executions = 0;
-    for step_number in 0..domain::MAX_MODEL_STEPS {
+    let reply = conversation.active_reply().map_err(Error::caused_by)?;
+    let mut executions = reply
+        .steps
+        .iter()
+        .flat_map(|step| &step.calls)
+        .filter(|call| {
+            !matches!(
+                call.status,
+                domain::ToolStatus::Invalid
+                    | domain::ToolStatus::Skipped
+                    | domain::ToolStatus::Requested
+            )
+        })
+        .count();
+    let attempts = reply
+        .generation_usage
+        .as_ref()
+        .map_or(reply.steps.len(), Vec::len);
+    for step_number in attempts..domain::MAX_MODEL_STEPS {
         while let Ok(request) = steering.try_recv() {
             accept(dependencies, conversation, request, buffer, cancellation).await?;
         }

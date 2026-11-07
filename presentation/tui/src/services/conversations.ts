@@ -1,4 +1,4 @@
-import type { Conversation, Message } from "../types/conversation.js";
+import type { Conversation, Message, Run } from "../types/conversation.js";
 import { messageStatuses } from "../types/conversation.js";
 import type { ModelEffort, ModelSelection } from "../types/model.js";
 import { modelEfforts } from "../types/model.js";
@@ -132,6 +132,9 @@ export function parseConversation(value: unknown): Conversation {
       "Incomplete conversation returned by the agent.",
     );
   return {
+    agent: value.agent == null ? null : parseAgent(value.agent),
+    runs: value.runs == null ? [] : parseRuns(value.runs),
+    resumeRequired: value.resumeRequired === true,
     id: id(value.id),
     workspace: typeof value.workspace === "string" ? value.workspace : null,
     usage: value.usage == null ? undefined : parseUsage(value.usage),
@@ -143,6 +146,37 @@ export function parseConversation(value: unknown): Conversation {
     updatedAt: counter(value.updatedAt),
     revision: counter(value.revision),
   };
+}
+
+function parseAgent(value: unknown) {
+  if (!record(value) || value.role !== "griller" || value.creatorId !== null)
+    throw new PresentationError("Invalid agent identity.");
+  return { id: id(value.id), role: "griller" as const, creatorId: null };
+}
+
+function parseRuns(value: unknown): Run[] {
+  if (!Array.isArray(value))
+    throw new PresentationError("Invalid run history.");
+  return value.map((run: unknown) => {
+    if (
+      !record(run) ||
+      typeof run.modelId !== "string" ||
+      run.task !== "grilling" ||
+      !["running", "needs_human", "stopped", "failed", "interrupted"].includes(
+        String(run.status),
+      )
+    )
+      throw new PresentationError("Invalid run.");
+    return {
+      id: id(run.id),
+      agentId: id(run.agentId),
+      replyId: id(run.replyId),
+      modelId: run.modelId,
+      effort: effort(run.effort),
+      task: "grilling",
+      status: run.status as Run["status"],
+    };
+  });
 }
 
 export function selectionMetadata(selection: ModelSelection) {

@@ -1,6 +1,9 @@
 #[derive(serde::Serialize)]
 pub(super) struct Record {
     version: u32,
+    agent: Option<AgentRecord>,
+    runs: Vec<RunRecord>,
+    resume_required: bool,
     workspace: Option<std::path::PathBuf>,
     id: String,
     provider_connection_id: String,
@@ -10,6 +13,21 @@ pub(super) struct Record {
     created_at: u64,
     updated_at: u64,
     revision: u64,
+}
+
+#[derive(serde::Serialize)]
+struct AgentRecord {
+    id: String,
+    role: String,
+}
+#[derive(serde::Serialize)]
+struct RunRecord {
+    id: String,
+    agent_id: String,
+    reply_id: String,
+    model_id: String,
+    effort: Option<EffortRecord>,
+    status: String,
 }
 
 #[derive(serde::Serialize)]
@@ -29,7 +47,31 @@ struct MessageRecord {
 impl From<domain::Conversation> for Record {
     fn from(conversation: domain::Conversation) -> Self {
         Self {
-            version: 2,
+            version: 3,
+            agent: conversation.agent.map(|agent| AgentRecord {
+                id: agent.id.0,
+                role: "griller".into(),
+            }),
+            runs: conversation
+                .runs
+                .into_iter()
+                .map(|run| RunRecord {
+                    id: run.id,
+                    agent_id: run.agent_id.0,
+                    reply_id: run.reply_id,
+                    model_id: run.model_id,
+                    effort: run.effort.map(Into::into),
+                    status: match run.status {
+                        domain::RunStatus::Running => "running",
+                        domain::RunStatus::NeedsHuman => "needs_human",
+                        domain::RunStatus::Stopped => "stopped",
+                        domain::RunStatus::Failed => "failed",
+                        domain::RunStatus::Interrupted => "interrupted",
+                    }
+                    .into(),
+                })
+                .collect(),
+            resume_required: conversation.resume_required,
             workspace: conversation.workspace,
             id: conversation.id,
             provider_connection_id: conversation.provider_connection_id,

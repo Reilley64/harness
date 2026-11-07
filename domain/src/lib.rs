@@ -65,6 +65,8 @@ mod message;
 pub use message::Message;
 
 pub use agent::Agent;
+mod run;
+mod run_status;
 pub use agent_id::AgentId;
 pub use agent_role::AgentRole;
 pub use conversation::Conversation;
@@ -75,4 +77,6 @@ pub use model_selection::ModelSelection;
 pub use provider::Provider;
 pub use provider_connection::ProviderConnection;
 pub use provider_id::ProviderId;
+pub use run::Run;
+pub use run_status::RunStatus;
 pub use selected_model::SelectedModel;

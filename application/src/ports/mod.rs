@@ -19,6 +19,12 @@ macro_rules! port {
     };
 }
 
+mod read_agent;
+pub use read_agent::ReadAgent;
+pub use read_agent::ReadAgentError;
+mod create_agent;
+pub use create_agent::CreateAgent;
+pub use create_agent::CreateAgentError;
 mod create_conversation;
 mod create_model_step;
 mod create_model_step_factory;
