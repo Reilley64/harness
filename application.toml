@@ -8,11 +8,21 @@ scopes = "openid profile email offline_access resource.invoke chatgpt.tokens.use
 open_browser = true
 timeout_seconds = 600
 
+[authentication.openrouter]
+issuer = "https://openrouter.ai"
+open_browser = true
+timeout_seconds = 600
+
+[replies.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+timeout_seconds = 600
+
 [replies.openai]
 base_url = "https://api.openai.com/v1"
 timeout_seconds = 600
 
 [models]
+openrouter_url = "https://openrouter.ai/api/v1/models"
 url = "http://localhost:3000/models.json"
 memory_ttl_seconds = 300
 

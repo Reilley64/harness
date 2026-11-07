@@ -26,6 +26,7 @@ struct RunRecord {
     agent_id: String,
     reply_id: String,
     model_id: String,
+    provider_id: String,
     effort: Option<EffortRecord>,
     status: String,
 }
@@ -37,6 +38,7 @@ struct MessageRecord {
     content: String,
     status: String,
     model_id: String,
+    provider_id: String,
     effort: Option<EffortRecord>,
     steps: Vec<StepRecord>,
     steering: Vec<SteeringRecord>,
@@ -47,7 +49,7 @@ struct MessageRecord {
 impl From<domain::Conversation> for Record {
     fn from(conversation: domain::Conversation) -> Self {
         Self {
-            version: 3,
+            version: 5,
             agent: conversation.agent.map(|agent| AgentRecord {
                 id: agent.id.0,
                 role: "griller".into(),
@@ -60,6 +62,7 @@ impl From<domain::Conversation> for Record {
                     agent_id: run.agent_id.0,
                     reply_id: run.reply_id,
                     model_id: run.model_id,
+                    provider_id: run.provider_id.0,
                     effort: run.effort.map(Into::into),
                     status: match run.status {
                         domain::RunStatus::Running => "running",
@@ -100,6 +103,7 @@ impl From<domain::Conversation> for Record {
                     }
                     .into(),
                     model_id: message.model_id,
+                    provider_id: message.provider_id.0,
                     effort: message.effort.map(Into::into),
                     generation_usage: message.generation_usage.map(|reports| {
                         reports
@@ -135,6 +139,12 @@ impl From<domain::Conversation> for Record {
 struct StepRecord {
     id: String,
     output: String,
+    #[serde(default)]
+    resolved_model_id: Option<String>,
+    #[serde(default)]
+    catalog_canonical_id: Option<String>,
+    #[serde(default)]
+    serving_provider: Option<String>,
     calls: Vec<CallRecord>,
     usage: Option<UsageRecord>,
     status: Option<String>,
@@ -170,6 +180,9 @@ impl From<domain::ModelStep> for StepRecord {
         Self {
             id: step.id,
             output: step.output,
+            resolved_model_id: step.resolved_model_id,
+            catalog_canonical_id: step.catalog_canonical_id,
+            serving_provider: step.serving_provider,
             usage: step.usage.map(|usage| UsageRecord {
                 input_tokens: usage.input_tokens,
                 output_tokens: usage.output_tokens,
@@ -209,6 +222,10 @@ struct ModelRecord {
     id: String,
     name: String,
     context_window: Option<u64>,
+    #[serde(default)]
+    canonical_id: Option<String>,
+    #[serde(default)]
+    worker_supported: Option<bool>,
     provider_id: String,
     efforts: Vec<EffortRecord>,
     pricing: Option<PricingRecord>,
@@ -247,6 +264,8 @@ impl From<domain::Model> for ModelRecord {
             id: model.id,
             name: model.name,
             context_window: model.context_window,
+            canonical_id: model.canonical_id,
+            worker_supported: model.worker_supported,
             provider_id: model.provider_id.0,
             efforts: model.efforts.into_iter().map(Into::into).collect(),
             pricing: model.pricing.map(|pricing| PricingRecord {

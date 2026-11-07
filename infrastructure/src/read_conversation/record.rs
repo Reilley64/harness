@@ -38,6 +38,8 @@ struct RunRecord {
     agent_id: String,
     reply_id: String,
     model_id: String,
+    #[serde(default)]
+    provider_id: Option<String>,
     effort: Option<EffortRecord>,
     status: String,
     #[serde(default)]
@@ -51,6 +53,8 @@ struct MessageRecord {
     content: String,
     status: String,
     model_id: String,
+    #[serde(default)]
+    provider_id: Option<String>,
     effort: Option<EffortRecord>,
     #[serde(default)]
     steps: Vec<StepRecord>,
@@ -64,7 +68,7 @@ impl TryFrom<Record> for domain::Conversation {
     type Error = StorageError;
 
     fn try_from(dto: Record) -> Result<Self, Self::Error> {
-        if !matches!(dto.version, 1..=5) {
+        if !matches!(dto.version, 1..=6) {
             return Err("Unsupported conversation format".into());
         }
         conversations::validate_id(&dto.id)?;
@@ -73,6 +77,14 @@ impl TryFrom<Record> for domain::Conversation {
         let mut ids = std::collections::HashSet::new();
         for (index, message) in dto.messages.into_iter().enumerate() {
             conversations::validate_id(&message.id)?;
+            if dto.version >= 5
+                && message
+                    .provider_id
+                    .as_ref()
+                    .is_none_or(|id| !matches!(id.as_str(), "openai" | "openrouter"))
+            {
+                return Err("Missing or invalid message provider provenance".into());
+            }
             if !ids.insert(message.id.clone()) {
                 return Err("Duplicate message identity".into());
             }
@@ -101,6 +113,11 @@ impl TryFrom<Record> for domain::Conversation {
                 content: message.content,
                 status,
                 model_id: message.model_id,
+                provider_id: domain::ProviderId(
+                    message
+                        .provider_id
+                        .unwrap_or_else(|| dto.model.provider_id.clone()),
+                ),
                 effort: message.effort.map(Into::into),
                 generation_usage: message
                     .generation_usage
@@ -199,7 +216,7 @@ impl TryFrom<Record> for domain::Conversation {
             .flat_map(|s| &s.calls)
         {
             if let Some(draft) = &call.draft {
-                if dto.version < 5
+                if dto.version < 6
                     || dto.agent.as_ref().is_none_or(|a| a.role != "setup")
                     || call.name != "write"
                     || dto.workspace.as_ref() != Some(&draft.workspace)
@@ -215,7 +232,7 @@ impl TryFrom<Record> for domain::Conversation {
             .map(|agent| {
                 conversations::validate_id(&agent.id)?;
                 if !matches!(agent.role.as_str(), "griller" | "setup")
-                    || (agent.role == "setup" && dto.version < 5)
+                    || (agent.role == "setup" && dto.version < 6)
                 {
                     return Err(StorageError::from("Unsupported agent role"));
                 }
@@ -273,6 +290,11 @@ impl TryFrom<Record> for domain::Conversation {
                         .as_ref()
                         .is_none_or(|agent| agent.id.0 != run.agent_id)
                     || run.model_id != reply.model_id
+                    || dto.version >= 5 && run.provider_id.is_none()
+                    || run
+                        .provider_id
+                        .as_ref()
+                        .is_some_and(|id| id != &reply.provider_id.0)
                     || effort != reply.effort
                 {
                     return Err(StorageError::from("Invalid run association"));
@@ -316,6 +338,7 @@ impl TryFrom<Record> for domain::Conversation {
                     agent_id: domain::AgentId(run.agent_id),
                     reply_id: run.reply_id,
                     model_id: run.model_id,
+                    provider_id: reply.provider_id.clone(),
                     effort,
                     status,
                 })
@@ -396,6 +419,12 @@ impl TryFrom<SnapshotRecord> for domain::InstructionSnapshot {
 struct StepRecord {
     id: String,
     output: String,
+    #[serde(default)]
+    resolved_model_id: Option<String>,
+    #[serde(default)]
+    catalog_canonical_id: Option<String>,
+    #[serde(default)]
+    serving_provider: Option<String>,
     calls: Vec<CallRecord>,
     #[serde(default)]
     usage: Option<UsageRecord>,
@@ -458,7 +487,20 @@ impl TryFrom<StepRecord> for domain::ModelStep {
     type Error = StorageError;
     fn try_from(step: StepRecord) -> Result<Self, Self::Error> {
         conversations::validate_id(&step.id)?;
-        if step.output.len() > 1_048_576 {
+        if step
+            .resolved_model_id
+            .as_ref()
+            .is_some_and(|s| s.is_empty() || s.len() > 512 || s.chars().any(char::is_control))
+            || step
+                .catalog_canonical_id
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > 512 || s.chars().any(char::is_control))
+            || step
+                .serving_provider
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > 256 || s.chars().any(char::is_control))
+            || step.output.len() > 1_048_576
+        {
             return Err("Invalid model-step continuation".into());
         }
         let parsed: serde_json::Value = serde_json::from_str(&step.output)?;
@@ -512,6 +554,9 @@ impl TryFrom<StepRecord> for domain::ModelStep {
         Ok(Self {
             id: step.id,
             output: step.output,
+            resolved_model_id: step.resolved_model_id,
+            catalog_canonical_id: step.catalog_canonical_id,
+            serving_provider: step.serving_provider,
             usage: step
                 .usage
                 .map(|usage| domain::TokenUsage::new(usage.input_tokens, usage.output_tokens))
@@ -535,6 +580,10 @@ struct ModelRecord {
     name: String,
     #[serde(default)]
     context_window: Option<u64>,
+    #[serde(default)]
+    canonical_id: Option<String>,
+    #[serde(default)]
+    worker_supported: Option<bool>,
     provider_id: String,
     #[serde(default)]
     efforts: Vec<EffortRecord>,
@@ -584,6 +633,8 @@ impl From<ModelRecord> for domain::Model {
             id: dto.id,
             name: dto.name,
             context_window: dto.context_window,
+            canonical_id: dto.canonical_id,
+            worker_supported: dto.worker_supported,
             provider_id: domain::ProviderId(dto.provider_id),
             efforts: dto.efforts.into_iter().map(Into::into).collect(),
             pricing: dto.pricing.map(Into::into),

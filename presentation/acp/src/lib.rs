@@ -117,10 +117,10 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     InitializeResponse::new(ProtocolVersion::V1)
                         .agent_info(Implementation::new("harness", env!("CARGO_PKG_VERSION")))
                         .agent_capabilities(AgentCapabilities::new().load_session(true))
-                        .auth_methods(vec![AuthMethod::Agent(
-                            AuthMethodAgent::new("openai", "Continue with ChatGPT")
-                                .description("Connect your ChatGPT plan to Harness"),
-                        )])
+                        .auth_methods(vec![
+                            AuthMethod::Agent(AuthMethodAgent::new("openai", "Continue with ChatGPT").description("Connect your ChatGPT plan to Harness")),
+                            AuthMethod::Agent(AuthMethodAgent::new("openrouter", "Continue with OpenRouter").description("Connect a separately billed OpenRouter API key; no inference during setup")),
+                        ])
                         .meta(metadata),
                 )
             },
@@ -191,7 +191,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 connection.spawn(async move {
                     let connection = auth_connection;
                     let provider_id = request.method_id.to_string();
-                    if provider_id != "openai" {
+                    if !matches!(provider_id.as_str(), "openai" | "openrouter") {
                         return responder.respond_with_error(
                             Error::invalid_params().data("Unsupported authentication method"),
                         );

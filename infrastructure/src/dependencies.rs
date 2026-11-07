@@ -220,12 +220,27 @@ impl Dependencies {
                     Box::pin(async move { Ok(future.await?) })
                 })
             })
+            .read_models(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_models(
+                    &settings.models.url,
+                    &settings.models.openrouter_url,
+                    &settings.app_data_path.join("models.json"),
+                    Duration::from_secs(settings.models.memory_ttl_seconds),
+                );
+                ports::ReadModels::new(move || {
+                    let future = read();
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
             .create_model_step_factory(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let read_model_allowlist: &ports::ReadModelAllowlist = deps.as_ref();
                 let read_model_allowlist = read_model_allowlist.clone();
                 let reply_settings = settings.replies.clone();
                 let authentication = settings.authentication.clone();
+                let read_models: &ports::ReadModels = deps.as_ref();
+                let read_models = read_models.clone();
                 let credentials_path = settings.app_data_path.join("auth");
                 ports::CreateModelStepFactory::new(move |provider_id| {
                     let create = create_model_step_factory::create_model_step_factory(
@@ -234,6 +249,7 @@ impl Dependencies {
                         &credentials_path,
                         &provider_id,
                         read_model_allowlist.clone(),
+                        read_models.clone(),
                     )?;
                     Ok(create)
                 })
@@ -260,18 +276,6 @@ impl Dependencies {
                 ports::UpdateModelSelection::new(move |selection| {
                     let result = update(selection);
                     Box::pin(async move { Ok(result.await?) })
-                })
-            })
-            .read_models(|deps| {
-                let settings: &Settings = deps.as_ref();
-                let read = read_models(
-                    &settings.models.url,
-                    &settings.app_data_path.join("models.json"),
-                    Duration::from_secs(settings.models.memory_ttl_seconds),
-                );
-                ports::ReadModels::new(move || {
-                    let future = read();
-                    Box::pin(async move { Ok(future.await?) })
                 })
             })
             .read_providers(|deps| {

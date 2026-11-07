@@ -147,10 +147,10 @@ inherited 20 ms incomplete-prefix ambiguity remains, not arbitrary-prefix proof.
 
 ## Persistence and provenance
 
-Conversation v5 adds independently owned optional draft records to tool calls and
-permits the actual Setup role. Existing versions 1–4 still load, preserving accepted
+Conversation v6 adds independently owned optional draft records to tool calls and
+permits the actual Setup role. Existing versions 1–5 still load, preserving accepted
 Griller snapshots, run references and explicitly Unknown historical lineage.
-Only v5 may associate Setup/drafts; missing draft metadata for Draft status,
+Only v6 may associate Setup/drafts; missing draft metadata for Draft status,
 invalid paths/bounds or mismatched role/workspace are rejected. There is no invented
 legacy approval. Schema conversion, parsing and encoding stay in each owning adapter
 on bounded blocking workers. Existing 16 MiB capacity/reservation gates still run

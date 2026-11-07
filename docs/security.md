@@ -8,6 +8,10 @@ to continue the conversation. Responses requests use `store: false`; that is a
 provider API setting, not a guarantee about the provider's retention practices.
 Web search sends its query to DuckDuckGo. Catalog endpoints receive catalog GETs.
 OAuth authorization, token exchange and identity verification contact the issuer.
+OpenRouter PKCE mints a separate API key without paid inference. That key is stored
+only in its private backend record and is never loaded from OpenAI credentials.
+The inference destination must match both its stored and configured issuer origin;
+redirects cannot forward it elsewhere. Public catalogs are not authentication.
 Provider URLs require HTTPS, with loopback HTTP allowed for fixtures; credential
 requests and inference do not follow redirects. Token, refresh, discovery and
 verification-key response bodies are bounded at 1 MiB.

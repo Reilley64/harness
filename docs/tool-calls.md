@@ -63,14 +63,21 @@ their next mutation.
 
 The adapter retains provider output items, call IDs, and opaque reasoning for
 stateless continuation. Opaque data never enters ACP snapshots. When changing
-models, reasoning items from a different model are omitted, but recorded actions
-and results remain. Reused provider call IDs are rejected before new execution.
+provider or model, private reasoning and provider item/call identities are omitted;
+ordinary text and reconstructed requests with honest results remain. The new
+provider uses its independently stored credential. OpenRouter requires the
+requested parameters and disables endpoint fallback and gateway plugins; a
+reported incompatible model is an error before tools, never a replacement worker. Reused provider call IDs are rejected before new execution.
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 5 with optional Setup tool drafts, agent/run associations and immutable instruction
-snapshots; versions 1–4 are read without inventing historical instruction provenance
-or rewriting until mutation/recovery. See [role guidance](role-guidance.md).
+Records are schema version 6 with optional Setup tool drafts, per-message/run
+provider provenance, optional resolved-model/serving-provider metadata, agent/run
+associations and immutable instruction snapshots. Versions 1 through 5 remain
+readable without rewriting until mutation/recovery; versions 1 through 4 use
+their single stored provider for missing legacy provider provenance. Historical
+instruction provenance and human consent are never invented.
+See [role guidance](role-guidance.md) and [repository Setup](repository-setup.md).
 Read/create/update conversation adapters and preference adapters each own their
 serialized `Record` types. Shared filesystem helpers operate on bytes, not DTOs.
 

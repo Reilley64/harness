@@ -29,7 +29,8 @@ application operations rather than infrastructure adapters directly.
 Send the standard ACP `initialize` request with `protocolVersion: 1`.
 The response identifies the agent as `harness`, enables `agentCapabilities.loadSession`,
 advertises the agent-handled
-`openai` authentication method (Continue with ChatGPT), and includes:
+`openai` (Continue with ChatGPT) and `openrouter` (Continue with OpenRouter)
+authentication methods, and includes:
 
 ```json
 {
@@ -112,7 +113,7 @@ Successful result:
   "jsonrpc": "2.0",
   "id": 2,
   "result": {
-    "providers": [{ "id": "openai", "name": "ChatGPT" }]
+    "providers": [{ "id": "openai", "name": "ChatGPT" }, { "id": "openrouter", "name": "OpenRouter" }]
   }
 }
 ```
@@ -188,7 +189,9 @@ remember the validated selection used for that message.
 ## Provider connection creation
 
 Typing `/auth` opens the picker and loads the catalog asynchronously. Selecting
-ChatGPT calls standard ACP `authenticate` with `methodId: "openai"`. The adapter
+ChatGPT calls standard ACP `authenticate` with `methodId: "openai"`; OpenRouter
+uses `methodId: "openrouter"` and the same safe challenge/cancellation envelope.
+The adapter
 calls `create_provider_connection::call`; the use case selects a provider-bound
 `CreateProviderConnection` through `CreateProviderConnectionFactory`, then invokes
 it. Infrastructure owns provider selection, OAuth, and credential persistence.
@@ -272,8 +275,8 @@ Standard ACP v1 methods present the conversation use cases:
   Optional image, audio and embedded-resource blocks remain unsupported. Mixed
   text retains its whitespace and the combined message has a 1 MiB UTF-8 limit.
   Optional model
-  selection metadata changes the next reply's model/effort within the same
-  provider. The user message and in-progress assistant are stored first.
+  selection metadata changes the next reply's provider/model/effort after current
+  admission and resolution of that provider's saved connection. The user message and in-progress assistant are stored first.
 - `session/update` carries `agent_message_chunk` text with a stable `messageId`
   during inference. Credentials and opaque reasoning events are never forwarded.
 - `session/cancel` signals the active reply. The prompt finishes only after the
@@ -282,7 +285,9 @@ Standard ACP v1 methods present the conversation use cases:
 
 New/load/prompt responses include `_meta["harness/conversation"]`: ID, provider
 connection ID, model/effort, ordered messages with stable IDs/roles/content/status
-and per-reply model/effort, timestamps, and revision. This is a safe presentation
+and per-reply provider/model/effort, timestamps, and revision. Message and run
+snapshots add `providerId`; legacy single-provider records derive it only from
+their stored provider. This is a safe presentation
 snapshot, never the credential record. Incomplete and refused replies map to
 `max_tokens` and `refusal`; normal completion maps to `end_turn`.
 

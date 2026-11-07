@@ -115,11 +115,7 @@ async fn coordinate(
         model_id: conversation.model.id.clone(),
         effort: conversation.effort,
     });
-    if selection.provider_id != conversation.model.provider_id {
-        return Err(Error::caused_by(
-            "Changing providers requires a new conversation",
-        ));
-    }
+    let changing_provider = selection.provider_id != conversation.model.provider_id;
     conversation.model = model_access::read_model(
         &dependencies.read_models,
         &selection.provider_id,
@@ -129,7 +125,7 @@ async fn coordinate(
     .await
     .map_err(Error::caused_by)?;
     conversation.effort = selection.effort;
-    model_access::read(
+    let connection = model_access::read(
         &dependencies.read_model_allowlist,
         &dependencies.read_provider_connection,
         &dependencies.create_model_step_factory,
@@ -137,6 +133,9 @@ async fn coordinate(
     )
     .await
     .map_err(Error::caused_by)?;
+    if changing_provider {
+        conversation.provider_connection_id = connection.id;
+    }
     if conversation.agent.is_some() {
         if content.is_none() {
             conversation.run_instructions().context("Required run instruction snapshot is unknown; inspect /guidance, acknowledge the interruption and adopt instructions for new work").map_err(Error::caused_by)?.validate().context("Required run instruction snapshot is invalid").map_err(Error::caused_by)?;

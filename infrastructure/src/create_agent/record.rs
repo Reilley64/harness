@@ -26,6 +26,10 @@ struct ModelRecord {
     id: String,
     name: String,
     context_window: Option<u64>,
+    #[serde(default)]
+    canonical_id: Option<String>,
+    #[serde(default)]
+    worker_supported: Option<bool>,
     provider_id: String,
     efforts: Vec<&'static str>,
     pricing: Option<PricingRecord>,
@@ -50,11 +54,7 @@ impl Record {
         role: domain::AgentRole,
     ) -> Self {
         Self {
-            version: if role == domain::AgentRole::Setup {
-                5
-            } else {
-                3
-            },
+            version: 6,
             agent: AgentRecord {
                 id: agent_id,
                 role: if role == domain::AgentRole::Setup {
@@ -72,6 +72,8 @@ impl Record {
                 id: model.id,
                 name: model.name,
                 context_window: model.context_window,
+                canonical_id: model.canonical_id,
+                worker_supported: model.worker_supported,
                 provider_id: model.provider_id.0,
                 efforts: model.efforts.into_iter().map(effort_name).collect(),
                 pricing: model.pricing.map(|pricing| PricingRecord {

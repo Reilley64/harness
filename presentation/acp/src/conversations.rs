@@ -130,7 +130,7 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
         })),
         "runs": conversation.runs.iter().map(|run| serde_json::json!({
             "id": run.id, "agentId": run.agent_id.0, "replyId": run.reply_id,
-            "modelId": run.model_id, "effort": effort(run.effort),
+            "modelId": run.model_id, "providerId": run.provider_id.0, "effort": effort(run.effort),
             "task": run.instructions.as_ref().and_then(|id| conversation.instruction_snapshots.iter().find(|snapshot| &snapshot.id == id)).map_or("grilling", |snapshot| snapshot.phase.as_str()),
             "instructions": run.instructions,
             "status": match run.status {
@@ -162,7 +162,7 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
                 domain::MessageStatus::Limited => "limited",
                 domain::MessageStatus::Refused => "refused",
             },
-            "modelId": message.model_id,
+            "modelId": message.model_id, "providerId": message.provider_id.0,
             "tools": message.steps.iter().flat_map(|step|&step.calls).map(|call|tools::summary(&message.id,call)).collect::<Vec<_>>(),
             "steering": message.steering.iter().map(|s|serde_json::json!({"id":s.id,"text":s.text,"afterStep":s.after_step})).collect::<Vec<_>>(),
             "effort": effort(message.effort),

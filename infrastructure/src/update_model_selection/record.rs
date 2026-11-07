@@ -33,6 +33,10 @@ struct ModelRecord {
     name: String,
     #[serde(default)]
     context_window: Option<u64>,
+    #[serde(default)]
+    canonical_id: Option<String>,
+    #[serde(default)]
+    worker_supported: Option<bool>,
     provider_id: String,
     #[serde(default)]
     efforts: Vec<EffortRecord>,
@@ -93,6 +97,8 @@ impl From<domain::Model> for ModelRecord {
             id: model.id,
             name: model.name,
             context_window: model.context_window,
+            canonical_id: model.canonical_id,
+            worker_supported: model.worker_supported,
             provider_id: model.provider_id.0,
             efforts: model.efforts.into_iter().map(Into::into).collect(),
             pricing: model.pricing.map(|pricing| PricingRecord {
@@ -110,6 +116,8 @@ impl From<ModelRecord> for domain::Model {
             id: dto.id,
             name: dto.name,
             context_window: dto.context_window,
+            canonical_id: dto.canonical_id,
+            worker_supported: dto.worker_supported,
             provider_id: domain::ProviderId(dto.provider_id),
             efforts: dto.efforts.into_iter().map(Into::into).collect(),
             pricing: dto.pricing.map(Into::into),

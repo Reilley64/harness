@@ -37,7 +37,10 @@ See [tool calls](tool-calls.md) for the execution and permissions contract.
 Changing the picker selection saves the last-selected model/effort preference,
 not a conversation. The next
 message validates and saves the new model/effort and preserves older replies'
-provenance. Switching a conversation to another provider is rejected.
+provenance. A subsequent prompt can explicitly switch to the other connected,
+allowed compatible provider. Its own saved connection is resolved; earlier messages
+and runs retain their original provider/model/effort and reported usage. A switch
+never authorizes replay of an uncertain tool effect.
 
 Current application-wide model permission is revalidated before every inference
 step and again at provider HTTP admission after credential resolution. Revocation
@@ -50,10 +53,31 @@ OpenAI inference uses `POST https://api.openai.com/v1/responses` with the subscr
 Bearer token, `store: false`, `stream: true`, and text history. Effort maps to
 `low`, `medium`, `high`, or provider spelling `xhigh`.
 
+OpenRouter uses its own key with `POST https://openrouter.ai/api/v1/responses`
+through the same Responses HTTP/SSE decoder and existing application tool loop.
+It sends the exact selected nested model ID, `store:false`, `stream:true`,
+`provider:{allow_fallbacks:false,require_parameters:true}` and an empty plugin
+list. No model fallback list, hosted advisor, paid connect probe or retry is added.
+A returned OpenRouter model must match the requested ID or its exact catalog
+canonical slug before accepting tools. Available terminal resolved-model and
+serving-provider strings are bounded and retained privately on the model step;
+absence remains unknown, not independently verified execution provenance.
+
 Completed text pairs are replayed. Turns with real tool calls also retain their
 original request, canonical provider continuation, steering, and honest function
 results after interruption. Unfinished prose is excluded. No provider-side stored
-response IDs, automatic mutation replay, or automatic retries are used.
+response IDs, automatic mutation replay, or automatic retries are used. Across
+provider or model changes, only ordinary assistant text and reconstructed function
+requests/results are replayed: private reasoning, output item IDs and original
+provider call IDs are omitted. Function request/result pairs use recorded local
+execution IDs for this translation. Compatible same-provider/model continuation
+retains its original opaque items only while its generation-time catalog canonical
+identity still matches, even if the response reported the unversioned requested ID.
+Missing historical canonical ownership cannot establish compatibility with an
+available canonical identity. A canonical change between body preparation and HTTP
+admission rejects the request before sending; it does not transmit the old private
+context or automatically retry. Safe snapshots expose message/run provider IDs,
+not private continuation.
 
 SSE parsing handles fragmented UTF-8, CRLF, multiline data, and keepalive comments.
 Content types are compared case-insensitively. If the header is missing, empty, or
@@ -86,6 +110,9 @@ Settings are embedded, with environment-only overrides:
   loopback HTTP fixtures.
 - `REPLIES__OPENAI__TIMEOUT_SECONDS`: 600; must be nonzero. Applies to inference,
   not to abandoning a credential-refresh commit.
+- `REPLIES__OPENROUTER__BASE_URL`: `https://openrouter.ai/api/v1`; its origin must
+  match the configured/stored OpenRouter issuer before credentials are used.
+- `REPLIES__OPENROUTER__TIMEOUT_SECONDS`: 600; nonzero, cancellable inference.
 - `APP_DATA_PATH`: `~/.harness`, the only storage-root setting.
 
 Credential resolution and on-demand refresh are described in
@@ -101,12 +128,19 @@ callers cannot supply paths. Port-owned JSON records stay in infrastructure, dom
 no Serde dependency, and unknown versions/corrupt records are rejected unchanged.
 Creation owns encode-only records, reading owns decode-only records, and updating
 owns both directions; no serialized representation is shared between adapters.
-Version three adds an optional Griller identity, runs linked to assistant replies,
-and an interruption gate. Version five adds actual Setup role/durable tool drafts and exact human
-confirmation; versions one through four remain supported without invented consent.
-See [repository Setup](repository-setup.md). Version four adds immutable instruction snapshots,
-a selected snapshot reference and each run's actual snapshot reference; absent
-historical provenance stays unknown. See [role guidance](role-guidance.md). Each run records its own stable identity, agent identity,
+Version three adds an optional Griller identity, linked runs and an interruption
+gate. Version four adds immutable instruction snapshots, a selected reference and
+each run's actual snapshot reference; absent historical instructions remain
+unknown. Version five adds required per-message/run provider provenance. Optional
+step-level resolved identity/serving provider, generation-time catalog canonical
+ownership and catalog canonical/worker capabilities are retained in independently
+owned records. Versions one through four retain their only justified single
+stored provider when historical message/run provider fields are absent. Version
+six adds the actual Setup role, durable tool drafts and exact human confirmation;
+versions one through five remain readable without invented consent or rewriting
+until mutation/recovery. Mutation writes version six. See
+[role guidance](role-guidance.md) and [repository Setup](repository-setup.md).
+Each run records its own stable identity, agent identity,
 model/effort snapshot and lifecycle status. Reading/updating validates associations
 and chronological reply/status consistency, including complete run coverage for
 Griller messages. An associated Griller requires an absolute stored workspace;
@@ -149,7 +183,14 @@ sensitive plaintext history; protect/back up the app data directory accordingly.
 ## Catalog caches
 
 Model/provider catalogs retain their TTL memory cache and remote-first disk
-fallback. Remote bodies, fallback files, and encoded cache files each have a
+fallback. The model adapter independently combines the configured pilot catalog
+(`MODELS__URL`) with OpenRouter's public catalog
+(`MODELS__OPENROUTER_URL`, default `https://openrouter.ai/api/v1/models`).
+OpenRouter entries cannot be supplied by the pilot catalog. Its raw independently
+owned response is cached at `openrouter-models.json`. Either source can remain
+usable if the other fails; entries from the unavailable source are unavailable
+unless its bounded fallback succeeds. Catalog presence/parameter support never
+proves account access, inference quality or actual execution. Remote bodies, fallback files, and encoded cache files each have a
 16 MiB limit, checked before parsing or growing the encoded buffer past that
 limit. Both advertised HTTP lengths and streamed chunks are bounded. Parsing,
 cache encoding, memory-cache cloning, and domain conversion run on blocking
