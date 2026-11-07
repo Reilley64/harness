@@ -1,4 +1,5 @@
 use crate::Agent;
+use crate::AgentRole;
 use crate::InstructionSnapshot;
 use crate::MAX_MODEL_STEPS;
 use crate::Message;
@@ -13,11 +14,13 @@ use crate::SteeringInstruction;
 use crate::ToolCall;
 use crate::ToolStatus;
 use crate::UsageSummary;
+use crate::WorkAssignment;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conversation {
     pub id: String,
     pub agent: Option<Agent>,
+    pub assignment: Option<WorkAssignment>,
     pub runs: Vec<Run>,
     pub instruction_snapshots: Vec<InstructionSnapshot>,
     pub selected_instructions: Option<String>,
@@ -65,6 +68,11 @@ impl Conversation {
             );
         }
         snapshot.validate()?;
+        if self.agent.as_ref().is_some_and(|agent| {
+            (agent.role == AgentRole::ChiefOfStaff) != (snapshot.phase == "coordination")
+        }) {
+            return Err("The instruction phase does not belong to this durable role");
+        }
         if let Some(existing) = self
             .instruction_snapshots
             .iter()

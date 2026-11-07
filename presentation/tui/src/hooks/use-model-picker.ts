@@ -215,6 +215,11 @@ export function useModelPicker(
   }
 
   return {
+    restore: (next: ModelSelection) => {
+      committed.current = next;
+      setSelection(next);
+      setError(null);
+    },
     policyDraft,
     policyError,
     policySaving,

@@ -18,6 +18,7 @@ pub(crate) fn create_model_step(
     credentials_path: &Path,
     read_model_allowlist: application::ports::ReadModelAllowlist,
     read_models: application::ports::ReadModels,
+    read_work: application::ports::ReadWork,
 ) -> impl Fn(
     domain::Conversation,
     Vec<domain::Tool>,
@@ -45,5 +46,6 @@ pub(crate) fn create_model_step(
         },
         read_model_allowlist,
         read_models,
+        read_work,
     )
 }

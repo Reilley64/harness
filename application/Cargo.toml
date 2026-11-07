@@ -16,4 +16,4 @@ ohno.workspace = true
 parking_lot.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v5"] }

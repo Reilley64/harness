@@ -6,6 +6,7 @@ use crate::read_file;
 use crate::read_paths;
 use crate::read_text_matches;
 use crate::read_web_search;
+use crate::read_work_proposal;
 use crate::update_file;
 
 pub(crate) fn definitions(tools: &[domain::Tool]) -> serde_json::Value {
@@ -22,6 +23,7 @@ pub(crate) fn definitions(tools: &[domain::Tool]) -> serde_json::Value {
                 domain::Tool::Grep => read_text_matches::definition(),
                 domain::Tool::AstSearch => read_code_matches::definition(),
                 domain::Tool::WebSearch => read_web_search::definition(),
+                domain::Tool::PublishWork => read_work_proposal::definition(),
             })
             .collect(),
     )

@@ -9,13 +9,17 @@ use application::use_cases::read_model_allowlist;
 use application::use_cases::read_model_selection;
 use application::use_cases::read_models;
 use application::use_cases::read_providers;
+use application::use_cases::read_work;
 use application::use_cases::update_agent;
 use application::use_cases::update_guidance;
 use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
+use application::use_cases::update_work;
 
 #[fundle::bundle]
 pub struct Dependencies {
+    pub read_work: read_work::Dependencies,
+    pub update_work: update_work::Dependencies,
     pub read_model_allowlist: read_model_allowlist::Dependencies,
     pub update_model_allowlist: update_model_allowlist::Dependencies,
     pub providers: read_providers::Dependencies,

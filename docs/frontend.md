@@ -306,7 +306,9 @@ Explicit resume takes precedence and does not overwrite this default just by
 reading a conversation. A missing preference is normal; an invalid one produces
 a nonfatal warning and can be replaced by choosing a model. Picker commits are
 serialized through `_harness/model-selection/update`; exit waits for these saves.
-There is no conversation command or picker.
+`/open <conversation-id>` opens an existing saved conversation while idle;
+`F3` or `/griller` returns to the repository Griller. No general conversation
+picker or background conversation switching is implemented here.
 
 The ACP service translates standard sessions/prompts/updates/cancellation, parses
 safe conversation metadata, and never receives credentials. On exit it cancels
@@ -381,10 +383,26 @@ observations are not a human terminal-emulator visual signoff.
 `/guidance` opens the real ACP-backed [guidance inspection](role-guidance.md),
 including selected/latest-run/available snapshots, exact source/version/upstream,
 required blocks and explicit overrides. Scoped/reference/phase commands inspect
-candidates; `/guidance adopt` records explicit adoption for future work. Bundled
-later roles are assets only, never map nodes or creation arrows. Inspection
+candidates; `/guidance adopt` records explicit adoption for future work. Bundled later roles remain assets only. The approved-work CoS is a separately
+created actual conversation with recorded creator and coordination instructions;
+inspection alone never creates it. Inspection
 preserves the mounted chat, drafts, titles and Escape-back behavior. It does not
 start inference; active runs continue with their captured snapshot.
+
+## Approved work and CoS
+
+`/work <work-id>` opens a scrollable exact-source/version/scope/criteria proposal
+inspector. `a` then `y` records trusted approval and hands off to a separate durable
+CoS through real ACP/application operations; `n`/Escape declines/dismisses. No
+chat/prose/model tool is approval. `o` opens the delivered CoS without inference.
+The title is `harness - Chief of Staff` for that conversation. `F3` returns to
+Griller, and per-conversation draft buckets retain unsubmitted and rejected text.
+Stale read/open/approval results cannot take over a newer target/view. Admitted
+writes are drained on shutdown, not falsely rolled back by dismissal. Both roles
+retain ordinary selected-leaf Stop and explicit Resume; creator is not Stop
+ownership. See [approved work](approved-work.md) for authority, repeat clicks,
+publication conventions, missing guidance recovery and unavailable later execution.
+The current map describes the selected real agent, not a simulated full fleet.
 
 ## TanStack AI
 

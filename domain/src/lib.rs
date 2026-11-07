@@ -1,3 +1,15 @@
+mod publish_work_arguments;
+pub use publish_work_arguments::PublishWorkArguments;
+mod approved_work;
+mod work_approval;
+mod work_assignment;
+mod work_proposal;
+mod work_publication;
+pub use approved_work::ApprovedWork;
+pub use work_approval::WorkApproval;
+pub use work_assignment::WorkAssignment;
+pub use work_proposal::WorkProposal;
+pub use work_publication::WorkPublication;
 mod model_allowlist;
 mod model_pattern;
 pub use model_allowlist::ModelAllowlist;

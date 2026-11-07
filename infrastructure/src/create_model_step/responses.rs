@@ -16,6 +16,7 @@ pub(super) fn create_model_step<P>(
     prepare: P,
     read_model_allowlist: application::ports::ReadModelAllowlist,
     read_models: application::ports::ReadModels,
+    read_work: application::ports::ReadWork,
 ) -> impl Fn(
     domain::Conversation,
     Vec<domain::Tool>,
@@ -44,6 +45,7 @@ where
         let base_url = base_url.clone();
         let prepare = prepare.clone();
         let read_models = read_models.clone();
+        let read_work = read_work.clone();
         let read_model_allowlist = read_model_allowlist.clone();
         Box::pin(async move {
             let mut reported_usage = None;
@@ -83,6 +85,13 @@ where
                     if !policy.permits(&conversation.model.provider_id, &conversation.model.id) {
                         return Err::<domain::ModelStep, ModelStepError>("Model identity is outside the positive allowlist".into())
                             .context("Allowlist blocked: this provider/model is no longer permitted; open /model settings").map_err(Into::into);
+                    }
+                    if let Some(a)=&conversation.assignment {
+                        let work=read_work.call(a.work_id.clone()).await?.ok_or("Approved work is unavailable")?;
+                        let approval=work.authorize(&a.intent,&a.proposal.version).context("Approved work changed; inspect and approve the current scope/criteria version")?;
+                        if work.current()?!=&a.proposal || approval.coordinator_id!=conversation.id || work.creator_id!=a.creator_id || approval.approved_at!=a.approved_at {
+                            return Err("Approved handoff differs from backend authority".into());
+                        }
                     }
                     attempted = true;
                     let mut response = http

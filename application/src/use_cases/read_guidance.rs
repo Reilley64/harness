@@ -39,9 +39,20 @@ pub async fn call(
         .call(
             workspace,
             phase.unwrap_or_else(|| {
-                selected
-                    .as_ref()
-                    .map_or("grilling".into(), |snapshot| snapshot.phase.clone())
+                selected.as_ref().map_or_else(
+                    || {
+                        if conversation
+                            .as_ref()
+                            .is_some_and(|c| c.assignment.is_some())
+                        {
+                            "coordination"
+                        } else {
+                            "grilling"
+                        }
+                        .into()
+                    },
+                    |snapshot| snapshot.phase.clone(),
+                )
             }),
             scopes.unwrap_or_else(|| {
                 selected

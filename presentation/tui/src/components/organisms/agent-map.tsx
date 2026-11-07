@@ -31,7 +31,9 @@ export function AgentMap({
       >
         <TerminalText bold>
           {agent
-            ? "› Griller"
+            ? agent.role === "chief_of_staff"
+              ? "› Chief of Staff"
+              : "› Griller"
             : conversation
               ? "Unassociated pilot history"
               : "No repository Griller yet"}
@@ -47,7 +49,9 @@ export function AgentMap({
       </Box>
       <TerminalText dimColor>
         {agent
-          ? "Creator unknown · leaf execution"
+          ? agent.creatorId
+            ? "Created by " + agent.creatorId + " · no execution descendants"
+            : "Creator unknown · leaf execution"
           : conversation
             ? "This pilot history has no recorded agent association."
             : "Send an idea to create this repository's Griller."}
@@ -57,7 +61,7 @@ export function AgentMap({
           <TerminalText wrap="truncate-end">
             {conversation.workspace ?? "Workspace not yet bound"}
           </TerminalText>
-          <TerminalText wrap="truncate-end">{`${busy ? "Last saved context · " : ""}${agent ? "grilling · " : ""}${conversation.model.providerId}/${run?.modelId ?? conversation.model.id} · ${(run ? run.effort : conversation.effort) ?? "no effort"}`}</TerminalText>
+          <TerminalText wrap="truncate-end">{`${busy ? "Last saved context · " : ""}${agent ? (agent.role === "chief_of_staff" ? "coordination · " : "grilling · ") : ""}${conversation.model.providerId}/${run?.modelId ?? conversation.model.id} · ${(run ? run.effort : conversation.effort) ?? "no effort"}`}</TerminalText>
           {run && (
             <TerminalText
               dimColor

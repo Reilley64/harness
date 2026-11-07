@@ -8,8 +8,9 @@ stable UUID, user/assistant role, text, status, and model/effort provenance. Mes
 roles are separate from agent roles such as griller or researcher.
 
 Messages are UTF-8 text with durable tool steps and accepted steering instructions.
-Nine automatic tools are supported; attachments, multi-agent orchestration, and a
-conversation picker are not. OAuth tokens stay in Rust and are not proactively
+Ten automatic tools are supported, including versioned proposal capture. A separate
+approved-work CoS uses the same loop; child orchestration, attachments and a
+conversation picker remain unavailable. See [approved work](approved-work.md). OAuth tokens stay in Rust and are not proactively
 injected into messages or ACP; explicit tool output may contain readable secrets.
 See [tool calls](tool-calls.md) for the execution and permissions contract.
 
@@ -129,12 +130,13 @@ owns both directions; no serialized representation is shared between adapters.
 Version three adds an optional Griller identity, linked runs and an interruption
 gate. Version four adds immutable instruction snapshots, a selected reference and
 each run's actual snapshot reference; absent historical instructions remain
-unknown. Version five adds required per-message/run provider provenance. Optional
+unknown. Version five adds required per-message/run provider provenance. Version six
+adds exact approved assignment/CoS metadata without dropping version-five fields. Optional
 step-level resolved identity/serving provider, generation-time catalog canonical
 ownership and catalog canonical/worker capabilities are retained in independently owned records. Versions one through
-four remain readable without rewriting; their single stored provider is the only
+five remain readable without rewriting; their single stored provider is the only
 justified legacy message/run provider when those fields are absent. Mutation
-writes version five. See [role guidance](role-guidance.md).
+writes version six. See [role guidance](role-guidance.md).
 Each run records its own stable identity, agent identity,
 model/effort snapshot and lifecycle status. Reading/updating validates associations
 and chronological reply/status consistency, including complete run coverage for
@@ -244,8 +246,11 @@ without inventing an agent association.
 The Griller uses the stock provider factory, ordinary tools, and Harness-owned
 versioned role/phase instructions, explicit repository guidance and durable snapshots
 through the [role-guidance resolver](role-guidance.md). It refines ideas and asks for human input; this slice
-does not publish specs, delegate work, create CoS, or infer implementation/merge
-approval. Each submitted answer starts a later grilling run on the same agent;
+can publish reviewable proposals with normal repository-supported tools and capture
+them through `publish_work`. A separate trusted exact-version approval operation
+creates CoS; Griller prose cannot grant implementation/merge authority. Native
+children, review, integration and merge remain unavailable. See
+[approved work](approved-work.md). Each submitted answer starts a later grilling run on the same agent;
 steering stays within the active run. A successful response ends the run for human
 input, not as factory completion. Model steps and generations remain the existing
 durable message-level records.
@@ -267,8 +272,9 @@ reconciliation or an exactly-once remote-effect guarantee.
 Agent/run metadata commits in the same bounded atomic conversation replacement
 as its messages and tool checkpoints. The existing per-conversation process lock
 also serializes repository creation and execution; concurrent owners are rejected.
-There is no multi-agent engine, creator graph or subtree expansion in this slice.
-The Griller is a leaf, and Stop affects its active execution only.
+There is no child execution engine or subtree expansion in this slice. Approved
+handoff records a separate CoS and its creator, not execution ownership. Both
+agents are leaves; Stop affects only the selected active execution.
 
 ## Fresh-session model preference
 

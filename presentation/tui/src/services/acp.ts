@@ -19,6 +19,7 @@ import type {
 } from "../types/provider-connection.js";
 import type { ToolCall } from "../types/tool.js";
 import type { Usage } from "../types/usage.js";
+import type { ApprovedWork, WorkResponse } from "../types/work.js";
 import {
   parseAuthorizationChallenge,
   parseProviderConnection,
@@ -30,6 +31,7 @@ import { parseModelSelection, parseModels } from "./models.js";
 import { readableStream } from "./readable-stream.js";
 import { parseTool } from "./tools.js";
 import { parseUsageUpdate } from "./usage.js";
+import { parseWork } from "./work.js";
 
 export type Agent = ReturnType<typeof connectAgent>;
 
@@ -100,6 +102,7 @@ export function connectAgent() {
   let pendingSelections = 0;
   const pendingReplies = new Set<Promise<Conversation>>();
   const pendingPolicyWrites = new Set<Promise<string[]>>();
+  const pendingWorkWrites = new Set<Promise<WorkResponse>>();
   const connection = client({ name: "harness-tui" })
     .onNotification(methods.client.session.update, ({ params }) => {
       const update = params.update;
@@ -255,6 +258,54 @@ export function connectAgent() {
     if (patterns === undefined) return pending;
     pendingPolicyWrites.add(pending);
     return pending.finally(() => pendingPolicyWrites.delete(pending));
+  }
+
+  async function readWork(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<WorkResponse> {
+    const init = await initialize();
+    signal.throwIfAborted();
+    if (init._meta?.["harness/approvedWork"] !== true)
+      throw new PresentationError("Approved work is unavailable.");
+    return parseWork(
+      await connection.agent.request<unknown>(
+        "_harness/work/read",
+        { id },
+        { cancellationSignal: signal, stopWaitingOnCancel: true },
+      ),
+    );
+  }
+  function approveWork(
+    work: ApprovedWork,
+    conversation: Conversation,
+    intent: string,
+  ): Promise<WorkResponse> {
+    if (closing)
+      return Promise.reject(new PresentationError("The agent is closing."));
+    const publication = work.publications.at(-1);
+    if (!publication)
+      return Promise.reject(
+        new PresentationError("Published proposal is missing."),
+      );
+    const prior = work.approvals.find((a) => a.intent === intent);
+    const pending = (async () => {
+      await initialize();
+      return parseWork(
+        await connection.agent.request<unknown>("_harness/work/approve", {
+          id: work.id,
+          revision: prior?.revision ?? work.revision,
+          version: prior?.version ?? publication.version,
+          intent,
+          sessionRevision: conversation.revision,
+          providerId: conversation.model.providerId,
+          modelId: conversation.model.id,
+          effort: conversation.effort,
+        }),
+      );
+    })();
+    pendingWorkWrites.add(pending);
+    return pending.finally(() => pendingWorkWrites.delete(pending));
   }
 
   async function createProviderConnection(
@@ -577,7 +628,12 @@ export function connectAgent() {
   async function close(): Promise<void> {
     if (closing) return;
     closing = true;
-    if (replies.size || pendingSelections || pendingPolicyWrites.size) {
+    if (
+      replies.size ||
+      pendingSelections ||
+      pendingPolicyWrites.size ||
+      pendingWorkWrites.size
+    ) {
       await Promise.allSettled([...replies.keys()].map(cancelReply));
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -586,6 +642,7 @@ export function connectAgent() {
             ...pendingReplies,
             selectionWrites,
             ...pendingPolicyWrites,
+            ...pendingWorkWrites,
           ]),
           new Promise<void>((resolve) => {
             timer = setTimeout(resolve, 60000);
@@ -617,6 +674,8 @@ export function connectAgent() {
     listProviders,
     listModels,
     modelAllowlist,
+    readWork,
+    approveWork,
     createProviderConnection,
     readModelSelection,
     updateModelSelection,

@@ -152,10 +152,20 @@ export function parseConversation(value: unknown): Conversation {
   };
 }
 
-function parseAgent(value: unknown) {
-  if (!record(value) || value.role !== "griller" || value.creatorId !== null)
+function parseAgent(value: unknown): NonNullable<Conversation["agent"]> {
+  if (
+    !record(value) ||
+    (value.role !== "griller" && value.role !== "chief_of_staff") ||
+    (value.role === "griller"
+      ? value.creatorId !== null
+      : typeof value.creatorId !== "string")
+  )
     throw new PresentationError("Invalid agent identity.");
-  return { id: id(value.id), role: "griller" as const, creatorId: null };
+  return {
+    id: id(value.id),
+    role: value.role,
+    creatorId: value.creatorId === null ? null : id(value.creatorId),
+  };
 }
 
 function parseRuns(value: unknown): Run[] {
@@ -165,7 +175,9 @@ function parseRuns(value: unknown): Run[] {
     if (
       !record(run) ||
       typeof run.modelId !== "string" ||
-      !["grilling", "specification", "tickets"].includes(String(run.task)) ||
+      !["grilling", "specification", "tickets", "coordination"].includes(
+        String(run.task),
+      ) ||
       !["running", "needs_human", "stopped", "failed", "interrupted"].includes(
         String(run.status),
       )

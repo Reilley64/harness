@@ -10,15 +10,16 @@ resolves the embedded bundle, explicit configuration and repository documents.
 adopts an inspected candidate under the conversation lock and checked revision.
 Domain values remain Serde-free. Each conversation adapter owns its own records.
 
-Only Griller executes. Setup, Research, Chief of Staff, Implementer, Reviewer,
-review-axis, Retro and handoff assets are bundled for later assignment owners;
+Griller and the approved-work Chief of Staff execute through the shared loop.
+Setup, Research, Implementer, Reviewer, review-axis and Retro assets remain
+bundled for later assignment owners;
 inspection is not an agent roster, dispatch API or creation relationship. Native
 Jev Decider has a separate typed-decision contract, not a conversational/tool role.
 All conversational roles use shared configured tools. Guidance cannot grant scope,
 settle work, reset allowances, authorize writes/merge or resolve Unknown effects.
 Bash/MCP are OS-user trusted; source worktrees do not isolate services or secrets.
 
-Setup detection/generation/consent/wiki, approval-to-CoS, execution/joins/steering,
+Setup detection/generation/consent/wiki, child execution/joins/steering,
 completion/continuation, compaction and provider fallback are not implemented by
 this module. Missing glossary/ADR files are not unconditional Setup triggers.
 
@@ -96,6 +97,8 @@ With no explicit `root`, exactly one of root `AGENTS.md` or `CLAUDE.md` is selec
 Neither is a missing-required-guidance block; both are ambiguous until explicitly
 selected in configuration. An explicitly selected root is required. Repository
 and local root choices/overrides require explicit adoption before initial inference.
+Approved handoff can capture the default CoS coordination closure; explicit overrides
+are retained as unselected candidates until inspected/adopted before inference.
 The first default Griller run can capture the unambiguous root and bundled grilling
 closure without a separate adoption command. A block occurs before creating a new
 user/reply/run or contacting inference; repair and retry or inspect/adopt explicitly.
@@ -117,7 +120,7 @@ selection, not tool-path confinement or a general policy sandbox.
 A content-addressed snapshot records the selected phase, scopes, references, actual
 instruction bodies, dependency closure, source paths, content versions and upstream
 links. Its SHA-256 identity covers these values, not timestamps or a claim about
-historical content. Conversation schema v4 introduced instruction persistence; current v5 stores deduplicated immutable snapshots,
+historical content. Conversation schema v4 introduced instruction persistence; current v6 retains v5 deduplicated immutable snapshots,
 the selected snapshot ID and each run's actual snapshot ID, in the existing private
 bounded atomic/check-revision conversation file. Snapshot checksum/closure and run
 references are validated on read/update. Corrupt records are rejected unchanged.
@@ -139,7 +142,7 @@ again. Adoption changes future runs only; prior run references/text remain intac
 The durable selected reference and immutable retained snapshots record adoption;
 this is not a separate event/audit service.
 
-Versions 1–4 still load, including existing v4 instruction snapshots. Unassociated pilot conversations keep their historical
+Versions 1–5 still load, including existing v4 instruction snapshots. Unassociated pilot conversations keep their historical
 behavior without a fabricated role provenance. Historical Griller runs with no
 snapshot remain explicitly unknown. An interrupted such run cannot Resume through
 a newly invented snapshot: inspect history/effects, explicitly acknowledge the
@@ -189,7 +192,8 @@ In the stock launcher/Ink application:
   Griller. Completion cannot reopen a dismissed inspector or replace newer
   phase/reference selection, map/picker navigation or an edited draft. Dismissal
   does not cancel or roll back the independently durable adoption.
-- `/guidance phase grilling|specification|tickets` inspects a phase candidate.
+- `/guidance phase grilling|specification|tickets|coordination` inspects a phase candidate.
+  Adoption is bound to the durable role; coordination cannot rename a Griller.
 - `/guidance scope <relative-directory>` and `/guidance reference <relative-file>`
   add relevant context to the inspected candidate.
 - `/guidance reset` inspects default grilling/root-only context; it is not adoption.

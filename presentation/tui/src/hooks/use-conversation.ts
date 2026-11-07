@@ -32,6 +32,7 @@ export function useConversation(agent: Agent, initial?: Conversation) {
         },
   );
   const active = useRef(false);
+  const opening = useRef(0);
   const cancelled = useRef(false);
   const sessionReady = useRef<Promise<string | null>>(Promise.resolve(null));
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +95,7 @@ export function useConversation(agent: Agent, initial?: Conversation) {
       );
       return { accepted: false, draft: content };
     }
+    opening.current++;
     active.current = true;
     cancelled.current = false;
     let ready!: (id: string | null) => void;
@@ -221,6 +223,24 @@ export function useConversation(agent: Agent, initial?: Conversation) {
     : (conversation?.messages ?? []);
   return {
     conversation,
+    cancelOpen: () => {
+      opening.current++;
+    },
+    open: async (id: string) => {
+      if (active.current)
+        throw new PresentationError(
+          "Stop or finish the current run before opening another conversation.",
+        );
+      const request = ++opening.current;
+      const next = await agent.loadConversation(id);
+      if (request !== opening.current || active.current) return null;
+      current.current = next;
+      setConversation(next);
+      setUsage(next.usage ?? null);
+      setError(null);
+      setWork(null);
+      return next;
+    },
     usage,
     messages,
     busy,
