@@ -68,6 +68,9 @@ an unknown entry is checkpointed before inference, then filled only with reporte
 counts. Session totals include reported superseded/cancelled generations and tool
 continuations, even when their content is excluded from future context. Missing
 reports remain unknown or a lower bound; steering alone no longer implies a gap.
+A pending generation reservation is removed only when the adapter positively
+reports that no inference request was attempted. This preserves previous reported
+usage and latest context; attempted failures and crash uncertainty stay unknown.
 Legacy replies without a ledger use retained per-step reports conservatively.
 Safe cumulative and latest-request context counters cross ACP after checkpointing.
 Optional model context-window metadata is retained in conversation and preference

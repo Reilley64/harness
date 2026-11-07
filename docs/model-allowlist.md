@@ -30,7 +30,9 @@ agent-role or conversation setting can widen this application-wide policy.
 The picker shows blocked models and a safe reason. Unsupported provider worker
 protocols are capability blocks, missing positive coverage is an allowlist
 block, and missing/invalid saved connections are authentication blocks. Supported
-effort and catalog selection are validated on selection/session creation.
+effort and current catalog selection are validated on selection/session creation,
+on sends with either explicit or restored selection, and at every worker-step
+boundary. A stale saved model/effort cannot bypass capability validation.
 A catalog entry is not account entitlement, a supported protocol, or permission.
 Actual provider refusal, access and usage failures remain visible; Harness does
 not infer remote entitlement from the catalog or silently switch models.
@@ -73,12 +75,18 @@ effects/results are checkpointed, disallowed continuation stops with an explicit
 configuration error and no replacement model or retry. The assistant is saved
 with its partial content and failed status; existing successful/uncertain tool
 outcomes are not rewritten or replayed. A pre-attempt block adds no fictitious
-generation usage. A request admitted before a concurrent change may still finish;
+generation usage. The adapter positively distinguishes failure before a request
+attempt from an attempted request with no report. Only a known-unattempted pending
+generation reservation is removed; previous reported totals/latest context remain
+intact. An attempted failure or process-killed reservation remains unknown, never
+a fabricated zero. A request admitted before a concurrent change may still finish;
 unknown reports remain unknown.
 
 The existing closure-backed ports and provider-bound factory remain in place.
 The Serde-free domain `ModelPattern` and `ModelAllowlist` contain the positive
-matching rule. Application admission is shared by workers and model settings.
+matching rule plus customization and initialize-once transitions. Storage owns
+record conversion, locking and atomic replacement, not permission decisions.
+Application admission is shared by workers and model settings.
 Future native Decider/OpenRouter slices can reuse those values and policy ports;
 neither provider nor native decision inference is implemented here.
 
@@ -112,7 +120,10 @@ ACP advertises `harness/modelAllowlist: true` and exposes:
   readiness, not a guarantee that the provider/account will serve the request.
   Historical/preference model snapshots do not establish current eligibility.
 
-Settings reads need no credentials, catalog, session or inference. These are
+Settings reads need no credentials, catalog, session or inference. Loading reads
+are cancellable on Escape, picker reload/close, disconnect and unmount; late
+results cannot reopen a dismissed editor. Committing writes remain distinct and
+are drained at shutdown rather than pretending dismissal rolls back a commit. These are
 ordinary application use cases and ACP operations, not verification/debug APIs.
 
 ## Verification boundary

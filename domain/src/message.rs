@@ -35,6 +35,21 @@ impl Message {
         Ok(())
     }
 
+    pub fn discard_generation_before_attempt(&mut self) -> Result<(), &'static str> {
+        if self.role != MessageRole::Assistant || self.status != MessageStatus::InProgress {
+            return Err("There is no reply in progress");
+        }
+        let reports = self
+            .generation_usage
+            .as_mut()
+            .ok_or("Missing generation accounting")?;
+        if reports.last() != Some(&None) || reports.len() <= self.steps.len() {
+            return Err("There is no unattempted generation to discard");
+        }
+        reports.pop();
+        Ok(())
+    }
+
     pub fn report_generation(&mut self, usage: Option<TokenUsage>) -> Result<(), &'static str> {
         let report = self
             .generation_usage

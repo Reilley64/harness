@@ -210,11 +210,20 @@ export function connectAgent() {
     return parseModels(response);
   }
 
-  function modelAllowlist(patterns?: string[]): Promise<string[]> {
+  function modelAllowlist(
+    patterns?: string[],
+    signal?: AbortSignal,
+  ): Promise<string[]> {
     if (closing)
       return Promise.reject(new PresentationError("The agent is closing."));
+    const cancellationSignal =
+      patterns === undefined && signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+        : AbortSignal.timeout(30000);
     const pending = (async () => {
+      cancellationSignal.throwIfAborted();
       const initialized = await initialize();
+      cancellationSignal.throwIfAborted();
       if (initialized._meta?.["harness/modelAllowlist"] !== true)
         throw new PresentationError(
           "The agent does not support model permission settings.",
@@ -225,7 +234,7 @@ export function connectAgent() {
           : "_harness/model-allowlist/update",
         patterns === undefined ? {} : { patterns },
         {
-          cancellationSignal: AbortSignal.timeout(30000),
+          cancellationSignal,
           stopWaitingOnCancel: true,
         },
       );

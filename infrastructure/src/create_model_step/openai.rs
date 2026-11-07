@@ -41,6 +41,7 @@ pub(crate) fn create_model_step(
         let read_model_allowlist = read_model_allowlist.clone();
         Box::pin(async move {
             let mut reported_usage = None;
+            let mut attempted = false;
             let result: Result<domain::ModelStep, ModelStepError> = async {
             if settings.timeout_seconds == 0 {
                 return Err("Reply timeout must be greater than zero".into());
@@ -86,6 +87,7 @@ pub(crate) fn create_model_step(
                         return Err::<domain::ModelStep, ModelStepError>("Model identity is outside the positive allowlist".into())
                             .context("Allowlist blocked: this provider/model is no longer permitted; open /model settings").map_err(Into::into);
                     }
+                    attempted = true;
                     let mut response = http
                         .post(url)
                         .bearer_auth(token)
@@ -327,7 +329,14 @@ pub(crate) fn create_model_step(
                 _ = cancellation.cancelled() => Err("Model generation was cancelled".into()),
             }
             }.await;
-            result.map_err(|error| CreateModelStepError::from(error).with_usage(reported_usage))
+            result.map_err(|error| {
+                let error = CreateModelStepError::from(error).with_usage(reported_usage);
+                if attempted {
+                    error
+                } else {
+                    error.without_attempt()
+                }
+            })
         })
     }
 }

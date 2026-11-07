@@ -19,7 +19,14 @@ export function useModelPicker(
   const [policyDraft, setPolicyDraft] = useState<string | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [policySaving, setPolicySaving] = useState(false);
+  const [policyReading, setPolicyReading] = useState(false);
   const policyRequest = useRef(0);
+  const policyLoading = useRef<AbortController | null>(null);
+  const cancelPolicyRead = useCallback(() => {
+    policyLoading.current?.abort();
+    policyLoading.current = null;
+    policyRequest.current++;
+  }, []);
   const [error, setError] = useState<string | null>(initialError);
   const mounted = useRef(true);
   const [selected, setSelected] = useState(0);
@@ -36,6 +43,9 @@ export function useModelPicker(
     void agent.closed.then(() => {
       if (!active) return;
       loading.current?.abort();
+      cancelPolicyRead();
+      setPolicyReading(false);
+      setPolicyDraft(null);
       setPicker((current) =>
         current ? { status: "failed", message: agent.failure() } : null,
       );
@@ -44,11 +54,14 @@ export function useModelPicker(
       active = false;
       mounted.current = false;
       loading.current?.abort();
+      cancelPolicyRead();
     };
-  }, [agent]);
+  }, [agent, cancelPolicyRead]);
 
   const open = useCallback(() => {
     loading.current?.abort();
+    cancelPolicyRead();
+    setPolicyReading(false);
     const request = new AbortController();
     loading.current = request;
     setQuery("");
@@ -75,14 +88,15 @@ export function useModelPicker(
           setPicker({ status: "failed", message: errorMessage(error) });
       },
     );
-  }, [agent]);
+  }, [agent, cancelPolicyRead]);
 
   const close = useCallback(() => {
     loading.current?.abort();
-    policyRequest.current++;
+    cancelPolicyRead();
+    setPolicyReading(false);
     setPolicyDraft(null);
     setPicker(null);
-  }, []);
+  }, [cancelPolicyRead]);
 
   const models =
     picker?.status === "ready" ? filterModels(picker.models, query) : [];
@@ -156,25 +170,30 @@ export function useModelPicker(
   }
 
   async function editPolicy() {
-    const request = ++policyRequest.current;
+    cancelPolicyRead();
+    const request = policyRequest.current;
+    const controller = new AbortController();
+    policyLoading.current = controller;
     setPolicyDraft("");
-    setPolicySaving(true);
+    setPolicyReading(true);
     setPolicyError(null);
     try {
-      const patterns = await agent.modelAllowlist();
+      const patterns = await agent.modelAllowlist(undefined, controller.signal);
       if (mounted.current && request === policyRequest.current)
         setPolicyDraft(patterns.join(", "));
     } catch (error) {
       if (mounted.current && request === policyRequest.current)
         setPolicyError(errorMessage(error));
     } finally {
-      if (mounted.current && request === policyRequest.current)
-        setPolicySaving(false);
+      if (mounted.current && request === policyRequest.current) {
+        policyLoading.current = null;
+        setPolicyReading(false);
+      }
     }
   }
 
   async function savePolicy() {
-    if (policyDraft === null || policySaving) return;
+    if (policyDraft === null || policySaving || policyReading) return;
     setPolicySaving(true);
     setPolicyError(null);
     try {
@@ -188,13 +207,18 @@ export function useModelPicker(
   }
 
   function cancelPolicy() {
-    if (!policySaving) setPolicyDraft(null);
+    if (policySaving) return;
+    cancelPolicyRead();
+    setPolicyReading(false);
+    setPolicyDraft(null);
+    setPolicyError(null);
   }
 
   return {
     policyDraft,
     policyError,
     policySaving,
+    policyReading,
     editPolicy,
     savePolicy,
     cancelPolicy,

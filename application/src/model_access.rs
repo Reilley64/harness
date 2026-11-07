@@ -1,12 +1,34 @@
 use crate::error_context::ResultExt;
 use crate::ports::CreateModelStepFactory;
 use crate::ports::ReadModelAllowlist;
+use crate::ports::ReadModels;
 use crate::ports::ReadProviderConnection;
 
 #[ohno::error]
 #[from(Box<dyn std::error::Error + Send + Sync>)]
 #[display("Model configuration required")]
 pub(crate) struct Error;
+
+pub(crate) async fn read_model(
+    catalog: &ReadModels,
+    provider: &domain::ProviderId,
+    id: &str,
+    effort: Option<domain::ModelEffort>,
+) -> Result<domain::Model, Error> {
+    let model = catalog.call().await
+        .context("Capability blocked: the model catalog could not be read; retry or choose a supported model with /model")
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .find(|model| model.provider_id == *provider && model.id == id)
+        .ok_or("The selected model is missing from the catalog")
+        .context("Capability blocked: the selected model is unavailable; choose a supported model with /model")
+        .map_err(Error::caused_by)?;
+    model
+        .validate_effort(effort)
+        .context("Capability blocked: this effort is unsupported; choose an effort with /model")
+        .map_err(Error::caused_by)?;
+    Ok(model)
+}
 
 pub(crate) async fn read(
     policy: &ReadModelAllowlist,

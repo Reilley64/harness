@@ -5,7 +5,7 @@ use std::path::Path;
 
 type StorageError = Box<dyn std::error::Error + Send + Sync>;
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Record {
     version: u32,
@@ -38,41 +38,43 @@ pub fn update_model_allowlist(
             };
             let (policy, bytes) =
                 tokio::task::spawn_blocking(move || -> Result<_, StorageError> {
-                    let mut record = if let Some(bytes) = bytes {
+                    let mut policy = if let Some(bytes) = bytes {
                         let record: Record = serde_json::from_slice(&bytes)?;
-                        if record.version != 1 || record.initialized_providers.len() > 256 {
+                        if record.version != 1 {
                             return Err("Invalid or unsupported model allowlist".into());
                         }
-                        domain::ModelAllowlist::new(record.patterns.clone())?;
-                        record
+                        domain::ModelAllowlist::restore(
+                            record.patterns,
+                            record.customized,
+                            record
+                                .initialized_providers
+                                .into_iter()
+                                .map(domain::ProviderId)
+                                .collect(),
+                        )?
                     } else {
-                        Record {
-                            version: 1,
-                            ..Record::default()
-                        }
+                        domain::ModelAllowlist::default()
                     };
                     match update {
-                        ModelAllowlistUpdate::Replace(policy) => {
-                            record.patterns = policy
-                                .patterns()
-                                .iter()
-                                .map(|pattern| pattern.as_str().to_owned())
-                                .collect();
-                            record.customized = true;
-                        }
+                        ModelAllowlistUpdate::Replace(replacement) => policy.replace(replacement),
                         ModelAllowlistUpdate::InitializeProvider(provider) => {
-                            if !record.customized
-                                && !record.initialized_providers.contains(&provider.0)
-                            {
-                                record.patterns.push(format!("{provider}/*"));
-                                record.initialized_providers.push(provider.0);
-                            }
+                            policy.initialize_provider(provider)?
                         }
                     }
-                    if record.initialized_providers.len() > 256 {
-                        return Err("Too many initialized providers".into());
-                    }
-                    let policy = domain::ModelAllowlist::new(record.patterns.clone())?;
+                    let record = Record {
+                        version: 1,
+                        patterns: policy
+                            .patterns()
+                            .iter()
+                            .map(|pattern| pattern.as_str().to_owned())
+                            .collect(),
+                        customized: policy.is_customized(),
+                        initialized_providers: policy
+                            .initialized_providers()
+                            .iter()
+                            .map(|provider| provider.0.clone())
+                            .collect(),
+                    };
                     let bytes = serde_json::to_vec_pretty(&record)?;
                     if bytes.len() > 262_144 {
                         return Err("The model allowlist exceeds its size limit".into());

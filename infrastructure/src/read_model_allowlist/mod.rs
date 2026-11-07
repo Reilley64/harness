@@ -9,8 +9,7 @@ type StorageError = Box<dyn std::error::Error + Send + Sync>;
 struct Record {
     version: u32,
     patterns: Vec<String>,
-    #[serde(rename = "customized")]
-    _customized: bool,
+    customized: bool,
     initialized_providers: Vec<String>,
 }
 
@@ -42,7 +41,15 @@ pub fn read_model_allowlist(
                 if record.version != 1 || record.initialized_providers.len() > 256 {
                     return Err("Invalid or unsupported model allowlist".into());
                 }
-                Ok(domain::ModelAllowlist::new(record.patterns)?)
+                Ok(domain::ModelAllowlist::restore(
+                    record.patterns,
+                    record.customized,
+                    record
+                        .initialized_providers
+                        .into_iter()
+                        .map(domain::ProviderId)
+                        .collect(),
+                )?)
             })
             .await?
         })

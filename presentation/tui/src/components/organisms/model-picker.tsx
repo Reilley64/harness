@@ -15,6 +15,7 @@ export function ModelPicker({
   policyDraft,
   policyError,
   policySaving,
+  policyReading,
   picker,
   query,
   models,
@@ -26,6 +27,7 @@ export function ModelPicker({
   policyDraft: string | null;
   policyError: string | null;
   policySaving: boolean;
+  policyReading: boolean;
   picker: ModelPickerState;
   query: string;
   models: Model[];
@@ -56,8 +58,10 @@ export function ModelPicker({
         {policyError && <TerminalText color="red">{policyError}</TerminalText>}
         <TerminalText dimColor>
           {policySaving
-            ? "Loading / saving…"
-            : "Enter save · Ctrl+U clear · Esc cancel (no change)"}
+            ? "Saving…"
+            : policyReading
+              ? "Loading… · Esc cancel (no change)"
+              : "Enter save · Ctrl+U clear · Esc cancel (no change)"}
         </TerminalText>
       </Box>
     );

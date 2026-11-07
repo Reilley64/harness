@@ -305,7 +305,10 @@ subprocess. See [conversations](conversations.md).
 The existing `/model` picker labels locally blocked entries and shows the
 authentication, allowlist or worker-capability reason. Ctrl+A opens its
 application-wide positive-pattern editor, even when the catalog fails to load.
-Enter saves the complete list, Ctrl+U clears it and Escape discards the draft.
+Enter saves the complete list, Ctrl+U clears it and Escape discards the draft,
+including while the settings read is loading. Reads are aborted on dismissal,
+reload, disconnect and unmount, and late results are ignored. Saving is a separate
+commit state; shutdown drains writes and does not claim rollback.
 An empty list permits no inference; overlapping broad positives still permit
 covered identities. No settings dismissal retries blocked work or selects a
 replacement. See [model allowlist](model-allowlist.md) for policy and persistence.

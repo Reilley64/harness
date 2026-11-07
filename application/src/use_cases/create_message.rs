@@ -4,7 +4,6 @@ mod dependencies;
 mod error;
 mod output;
 
-use crate::error_context::ResultExt;
 use crate::model_access;
 pub use dependencies::Dependencies;
 pub use error::Error;
@@ -48,31 +47,25 @@ pub async fn call(
     if conversation.workspace.is_none() {
         conversation.workspace = Some(workspace);
     }
-    if let Some(selection) = selection {
-        if selection.provider_id != conversation.model.provider_id {
-            return Err(Error::caused_by(
-                "Changing providers requires a new conversation",
-            ));
-        }
-        let model = dependencies
-            .read_models
-            .call()
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .find(|model| {
-                model.id == selection.model_id && model.provider_id == selection.provider_id
-            })
-            .ok_or("The selected model is missing from the catalog")
-            .context("Capability blocked: the selected model is unavailable; choose a supported model with /model")
-            .map_err(Error::caused_by)?;
-        model
-            .validate_effort(selection.effort)
-            .context("Capability blocked: this effort is unsupported; choose an effort with /model")
-            .map_err(Error::caused_by)?;
-        conversation.model = model;
-        conversation.effort = selection.effort;
+    let selection = selection.unwrap_or_else(|| domain::ModelSelection {
+        provider_id: conversation.model.provider_id.clone(),
+        model_id: conversation.model.id.clone(),
+        effort: conversation.effort,
+    });
+    if selection.provider_id != conversation.model.provider_id {
+        return Err(Error::caused_by(
+            "Changing providers requires a new conversation",
+        ));
     }
+    conversation.model = model_access::read_model(
+        &dependencies.read_models,
+        &selection.provider_id,
+        &selection.model_id,
+        selection.effort,
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    conversation.effort = selection.effort;
     model_access::read(
         &dependencies.read_model_allowlist,
         &dependencies.read_provider_connection,
@@ -243,6 +236,14 @@ async fn run(
         if deadline.elapsed().as_secs() > 1200 {
             return Err(Error::caused_by("Turn exceeded 20 minutes"));
         }
+        conversation.model = model_access::read_model(
+            &dependencies.read_models,
+            &conversation.model.provider_id,
+            &conversation.model.id,
+            conversation.effort,
+        )
+        .await
+        .map_err(Error::caused_by)?;
         model_access::read(
             &dependencies.read_model_allowlist,
             &dependencies.read_provider_connection,
@@ -286,14 +287,22 @@ async fn run(
                 }
             }
         };
-        conversation
-            .active_reply_mut()
-            .map_err(Error::caused_by)?
-            .report_generation(match &result {
-                Ok(step) => step.usage,
-                Err(error) => error.reported_usage,
-            })
-            .map_err(Error::caused_by)?;
+        let reply = conversation.active_reply_mut().map_err(Error::caused_by)?;
+        if result
+            .as_ref()
+            .is_err_and(|error| error.not_attempted && error.reported_usage.is_none())
+        {
+            reply
+                .discard_generation_before_attempt()
+                .map_err(Error::caused_by)?;
+        } else {
+            reply
+                .report_generation(match &result {
+                    Ok(step) => step.usage,
+                    Err(error) => error.reported_usage,
+                })
+                .map_err(Error::caused_by)?;
+        }
         if restart || cancellation.is_cancelled() || result.is_err() {
             checkpoint(dependencies, conversation).await?;
             present

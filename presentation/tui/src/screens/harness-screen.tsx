@@ -83,8 +83,8 @@ export function HarnessScreen({
     }
     if (models.picker) {
       if (models.policyDraft !== null) {
-        if (models.policySaving) return;
         if (key.escape) models.cancelPolicy();
+        else if (models.policySaving || models.policyReading) return;
         else if (key.return && key.eventType !== "repeat")
           void models.savePolicy();
         else if (key.ctrl && input === "u") models.changePolicy("");
@@ -204,6 +204,7 @@ export function HarnessScreen({
           policyDraft={models.policyDraft}
           policyError={models.policyError}
           policySaving={models.policySaving}
+          policyReading={models.policyReading}
           picker={models.picker}
           query={models.query}
           models={models.models}
