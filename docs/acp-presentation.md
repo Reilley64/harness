@@ -39,7 +39,8 @@ advertises the agent-handled
     "harness/modelSelection": true,
     "harness/tools": true,
     "harness/steering": true,
-    "harness/agents": true
+    "harness/agents": true,
+    "harness/guidance": true
   }
 }
 ```
@@ -76,6 +77,15 @@ never generates a handoff. Unknown outcomes block direct Resume. All controls us
 closure-backed application use cases and bounded atomic conversation storage.
 These routes do not implement delegation, approvals, multi-agent maps or a
 generic factory-command protocol.
+
+## Guidance extension
+
+`harness/guidance: true` advertises read/adopt operations through real application
+use cases. See [role guidance](role-guidance.md) for request/response schemas,
+resolution/override precedence, snapshots and recoverable blocks. Inspection
+includes actual instruction text/source/version/upstream, not a synthetic agent
+roster. Safe conversation metadata adds `selectedInstructions` and each run's
+nullable `instructions` snapshot ID; `task` reflects its captured phase.
 
 ## Provider catalog extension
 

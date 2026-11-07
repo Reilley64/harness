@@ -2,6 +2,7 @@ mod agents;
 mod authentication;
 mod conversations;
 mod dependencies;
+mod guidance;
 mod projection;
 mod prompt;
 mod steering;
@@ -62,6 +63,8 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         create_agent,
         read_agent,
         update_agent,
+        read_guidance,
+        update_guidance,
         create_conversation,
         read_conversation,
         create_message,
@@ -93,6 +96,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/steering".into(), serde_json::json!(true)),
                     ("harness/usage".into(), serde_json::json!(true)),
                     ("harness/agents".into(), serde_json::json!(true)),
+                    ("harness/guidance".into(), serde_json::json!(true)),
                 ]
                 .into_iter()
                 .collect();
@@ -481,6 +485,49 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     match application::use_cases::update_agent::call(
                         dependencies,
                         request.session_id,
+                    )
+                    .await
+                    {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: guidance::ReadRequest, responder, connection| {
+                let dependencies = read_guidance.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_guidance::call(
+                        dependencies,
+                        request.session_id,
+                        request.cwd,
+                        request.phase,
+                        request.scopes,
+                        request.references,
+                    )
+                    .await
+                    {
+                        Ok(output) => responder.respond(guidance::Response::from(output)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: guidance::AdoptRequest, responder, connection| {
+                let dependencies = update_guidance.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_guidance::call(
+                        dependencies,
+                        request.session_id,
+                        request.revision,
+                        request.available,
+                        request.phase,
+                        request.scopes,
+                        request.references,
                     )
                     .await
                     {

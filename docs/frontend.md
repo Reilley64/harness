@@ -350,6 +350,16 @@ multiline paste/draft retention, F2/F3, split SGR clicks, Escape during inferenc
 confirmed Stop and normal terminal-mode restoration. These byte-report
 observations are not a human terminal-emulator visual signoff.
 
+## Instruction provenance
+
+`/guidance` opens the real ACP-backed [guidance inspection](role-guidance.md),
+including selected/latest-run/available snapshots, exact source/version/upstream,
+required blocks and explicit overrides. Scoped/reference/phase commands inspect
+candidates; `/guidance adopt` records explicit adoption for future work. Bundled
+later roles are assets only, never map nodes or creation arrows. Inspection
+preserves the mounted chat, drafts, titles and Escape-back behavior. It does not
+start inference; active runs continue with their captured snapshot.
+
 ## TanStack AI
 
 TanStack AI can fit this architecture without replacing ACP or moving provider

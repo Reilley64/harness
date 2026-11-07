@@ -19,6 +19,10 @@ macro_rules! port {
     };
 }
 
+mod read_instructions;
+pub use read_instructions::ReadInstructions;
+pub use read_instructions::ReadInstructionsError;
+
 mod read_agent;
 pub use read_agent::ReadAgent;
 pub use read_agent::ReadAgentError;

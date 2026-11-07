@@ -1,6 +1,13 @@
 mod agent;
 mod agent_id;
 mod agent_role;
+mod instruction;
+pub use instruction::Instruction;
+mod instruction_snapshot;
+pub use instruction_snapshot::InstructionSnapshot;
+mod instruction_resolution;
+pub use instruction_resolution::InstructionResolution;
+
 mod conversation;
 mod model;
 mod model_effort;

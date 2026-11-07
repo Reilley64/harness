@@ -10,6 +10,7 @@ import {
   PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk";
 import type { Conversation } from "../types/conversation.js";
+import type { Guidance, GuidanceQuery } from "../types/guidance.js";
 import type { Model, ModelSelection } from "../types/model.js";
 import type { Provider } from "../types/provider.js";
 import type {
@@ -24,6 +25,7 @@ import {
 } from "./authorization.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
 import { PresentationError } from "./errors.js";
+import { parseGuidance } from "./guidance.js";
 import { parseModelSelection, parseModels } from "./models.js";
 import { readableStream } from "./readable-stream.js";
 import { parseTool } from "./tools.js";
@@ -334,6 +336,39 @@ export function connectAgent() {
     return parseConversation(response.conversation);
   }
 
+  async function readGuidance(
+    id?: string,
+    query: GuidanceQuery = {},
+  ): Promise<Guidance> {
+    await initialize();
+    const response = await connection.agent.request<unknown>(
+      "_harness/guidance/read",
+      { cwd: workspace, sessionId: id ?? null, ...query },
+    );
+    return parseGuidance(response);
+  }
+
+  async function adoptGuidance(
+    id: string,
+    revision: number,
+    guidance: Guidance,
+  ): Promise<Conversation> {
+    if (!guidance.available)
+      throw new PresentationError("Required instructions are blocked.");
+    const response = await connection.agent.request<{ conversation: unknown }>(
+      "_harness/guidance/adopt",
+      {
+        sessionId: id,
+        revision,
+        available: guidance.available.id,
+        phase: guidance.available.phase,
+        scopes: guidance.available.scopes,
+        references: guidance.available.references,
+      },
+    );
+    return parseConversation(response.conversation);
+  }
+
   async function acknowledgeInterruption(id: string): Promise<Conversation> {
     const response = await connection.agent.request<{ conversation: unknown }>(
       "_harness/agent/acknowledge",
@@ -528,6 +563,8 @@ export function connectAgent() {
     readAgent,
     startAgent,
     acknowledgeInterruption,
+    readGuidance,
+    adoptGuidance,
     createConversation,
     loadConversation,
     createMessage,

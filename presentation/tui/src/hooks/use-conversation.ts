@@ -3,6 +3,7 @@ import type { Agent } from "../services/acp.js";
 import { errorMessage } from "../services/acp.js";
 import { PresentationError } from "../services/errors.js";
 import type { Conversation, Message } from "../types/conversation.js";
+import type { Guidance } from "../types/guidance.js";
 import type { ModelSelection } from "../types/model.js";
 import type { ToolCall } from "../types/tool.js";
 import type { Usage } from "../types/usage.js";
@@ -238,6 +239,33 @@ export function useConversation(agent: Agent, initial?: Conversation) {
       } catch (error) {
         setError(errorMessage(error));
       }
+    },
+    adoptGuidance: async (
+      guidance: Guidance,
+      selection: ModelSelection | null,
+    ) => {
+      if (active.current)
+        throw new PresentationError(
+          "Stop or finish the run before adopting instructions.",
+        );
+      if (!current.current) {
+        if (!selection)
+          throw new PresentationError(
+            "Choose a model before creating the Griller.",
+          );
+        current.current = await agent.startAgent(selection);
+        setConversation(current.current);
+      }
+      const revision = guidance.revision ?? current.current.revision;
+      const updated = await agent.adoptGuidance(
+        current.current.id,
+        revision,
+        guidance,
+      );
+      current.current = updated;
+      setConversation(updated);
+      setError(null);
+      return updated;
     },
     cancel,
   };

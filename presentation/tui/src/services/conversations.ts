@@ -135,6 +135,10 @@ export function parseConversation(value: unknown): Conversation {
     agent: value.agent == null ? null : parseAgent(value.agent),
     runs: value.runs == null ? [] : parseRuns(value.runs),
     resumeRequired: value.resumeRequired === true,
+    selectedInstructions:
+      typeof value.selectedInstructions === "string"
+        ? value.selectedInstructions
+        : null,
     id: id(value.id),
     workspace: typeof value.workspace === "string" ? value.workspace : null,
     usage: value.usage == null ? undefined : parseUsage(value.usage),
@@ -161,7 +165,7 @@ function parseRuns(value: unknown): Run[] {
     if (
       !record(run) ||
       typeof run.modelId !== "string" ||
-      run.task !== "grilling" ||
+      !["grilling", "specification", "tickets"].includes(String(run.task)) ||
       !["running", "needs_human", "stopped", "failed", "interrupted"].includes(
         String(run.status),
       )
@@ -173,7 +177,9 @@ function parseRuns(value: unknown): Run[] {
       replyId: id(run.replyId),
       modelId: run.modelId,
       effort: effort(run.effort),
-      task: "grilling",
+      task: run.task as Run["task"],
+      instructions:
+        typeof run.instructions === "string" ? run.instructions : null,
       status: run.status as Run["status"],
     };
   });

@@ -11,6 +11,7 @@ use crate::ports::UpdateModelSelection;
 #[derive(Clone)]
 pub struct Dependencies {
     pub(super) read_conversation: ReadConversation,
+    pub(super) read_instructions: ports::ReadInstructions,
     pub(super) lock_conversation: LockConversation,
     pub(super) update_conversation: UpdateConversation,
     pub(super) read_models: ReadModels,

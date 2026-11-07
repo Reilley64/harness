@@ -1,4 +1,5 @@
 use crate::error_context;
+use crate::error_context::ResultExt;
 use crate::ports::CreateModelStep;
 mod dependencies;
 mod error;
@@ -129,6 +130,32 @@ async fn coordinate(
             .map_err(Error::caused_by)?;
         conversation.model = model;
         conversation.effort = selection.effort;
+    }
+    if conversation.agent.is_some() {
+        if content.is_none() {
+            conversation.run_instructions().context("Required run instruction snapshot is unknown; inspect /guidance, acknowledge the interruption and adopt instructions for new work").map_err(Error::caused_by)?.validate().context("Required run instruction snapshot is invalid").map_err(Error::caused_by)?;
+        } else if conversation.selected_instructions().is_none() {
+            let resolution = dependencies
+                .read_instructions
+                .call(
+                    conversation
+                        .workspace
+                        .clone()
+                        .ok_or_else(|| Error::caused_by("The role has no workspace"))?,
+                    "grilling".into(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+                .await
+                .map_err(Error::caused_by)?;
+            let snapshot = resolution.available.ok_or("Required instructions unavailable").context("Required instructions are blocked; inspect /guidance for dependencies and recovery").map_err(Error::caused_by)?;
+            if !resolution.overrides.is_empty() {
+                return Err("Explicit overrides").context("Explicit instruction overrides require inspection and adoption with /guidance before inference").map_err(Error::caused_by);
+            }
+            conversation
+                .adopt_instructions(snapshot)
+                .map_err(Error::caused_by)?;
+        }
     }
     let create_model_step = dependencies
         .create_model_step_factory

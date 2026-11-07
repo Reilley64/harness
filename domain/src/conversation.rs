@@ -1,4 +1,5 @@
 use crate::Agent;
+use crate::InstructionSnapshot;
 use crate::MAX_MODEL_STEPS;
 use crate::Message;
 use crate::MessageRole;
@@ -18,6 +19,8 @@ pub struct Conversation {
     pub id: String,
     pub agent: Option<Agent>,
     pub runs: Vec<Run>,
+    pub instruction_snapshots: Vec<InstructionSnapshot>,
+    pub selected_instructions: Option<String>,
     pub resume_required: bool,
     pub provider_connection_id: String,
     pub workspace: Option<std::path::PathBuf>,
@@ -30,6 +33,56 @@ pub struct Conversation {
 }
 
 impl Conversation {
+    pub fn selected_instructions(&self) -> Option<&InstructionSnapshot> {
+        self.selected_instructions.as_ref().and_then(|id| {
+            self.instruction_snapshots
+                .iter()
+                .find(|snapshot| &snapshot.id == id)
+        })
+    }
+
+    pub fn run_instructions(&self) -> Result<&InstructionSnapshot, &'static str> {
+        let id = self.runs.last().and_then(|run| run.instructions.as_ref())
+            .ok_or("Required instruction snapshot is unavailable for this run; inspect guidance, acknowledge the interruption and explicitly adopt instructions for new work")?;
+        self.instruction_snapshots
+            .iter()
+            .find(|snapshot| &snapshot.id == id)
+            .ok_or("Required run instruction snapshot is missing")
+    }
+
+    pub fn adopt_instructions(
+        &mut self,
+        snapshot: InstructionSnapshot,
+    ) -> Result<(), &'static str> {
+        if self.resume_required
+            || self
+                .messages
+                .iter()
+                .any(|message| message.status == MessageStatus::InProgress)
+        {
+            return Err(
+                "Instruction adoption requires idle work; Resume retains its captured snapshot",
+            );
+        }
+        snapshot.validate()?;
+        if let Some(existing) = self
+            .instruction_snapshots
+            .iter()
+            .find(|existing| existing.id == snapshot.id)
+        {
+            if existing != &snapshot {
+                return Err("Instruction snapshot identity is already bound to different content");
+            }
+        } else {
+            if self.instruction_snapshots.len() >= 128 {
+                return Err("Instruction snapshot history is full");
+            }
+            self.instruction_snapshots.push(snapshot.clone());
+        }
+        self.selected_instructions = Some(snapshot.id);
+        Ok(())
+    }
+
     pub fn usage(&self) -> UsageSummary {
         let mut input = 0u64;
         let mut output = 0u64;
@@ -133,6 +186,9 @@ impl Conversation {
 
     pub fn begin_run(&mut self, id: String) -> Result<(), &'static str> {
         if let Some(agent) = &self.agent {
+            self.selected_instructions()
+                .ok_or("Required Griller instructions are not selected")?
+                .validate()?;
             if self
                 .runs
                 .iter()
@@ -148,6 +204,7 @@ impl Conversation {
                 model_id: self.model.id.clone(),
                 effort: self.effort,
                 status: RunStatus::Running,
+                instructions: self.selected_instructions.clone(),
             });
         }
         Ok(())
@@ -156,6 +213,9 @@ impl Conversation {
     pub fn resume(&mut self) -> Result<(), &'static str> {
         if !self.resume_required {
             return Err("There is no interrupted work to Resume");
+        }
+        if self.agent.is_some() {
+            self.run_instructions()?.validate()?;
         }
         let reply = self
             .messages

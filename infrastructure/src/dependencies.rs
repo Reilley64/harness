@@ -10,6 +10,7 @@ use crate::read_code_matches;
 use crate::read_conversation;
 use crate::read_directory;
 use crate::read_file;
+use crate::read_instructions;
 use crate::read_model_selection;
 use crate::read_paths;
 use crate::read_provider_connection;
@@ -49,6 +50,7 @@ pub struct Dependencies {
     update_model_selection: ports::UpdateModelSelection,
     create_agent: ports::CreateAgent,
     read_agent: ports::ReadAgent,
+    read_instructions: ports::ReadInstructions,
     create_conversation: ports::CreateConversation,
     read_conversation: ports::ReadConversation,
     update_conversation: ports::UpdateConversation,
@@ -99,6 +101,14 @@ impl Dependencies {
                 let read = read_agent::read_agent(&settings.app_data_path.join("conversations"));
                 ports::ReadAgent::new(move |workspace| {
                     let result = read(workspace);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_instructions(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_instructions::read_instructions(&settings.app_data_path);
+                ports::ReadInstructions::new(move |workspace, phase, scopes, references| {
+                    let result = read(workspace, phase, scopes, references);
                     Box::pin(async move { Ok(result.await?) })
                 })
             })

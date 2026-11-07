@@ -34,6 +34,8 @@ pub fn create_conversation(
                 id,
                 agent: None,
                 runs: Vec::new(),
+                instruction_snapshots: Vec::new(),
+                selected_instructions: None,
                 resume_required: false,
                 provider_connection_id: connection.id,
                 workspace: Some(tokio::fs::canonicalize(workspace).await?),

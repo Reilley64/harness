@@ -92,7 +92,9 @@ no Serde dependency, and unknown versions/corrupt records are rejected unchanged
 Creation owns encode-only records, reading owns decode-only records, and updating
 owns both directions; no serialized representation is shared between adapters.
 Version three adds an optional Griller identity, runs linked to assistant replies,
-and an interruption gate. Each run records its own stable identity, agent identity,
+and an interruption gate. Version four adds immutable instruction snapshots,
+a selected snapshot reference and each run's actual snapshot reference; absent
+historical provenance stays unknown. See [role guidance](role-guidance.md). Each run records its own stable identity, agent identity,
 model/effort snapshot and lifecycle status. Reading/updating validates associations
 and chronological reply/status consistency, including complete run coverage for
 Griller messages. An associated Griller requires an absolute stored workspace;
@@ -192,7 +194,8 @@ legacy adoption occurs. An explicit `--resume` continues an old pilot conversati
 without inventing an agent association.
 
 The Griller uses the stock provider factory, ordinary tools, and Harness-owned
-`griller-v1.txt` role guidance. It refines ideas and asks for human input; this slice
+versioned role/phase instructions, explicit repository guidance and durable snapshots
+through the [role-guidance resolver](role-guidance.md). It refines ideas and asks for human input; this slice
 does not publish specs, delegate work, create CoS, or infer implementation/merge
 approval. Each submitted answer starts a later grilling run on the same agent;
 steering stays within the active run. A successful response ends the run for human

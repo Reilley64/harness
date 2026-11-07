@@ -25,6 +25,8 @@ async fn run() -> Result<(), AppError> {
         .models(|_| (&dependencies).into())
         .create_agent(|_| (&dependencies).into())
         .read_agent(|_| (&dependencies).into())
+        .read_guidance(|_| (&dependencies).into())
+        .update_guidance(|_| (&dependencies).into())
         .update_agent(|_| (&dependencies).into())
         .create_conversation(|_| (&dependencies).into())
         .read_conversation(|_| (&dependencies).into())
