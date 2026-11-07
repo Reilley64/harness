@@ -130,6 +130,9 @@ metadata identify the selected actual role and recorded creator. Creator identit
 is not execution ownership or blanket Stop propagation. This slice has no execution
 descendants; Stop affects only the selected leaf. Growing multi-agent maps and
 background conversation switching are not implemented by this handoff slice.
+Drafts and transcript viewport anchors are retained independently by conversation
+within the native UI session, including visits to an empty CoS. Plain empty-prompt
+Left supersedes pending conversation navigation just as F2/Escape do.
 
 ## ACP/application paths
 
@@ -181,7 +184,12 @@ handoff must still match backend authority. Both worker providers also recheck i
 at their shared HTTP admission boundary after credential resolution. A concurrent
 change after admission cannot recall an already-started request/effect, but its
 usage/results are preserved and subsequent work is blocked. Current model policy
-and capability admission are not widened by work approval.
+and capability admission are not widened by work approval. Tool execution borrows
+only a turn's immutable sender/role/assignment facts plus its saved workspace,
+not a full conversation/history/continuation/instruction clone before each tool.
+The bounded assignment facts are captured once on entering the turn loop; each tool still reads
+current durable authority independently, and steering remains checkpointed while
+that operation is pending.
 
 Cancelled UI reads are aborted and late results ignored. The conversation hook
 owns the whole Griller lookup, conversation load and model restoration operation;

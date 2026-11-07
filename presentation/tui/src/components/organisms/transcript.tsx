@@ -1,9 +1,10 @@
 import type { DOMElement } from "ink";
 import { Box, useBoxMetrics, useInput } from "ink";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useTerminalScroll } from "../../hooks/use-terminal-scroll.js";
 import { transcriptLines } from "../../services/transcript.js";
 import type { Message } from "../../types/conversation.js";
+import type { TranscriptViewport } from "../../types/transcript-viewport.js";
 import { MessageLine } from "../molecules/message-line.js";
 
 type Props = {
@@ -11,13 +12,21 @@ type Props = {
   columns: number;
   rows: number;
   focused: boolean;
+  viewportState: TranscriptViewport;
+  changeViewport: (
+    update: (current: TranscriptViewport) => TranscriptViewport,
+  ) => void;
 };
 
-export function Transcript({ messages, columns, rows, focused }: Props) {
-  const [anchor, setAnchor] = useState<{ id: string; end: number } | null>(
-    null,
-  );
-  const [expandedTools, setExpandedTools] = useState(false);
+export function Transcript({
+  messages,
+  columns,
+  rows,
+  focused,
+  viewportState,
+  changeViewport,
+}: Props) {
+  const { anchor, expandedTools } = viewportState;
   const viewport = useRef<DOMElement>(null);
   const metrics = useBoxMetrics(viewport);
   const height = Math.max(
@@ -37,7 +46,8 @@ export function Transcript({ messages, columns, rows, focused }: Props) {
   const visible = lines.slice(Math.max(0, end - height), end);
   const scrollBy = useCallback(
     (rows: number) => {
-      setAnchor((current) => {
+      changeViewport((state) => {
+        const current = state.anchor;
         let currentEnd = lines.length;
         if (current) {
           const index = lines.findIndex((line) => line.id === current.id);
@@ -50,19 +60,27 @@ export function Transcript({ messages, columns, rows, focused }: Props) {
           Math.min(height, lines.length),
           Math.min(lines.length, currentEnd + rows),
         );
-        return next >= lines.length
-          ? null
-          : { id: lines[next - 1]?.id ?? "", end: next };
+        return {
+          ...state,
+          anchor:
+            next >= lines.length
+              ? null
+              : { id: lines[next - 1]?.id ?? "", end: next },
+        };
       });
     },
-    [lines, height],
+    [lines, height, changeViewport],
   );
   useTerminalScroll(scrollBy, focused);
 
   useInput(
     (_input, key) => {
       if (key.eventType === "release") return;
-      if (key.ctrl && _input === "o") setExpandedTools((value) => !value);
+      if (key.ctrl && _input === "o")
+        changeViewport((current) => ({
+          ...current,
+          expandedTools: !current.expandedTools,
+        }));
       else if (key.pageUp) scrollBy(-Math.max(1, height - 1));
       else if (key.pageDown) scrollBy(Math.max(1, height - 1));
       else if (key.shift && key.upArrow) scrollBy(-1);

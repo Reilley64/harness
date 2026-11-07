@@ -8,7 +8,9 @@ pub use error::Error;
 pub use output::Output;
 pub async fn call(
     dependencies: impl Into<Dependencies>,
-    sender: &domain::Conversation,
+    sender_id: &str,
+    sender_agent: Option<&domain::Agent>,
+    workspace: std::path::PathBuf,
     id: String,
     intent: String,
     path: String,
@@ -23,15 +25,9 @@ pub async fn call(
             ));
         }
     }
-    let agent = sender
-        .agent
-        .as_ref()
+    let agent = sender_agent
         .filter(|a| a.role == domain::AgentRole::Griller)
         .ok_or_else(|| Error::caused_by("Publication requires the repository Griller"))?;
-    let workspace = sender
-        .workspace
-        .clone()
-        .ok_or_else(|| Error::caused_by("Publication requires a workspace"))?;
     let proposal = d
         .read_work_proposal
         .call(workspace.clone(), path, cancellation.clone())
@@ -45,13 +41,13 @@ pub async fn call(
         .unwrap_or(domain::ApprovedWork {
             id,
             creator_id: agent.id.0.clone(),
-            conversation_id: sender.id.clone(),
+            conversation_id: sender_id.into(),
             workspace,
             revision: 0,
             publications: Vec::new(),
             approvals: Vec::new(),
         });
-    if work.creator_id != agent.id.0 || work.conversation_id != sender.id {
+    if work.creator_id != agent.id.0 || work.conversation_id != sender_id {
         return Err(Error::caused_by("Work belongs to another Griller"));
     }
     let prior = (work.revision != 0).then_some(work.revision);

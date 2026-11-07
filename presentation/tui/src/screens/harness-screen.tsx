@@ -25,6 +25,7 @@ import { useGuidance } from "../hooks/use-guidance.js";
 import { useModelPicker } from "../hooks/use-model-picker.js";
 import { usePromptDraft } from "../hooks/use-prompt-draft.js";
 import { useProviderPicker } from "../hooks/use-provider-picker.js";
+import { useTranscriptViewport } from "../hooks/use-transcript-viewport.js";
 import type { Agent } from "../services/acp.js";
 import { errorMessage } from "../services/acp.js";
 import { usageLabel } from "../services/usage.js";
@@ -66,6 +67,7 @@ export function HarnessScreen({
   const gitBranch = useGitBranch(workspace);
   const connection = useCreateProviderConnection(agent);
   const draft = usePromptDraft(chat.conversation?.id ?? "initial");
+  const transcript = useTranscriptViewport(chat.conversation?.id ?? "initial");
   const [notice, setNotice] = useState<string | null>(null);
   const [map, setMap] = useState(false);
   const [stopConfirmation, setStopConfirmation] = useState(false);
@@ -348,7 +350,9 @@ export function HarnessScreen({
           }}
           onSubmit={submit}
           onOpenMap={() => {
+            chat.cancelOpen();
             guidance.close();
+            approved.close();
             setMap(true);
           }}
           focused={!modal && !map && !stopConfirmation}
@@ -442,6 +446,8 @@ export function HarnessScreen({
             )}
             {chat.messages.length > 0 && (
               <Transcript
+                viewportState={transcript.value}
+                changeViewport={transcript.change}
                 messages={chat.messages}
                 columns={columns}
                 rows={rows}

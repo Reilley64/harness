@@ -254,7 +254,11 @@ Ctrl+O expands/collapses output; resume reconstructs the same panels from snapsh
 Mouse wheel, PgUp/PgDn, and Shift+Up/Down scroll during both generation and idle.
 The viewport fills its measured available height, bottom-aligns short transcripts,
 and preserves its anchor while output streams; reaching the bottom resumes
-following new output. Escape preserves the anchor while navigating. Native terminal selection uses
+following new output. A screen-owned viewport hook retains independent anchors
+and tool-expansion state by durable conversation identity for the current UI
+session. Switching Griller/CoS, opening pickers or visiting an empty conversation
+cannot reuse another actor's numeric anchor or erase the previous reading position.
+This is in-session state, not durable scroll restoration after process restart. Escape preserves the anchor while navigating. Native terminal selection uses
 Shift+drag while mouse reporting is enabled. Mouse modes are restored on unmount.
 Unchanged immutable message objects retain cached row layouts; each message keeps
 only its current width/expansion layout in a weak cache. Visible rows are memoized,
@@ -344,7 +348,8 @@ rather than presented as the active run. Legacy pilot conversations remain
 unassociated. Multi-agent growth, pan/collapse and execution subtrees belong to
 later slices.
 
-Plain Left from the empty focused editor opens the map; whitespace, modifiers,
+Plain Left from the empty focused editor invalidates any pending conversation
+open before showing the map; whitespace, modifiers,
 paste and picker input retain their editing meaning. Function-key-shaped bytes
 inside bracketed paste never execute navigation, including fragmented markers
 and large paste chunks. Paste tracking survives picker activation changes.

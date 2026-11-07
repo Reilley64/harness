@@ -100,9 +100,13 @@ async fn coordinate(
             "Interrupted work requires explicit Resume",
         ));
     }
-    work_access::read(&dependencies.read_work, &conversation)
-        .await
-        .map_err(Error::caused_by)?;
+    work_access::read(
+        &dependencies.read_work,
+        &conversation.id,
+        conversation.assignment.as_ref(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     let selection = if content.is_none() {
         Some(domain::ModelSelection {
             provider_id: conversation.model.provider_id.clone(),
@@ -351,6 +355,9 @@ async fn run(
     let workspace = conversation.workspace.clone().ok_or_else(|| {
         Error::caused_by("Resume this conversation with an explicit workspace before using tools")
     })?;
+    let sender_id = conversation.id.clone();
+    let sender_agent = conversation.agent.clone();
+    let assignment = conversation.assignment.clone();
     let deadline = std::time::Instant::now();
     let reply = conversation.active_reply().map_err(Error::caused_by)?;
     let mut executions = reply
@@ -380,9 +387,13 @@ async fn run(
         if deadline.elapsed().as_secs() > 1200 {
             return Err(Error::caused_by("Turn exceeded 20 minutes"));
         }
-        work_access::read(&dependencies.read_work, conversation)
-            .await
-            .map_err(Error::caused_by)?;
+        work_access::read(
+            &dependencies.read_work,
+            &conversation.id,
+            conversation.assignment.as_ref(),
+        )
+        .await
+        .map_err(Error::caused_by)?;
         conversation.model = model_access::read_model(
             &dependencies.read_models,
             &conversation.model.provider_id,
@@ -538,7 +549,9 @@ async fn run(
                 let future = execute(
                     dependencies,
                     workspace.clone(),
-                    conversation.clone(),
+                    &sender_id,
+                    sender_agent.as_ref(),
+                    assignment.as_ref(),
                     invocation,
                     cancellation.clone(),
                 );
@@ -592,16 +605,18 @@ async fn run(
 async fn execute(
     dependencies: &Dependencies,
     workspace: std::path::PathBuf,
-    conversation: domain::Conversation,
+    sender_id: &str,
+    sender_agent: Option<&domain::Agent>,
+    assignment: Option<&domain::WorkAssignment>,
     invocation: domain::ToolInvocation,
     cancellation: CancellationToken,
 ) -> domain::ToolResult {
     let result: Result<domain::ToolResult, Box<dyn std::error::Error + Send + Sync>> = async {
-        work_access::read(&dependencies.read_work,&conversation).await?;
+        work_access::read(&dependencies.read_work,sender_id,assignment).await?;
         Ok(match invocation {
             domain::ToolInvocation::PublishWork(arguments) => {
                 if cancellation.is_cancelled() { return Ok(domain::ToolResult::cancelled()); }
-                let result=create_work::call(dependencies.create_work.clone(),&conversation,arguments.work_id,arguments.intent,arguments.path,arguments.revision,cancellation).await?;
+                let result=create_work::call(dependencies.create_work.clone(),sender_id,sender_agent,workspace,arguments.work_id,arguments.intent,arguments.path,arguments.revision,cancellation).await?;
                 domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Child dispatch, review and merge are unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
             }
             domain::ToolInvocation::ReadFile(arguments) => {
