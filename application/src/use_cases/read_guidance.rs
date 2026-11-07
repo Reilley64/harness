@@ -39,9 +39,20 @@ pub async fn call(
         .call(
             workspace,
             phase.unwrap_or_else(|| {
-                selected
-                    .as_ref()
-                    .map_or("grilling".into(), |snapshot| snapshot.phase.clone())
+                selected.as_ref().map_or_else(
+                    || {
+                        if conversation
+                            .as_ref()
+                            .and_then(|c| c.agent.as_ref())
+                            .is_some_and(|a| a.role == domain::AgentRole::Setup)
+                        {
+                            "setup".into()
+                        } else {
+                            "grilling".into()
+                        }
+                    },
+                    |snapshot| snapshot.phase.clone(),
+                )
             }),
             scopes.unwrap_or_else(|| {
                 selected

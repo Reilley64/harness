@@ -16,7 +16,7 @@ impl InstructionSnapshot {
             || !self.id.bytes().all(|byte| byte.is_ascii_hexdigit())
             || !matches!(
                 self.phase.as_str(),
-                "grilling" | "specification" | "tickets"
+                "grilling" | "specification" | "tickets" | "setup"
             )
             || self.instructions.is_empty()
             || self.instructions.len() > 64
@@ -74,8 +74,14 @@ impl InstructionSnapshot {
         {
             return Err("Instruction snapshot exceeds 1 MiB");
         }
-        if !ids.contains(&"role/griller".to_owned())
-            || !ids.contains(&"contract".to_owned())
+        if !ids.contains(&format!(
+            "role/{}",
+            if self.phase == "setup" {
+                "setup"
+            } else {
+                "griller"
+            }
+        )) || !ids.contains(&"contract".to_owned())
             || !ids.contains(&format!("procedure/{}", self.phase))
         {
             return Err("Instruction snapshot is missing its required role, contract or phase");

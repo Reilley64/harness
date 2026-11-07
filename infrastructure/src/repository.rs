@@ -30,3 +30,18 @@ pub(crate) async fn identity(
     .to_string();
     Ok((workspace, id))
 }
+
+pub(crate) async fn agent_identity(
+    workspace: &Path,
+    role: domain::AgentRole,
+) -> Result<(std::path::PathBuf, String), StorageError> {
+    let (workspace, griller) = identity(workspace).await?;
+    let id = match role {
+        domain::AgentRole::Griller => griller,
+        domain::AgentRole::Setup => {
+            uuid::Uuid::new_v5(&uuid::Uuid::parse_str(&griller)?, b"setup").to_string()
+        }
+        _ => return Err("This role has no repository execution path".into()),
+    };
+    Ok((workspace, id))
+}

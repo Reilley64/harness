@@ -153,9 +153,17 @@ export function parseConversation(value: unknown): Conversation {
 }
 
 function parseAgent(value: unknown) {
-  if (!record(value) || value.role !== "griller" || value.creatorId !== null)
+  if (
+    !record(value) ||
+    (value.role !== "griller" && value.role !== "setup") ||
+    value.creatorId !== null
+  )
     throw new PresentationError("Invalid agent identity.");
-  return { id: id(value.id), role: "griller" as const, creatorId: null };
+  return {
+    id: id(value.id),
+    role: value.role as "griller" | "setup",
+    creatorId: null,
+  };
 }
 
 function parseRuns(value: unknown): Run[] {
@@ -165,7 +173,9 @@ function parseRuns(value: unknown): Run[] {
     if (
       !record(run) ||
       typeof run.modelId !== "string" ||
-      !["grilling", "specification", "tickets"].includes(String(run.task)) ||
+      !["grilling", "specification", "tickets", "setup"].includes(
+        String(run.task),
+      ) ||
       !["running", "needs_human", "stopped", "failed", "interrupted"].includes(
         String(run.status),
       )

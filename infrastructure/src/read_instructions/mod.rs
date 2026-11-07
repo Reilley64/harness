@@ -92,7 +92,10 @@ async fn resolve(
     mut references: Vec<String>,
     resolution: &mut domain::InstructionResolution,
 ) -> Result<domain::InstructionSnapshot, Error> {
-    if !matches!(phase.as_str(), "grilling" | "specification" | "tickets") {
+    if !matches!(
+        phase.as_str(),
+        "grilling" | "specification" | "tickets" | "setup"
+    ) {
         return Err("Required phase must be grilling, specification or tickets".into());
     }
     if scopes.len() > 32 || references.len() > 32 {
@@ -107,6 +110,7 @@ async fn resolve(
         .context("Instruction workspace is unavailable")?;
     let mut selected = BTreeMap::new();
     let mut root = None;
+    let mut root_source = None;
     for path in [
         local.to_path_buf(),
         workspace.join(".harness/instructions/config.json"),
@@ -137,6 +141,7 @@ async fn resolve(
                 .overrides
                 .push(format!("Root selection from {}: {value}", path.display()));
             root = Some(value);
+            root_source = Some(path.clone());
         }
         let mut ids = BTreeSet::new();
         for entry in config.overrides {
@@ -175,7 +180,13 @@ async fn resolve(
         .iter()
         .map(|instruction| (instruction.id.clone(), instruction.clone()))
         .collect();
-    let mut needed = vec!["role/griller".to_owned(), format!("procedure/{phase}")];
+    let mut needed = vec![
+        format!(
+            "role/{}",
+            if phase == "setup" { "setup" } else { "griller" }
+        ),
+        format!("procedure/{phase}"),
+    ];
     let mut loaded = BTreeMap::new();
     while let Some(id) = needed.pop() {
         if loaded.contains_key(&id) {
@@ -224,13 +235,44 @@ async fn resolve(
             return Err("Required instruction dependency closure exceeds its bound".into());
         }
     }
-    let root = match root {
-        Some(root) => relative(&root)?,
-        None => steering(&workspace).await?.ok_or("Required root guidance is missing: select AGENTS.md or CLAUDE.md; Setup generation is a separate path")?,
-    };
-    let root_instruction = document(&workspace, &root, "repository/root".into()).await?;
     let mut documents = BTreeMap::new();
-    documents.insert(root_instruction.source.clone(), root_instruction);
+    if phase == "setup" {
+        if let Some(root) = &root {
+            let selection = domain::Instruction {
+                id: "repository/setup-root-selection".into(),
+                version: "captured-content".into(),
+                source: root_source
+                    .as_ref()
+                    .ok_or("Root selection has no source")?
+                    .to_string_lossy()
+                    .into(),
+                upstream: Vec::new(),
+                requires: Vec::new(),
+                body: format!(
+                    "Explicit intended root: {root}. Preserve this selection; a missing file is a Setup bootstrap omission, not permission to choose another root."
+                ),
+            };
+            documents.insert(selection.source.clone(), selection);
+        }
+        for name in ["AGENTS.md", "CLAUDE.md"] {
+            if tokio::fs::try_exists(workspace.join(name)).await? {
+                let instruction = document(
+                    &workspace,
+                    Path::new(name),
+                    format!("repository/existing/{name}"),
+                )
+                .await?;
+                documents.insert(instruction.source.clone(), instruction);
+            }
+        }
+    } else {
+        let root = match root {
+            Some(root) => relative(&root)?,
+            None => steering(&workspace).await?.ok_or("Required root guidance is missing: select AGENTS.md or CLAUDE.md; Setup generation is a separate path")?,
+        };
+        let root_instruction = document(&workspace, &root, "repository/root".into()).await?;
+        documents.insert(root_instruction.source.clone(), root_instruction);
+    }
     for scope in &scopes {
         let scope = relative(scope)?;
         let directory = workspace.join(&scope);

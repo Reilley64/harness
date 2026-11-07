@@ -1,4 +1,5 @@
 use crate::Agent;
+use crate::AgentRole;
 use crate::InstructionSnapshot;
 use crate::MAX_MODEL_STEPS;
 use crate::Message;
@@ -54,6 +55,11 @@ impl Conversation {
         &mut self,
         snapshot: InstructionSnapshot,
     ) -> Result<(), &'static str> {
+        if let Some(agent) = &self.agent
+            && (snapshot.phase == "setup") != (agent.role == AgentRole::Setup)
+        {
+            return Err("Instruction phase does not match the durable role");
+        }
         if self.resume_required
             || self
                 .messages
@@ -398,6 +404,35 @@ impl Conversation {
             after_step: reply.steps.len(),
         });
         Ok(true)
+    }
+
+    pub fn update_setup_call(&mut self, updated: ToolCall) -> Result<(), &'static str> {
+        if self
+            .agent
+            .as_ref()
+            .is_none_or(|a| a.role != AgentRole::Setup)
+        {
+            return Err("Only Setup owns draft confirmation");
+        }
+        let call = self
+            .messages
+            .iter_mut()
+            .flat_map(|m| &mut m.steps)
+            .flat_map(|s| &mut s.calls)
+            .find(|c| c.id == updated.id)
+            .ok_or("Setup proposal is unavailable")?;
+        if call.call_id != updated.call_id
+            || call.name != updated.name
+            || call.arguments != updated.arguments
+            || call.text_offset != updated.text_offset
+        {
+            return Err("Setup proposal identity cannot change during execution");
+        }
+        if call.draft.is_none() || call.draft != updated.draft || !call.permits(updated.status) {
+            return Err("Invalid Setup confirmation transition");
+        }
+        *call = updated;
+        Ok(())
     }
 
     pub fn history(&self) -> Vec<&Message> {

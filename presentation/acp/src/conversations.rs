@@ -126,7 +126,7 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
         "resumeRequired": conversation.resume_required,
         "selectedInstructions": conversation.selected_instructions,
         "agent": conversation.agent.as_ref().map(|agent| serde_json::json!({
-            "id": agent.id.0, "role": "griller", "creatorId": null,
+            "id": agent.id.0, "role": if agent.role == domain::AgentRole::Setup { "setup" } else { "griller" }, "creatorId": null,
         })),
         "runs": conversation.runs.iter().map(|run| serde_json::json!({
             "id": run.id, "agentId": run.agent_id.0, "replyId": run.reply_id,

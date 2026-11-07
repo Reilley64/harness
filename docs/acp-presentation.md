@@ -40,7 +40,8 @@ advertises the agent-handled
     "harness/tools": true,
     "harness/steering": true,
     "harness/agents": true,
-    "harness/guidance": true
+    "harness/guidance": true,
+    "harness/setup": true
   }
 }
 ```
@@ -50,7 +51,11 @@ before requesting providers, and checks the model marker before requesting model
 
 ## Repository-agent extension
 
-`harness/agents: true` advertises the narrow durable Griller controls:
+`harness/agents: true` advertises the narrow durable Setup/Griller controls.
+Read/start accept optional `role: "setup" | "griller"`; absent role uses repository
+presence detection. See [repository Setup](repository-setup.md) for its real
+read/confirmation extension, native draft inspector and recovery contract.
+The controls are:
 
 - `_harness/agent/read` accepts `{cwd}` and returns
   `{conversation: null | <safe conversation>}`. A missing Griller is normal.

@@ -343,7 +343,7 @@ the sole selected node; Tab/arrows retain that selection. A single mouse click
 selects it; a same-node double-click within 400 ms opens it. Ink-measured hit bounds
 handle split SGR reports and invalidate pending double-clicks on geometry changes.
 
-Titles are exactly `harness - Griller` and `harness - Agent map`; an explicitly
+Titles are exactly `harness - Griller`, `harness - Setup` and `harness - Agent map`; an explicitly
 loaded unassociated pilot uses `harness - Conversation`. Only static context labels
 enter title escapes. Background updates cannot change selection/title. Title,
 mouse and raw/alternate-screen modes pair with cleanup. The transcript stays
@@ -378,6 +378,17 @@ candidates; `/guidance adopt` records explicit adoption for future work. Bundled
 later roles are assets only, never map nodes or creation arrows. Inspection
 preserves the mounted chat, drafts, titles and Escape-back behavior. It does not
 start inference; active runs continue with their captured snapshot.
+
+## Repository Setup
+
+Repository open selects the actual durable Setup actor when applicable output files
+are absent; complete repositories bypass it. `/setup` inspects presence and exact
+stored before/after proposals, with explicit per-proposal confirmation/cancellation.
+`/setup chat` and `/griller` navigate independent durable actors without inference.
+The current-role map remains a leaf, not the later multi-agent map product. Draft
+inspection is cancellable; admitted writes drain without late navigation/title
+changes. See [repository Setup](repository-setup.md) for keys, scope, schema,
+bootstrap instruction handling and the trusted-client/OS-user boundary.
 
 ## TanStack AI
 

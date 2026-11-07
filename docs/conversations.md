@@ -15,8 +15,10 @@ See [tool calls](tool-calls.md) for the execution and permissions contract.
 
 ## Workflow
 
-1. Startup reads this repository's Griller when one exists, without inference.
-   Otherwise it renders an empty view and creates no conversation file.
+1. Startup uses the [repository Setup presence detector](repository-setup.md) to
+   select Setup for missing outputs, otherwise Griller, and reads its saved
+   conversation without inference. An absent actor renders an empty view and
+   creates no conversation file.
 2. The user signs in with `/auth` and chooses a model with `/model`.
 3. On the first idea, Ink requests `_harness/agent/start`, backed by
    `create_agent`. It validates model/provider/effort, resolves the saved connection,
@@ -100,7 +102,9 @@ no Serde dependency, and unknown versions/corrupt records are rejected unchanged
 Creation owns encode-only records, reading owns decode-only records, and updating
 owns both directions; no serialized representation is shared between adapters.
 Version three adds an optional Griller identity, runs linked to assistant replies,
-and an interruption gate. Version four adds immutable instruction snapshots,
+and an interruption gate. Version five adds actual Setup role/durable tool drafts and exact human
+confirmation; versions one through four remain supported without invented consent.
+See [repository Setup](repository-setup.md). Version four adds immutable instruction snapshots,
 a selected snapshot reference and each run's actual snapshot reference; absent
 historical provenance stays unknown. See [role guidance](role-guidance.md). Each run records its own stable identity, agent identity,
 model/effort snapshot and lifecycle status. Reading/updating validates associations
@@ -165,7 +169,7 @@ cache-write warnings contain no raw errors, URLs, paths, or response content.
 The frontend parses exactly one ID, and Rust loads it through standard ACP
 `session/load`. Bad/missing arguments, absent files, unsupported versions, and
 corrupt records are visible startup errors, never a silent fresh fallback. No
-argument opens this repository's saved Griller if present; it never picks an
+argument opens the detected repository Setup/Griller if present; it never picks an
 arbitrary legacy conversation.
 
 The `--resume` startup option loads history, provider-connection reference, model,

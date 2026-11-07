@@ -5,6 +5,7 @@ mod dependencies;
 mod guidance;
 mod projection;
 mod prompt;
+mod setup;
 mod steering;
 mod tools;
 mod usage;
@@ -68,6 +69,8 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         models,
         create_agent,
         read_agent,
+        read_setup,
+        update_setup,
         update_agent,
         read_guidance,
         update_guidance,
@@ -106,6 +109,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/usage".into(), serde_json::json!(true)),
                     ("harness/agents".into(), serde_json::json!(true)),
                     ("harness/guidance".into(), serde_json::json!(true)),
+                    ("harness/setup".into(), serde_json::json!(true)),
                 ]
                 .into_iter()
                 .collect();
@@ -439,7 +443,25 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 let dependencies = read_agent.clone();
                 let sessions = read_agent_sessions.clone();
                 connection.spawn(async move {
-                    match application::use_cases::read_agent::call(dependencies, request.cwd).await
+                    let role = match setup::role(request.role) {
+                        Ok(role) => role,
+                        Err(error) => {
+                            return responder
+                                .respond_with_error(Error::invalid_params().data(error));
+                        }
+                    };
+                    match responder
+                        .cancellation()
+                        .run_until_cancelled(async {
+                            application::use_cases::read_agent::call(
+                                dependencies,
+                                request.cwd,
+                                role,
+                            )
+                            .await
+                            .map_err(conversations::error)
+                        })
+                        .await
                     {
                         Ok(output) => {
                             if let Some(conversation) = output.conversation {
@@ -455,7 +477,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                                 responder.respond(agents::Response { conversation: None })
                             }
                         }
-                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                        Err(error) => responder.respond_with_error(error),
                     }
                 })
             },
@@ -473,6 +495,8 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                             dependencies,
                             selection,
                             request.cwd,
+                            setup::role(request.role)
+                                .map_err(|error| Error::invalid_params().data(error))?,
                         )
                         .await
                         .map_err(conversations::error)?;
@@ -522,6 +546,53 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     match application::use_cases::update_agent::call(
                         dependencies,
                         request.session_id,
+                    )
+                    .await
+                    {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: setup::ReadRequest, responder, connection| {
+                let dependencies = read_setup.clone();
+                connection.spawn(async move {
+                    let result = responder
+                        .cancellation()
+                        .run_until_cancelled(async {
+                            application::use_cases::read_setup::call(
+                                dependencies,
+                                request.cwd,
+                                request.session_id,
+                                tokio_util::sync::CancellationToken::new(),
+                            )
+                            .await
+                            .map(setup::Response::from)
+                            .map_err(conversations::error)
+                        })
+                        .await;
+                    match result {
+                        Ok(output) => responder.respond(output),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: setup::UpdateRequest, responder, connection| {
+                let dependencies = update_setup.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_setup::call(
+                        dependencies,
+                        request.session_id,
+                        request.revision,
+                        request.proposal,
+                        request.confirm,
+                        tokio_util::sync::CancellationToken::new(),
                     )
                     .await
                     {

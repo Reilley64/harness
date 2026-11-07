@@ -68,8 +68,8 @@ and results remain. Reused provider call IDs are rejected before new execution.
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 4 with agent/run associations and immutable instruction
-snapshots; versions 1–3 are read without inventing historical instruction provenance
+Records are schema version 5 with optional Setup tool drafts, agent/run associations and immutable instruction
+snapshots; versions 1–4 are read without inventing historical instruction provenance
 or rewriting until mutation/recovery. See [role guidance](role-guidance.md).
 Read/create/update conversation adapters and preference adapters each own their
 serialized `Record` types. Shared filesystem helpers operate on bytes, not DTOs.
@@ -90,6 +90,16 @@ Explicit Stop cancels the current turn, including subprocess cleanup, without
 initiating another request. Escape only closes or back-navigates. Failed/unaccepted instructions remain drafts. Unsaved draft text
 is not cleared by completion. Neither React nor the transport automatically
 replays a failed request.
+
+## Setup output proposals
+
+In a Setup conversation, ordinary write calls persist a Draft rather than execute
+a repository mutation; edit asks for a preserved-content full draft. Exact trusted
+human confirmation uses the same checkpoint-before-effect, expected-base file
+replacement and result/artifact mechanisms. Draft is not Succeeded, and Unknown
+confirmation outcomes cannot be retried. See [repository Setup](repository-setup.md)
+for scope, fencing, cancellation and the unsandboxed bash boundary. Other roles'
+ordinary tools retain their existing automatic behavior.
 
 ## Tool behavior
 

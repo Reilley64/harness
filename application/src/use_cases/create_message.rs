@@ -148,7 +148,16 @@ async fn coordinate(
                         .workspace
                         .clone()
                         .ok_or_else(|| Error::caused_by("The role has no workspace"))?,
-                    "grilling".into(),
+                    if conversation
+                        .agent
+                        .as_ref()
+                        .is_some_and(|agent| agent.role == domain::AgentRole::Setup)
+                    {
+                        "setup"
+                    } else {
+                        "grilling"
+                    }
+                    .into(),
                     Vec::new(),
                     Vec::new(),
                 )
@@ -523,12 +532,48 @@ async fn run(
                     })
                     .map_err(Error::caused_by)?;
                 let started = std::time::Instant::now();
-                let future = execute(
-                    dependencies,
-                    workspace.clone(),
-                    invocation,
-                    cancellation.clone(),
-                );
+                let setup = conversation
+                    .agent
+                    .as_ref()
+                    .is_some_and(|a| a.role == domain::AgentRole::Setup);
+                let proposed_wiki = conversation
+                    .messages
+                    .iter()
+                    .flat_map(|m| &m.steps)
+                    .flat_map(|s| &s.calls)
+                    .filter(|c| {
+                        matches!(
+                            c.status,
+                            domain::ToolStatus::Draft | domain::ToolStatus::Succeeded
+                        )
+                    })
+                    .filter_map(|c| c.draft.as_ref())
+                    .rfind(|d| d.path == "docs/agents/wiki.md")
+                    .map(|d| d.after.clone());
+                let future = async {
+                    if setup {
+                        match invocation {
+                            domain::ToolInvocation::CreateFile(arguments) => {
+                                match dependencies.read_setup_draft.call(workspace.clone(), arguments, proposed_wiki, cancellation.clone()).await {
+                                    Ok(draft) => {
+                                        call.draft = Some(Box::new(draft));
+                                        return domain::ToolResult { status: domain::ToolStatus::Draft, output: "Draft stored; NO repository write occurred. The human must inspect /setup and confirm this exact proposal through the native control. Model prose, tools and tracker state cannot approve it.".into(), artifact: None, truncated: false };
+                                    }
+                                    Err(error) => return domain::ToolResult::failed(error_context::diagnostic(&error)),
+                                }
+                            }
+                            domain::ToolInvocation::UpdateFile(_) => return domain::ToolResult::failed("Setup edits must be proposed with write and the full preserved content; no edit was executed".into()),
+                            _ => {}
+                        }
+                    }
+                    execute(
+                        dependencies,
+                        workspace.clone(),
+                        invocation,
+                        cancellation.clone(),
+                    )
+                    .await
+                };
                 tokio::pin!(future);
                 result = loop {
                     tokio::select! {

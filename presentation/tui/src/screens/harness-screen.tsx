@@ -11,6 +11,7 @@ import { GuidancePanel } from "../components/organisms/guidance-panel.js";
 import { ModelPicker } from "../components/organisms/model-picker.js";
 import { ProviderConnectionStatus } from "../components/organisms/provider-connection-status.js";
 import { ProviderPicker } from "../components/organisms/provider-picker.js";
+import { SetupPanel } from "../components/organisms/setup-panel.js";
 import { Transcript } from "../components/organisms/transcript.js";
 import { HarnessLayout } from "../components/templates/harness-layout.js";
 import { useAgentConnection } from "../hooks/use-agent-connection.js";
@@ -23,22 +24,26 @@ import { useGuidance } from "../hooks/use-guidance.js";
 import { useModelPicker } from "../hooks/use-model-picker.js";
 import { usePromptDraft } from "../hooks/use-prompt-draft.js";
 import { useProviderPicker } from "../hooks/use-provider-picker.js";
+import { useSetup } from "../hooks/use-setup.js";
 import type { Agent } from "../services/acp.js";
 import { errorMessage } from "../services/acp.js";
 import { usageLabel } from "../services/usage.js";
 import type { Conversation } from "../types/conversation.js";
 import type { ModelSelection } from "../types/model.js";
+import type { Setup } from "../types/setup.js";
 
 export function HarnessScreen({
   agent,
   initialConversation,
   initialSelection = null,
   initialModelError = null,
+  initialSetup,
 }: {
   agent: Agent;
   initialConversation?: Conversation;
   initialSelection?: ModelSelection | null;
   initialModelError?: string | null;
+  initialSetup: Setup;
 }) {
   const { exit } = useApp();
   const { columns, rows } = useWindowSize();
@@ -53,6 +58,15 @@ export function HarnessScreen({
   );
   const chat = useConversation(agent, initialConversation);
   const guidance = useGuidance(agent, chat.conversation);
+  const setup = useSetup(
+    agent,
+    chat.conversation,
+    initialSetup,
+    chat.reconcile,
+  );
+  const role =
+    chat.conversation?.agent?.role ??
+    (initialSetup.missing.length ? "setup" : "griller");
   const workspace =
     chat.conversation?.workspace ??
     agent.workspace ??
@@ -65,7 +79,11 @@ export function HarnessScreen({
   const [map, setMap] = useState(false);
   const [stopConfirmation, setStopConfirmation] = useState(false);
   const modal =
-    !!models.picker || !!providers.picker || connection.busy || guidance.open;
+    !!models.picker ||
+    !!providers.picker ||
+    connection.busy ||
+    guidance.open ||
+    setup.open;
   useContextNavigation(
     !modal && !stopConfirmation,
     () => {
@@ -82,7 +100,9 @@ export function HarnessScreen({
       ? "harness - Agent map"
       : chat.conversation && !chat.conversation.agent
         ? "harness - Conversation"
-        : "harness - Griller",
+        : role === "setup"
+          ? "harness - Setup"
+          : "harness - Griller",
   );
 
   useInput((input, key) => {
@@ -95,12 +115,17 @@ export function HarnessScreen({
       key.ctrl &&
       input === "r" &&
       !guidance.open &&
+      !setup.open &&
       !connection.busy &&
       !models.picker &&
       !providers.picker
     ) {
       guidance.close();
       draft.recover();
+      return;
+    }
+    if (setup.open) {
+      if (key.escape) setup.close();
       return;
     }
     if (guidance.open) {
@@ -181,6 +206,7 @@ export function HarnessScreen({
   function submit(value: string) {
     const command = value.trim();
     if (!command.startsWith("/guidance")) guidance.close();
+    if (command !== "/setup") setup.close();
     if (
       chat.busy &&
       command.startsWith("/") &&
@@ -188,7 +214,8 @@ export function HarnessScreen({
       command !== "/exit" &&
       command !== "/stop" &&
       command !== "/map" &&
-      command !== "/guidance"
+      command !== "/guidance" &&
+      command !== "/setup"
     ) {
       setNotice(
         "Use /stop to stop this Griller before using commands. Escape only navigates.",
@@ -206,9 +233,19 @@ export function HarnessScreen({
     } else if (command === "/map") {
       draft.change("");
       setMap(true);
+    } else if (command === "/setup") {
+      draft.change("");
+      void setup.inspect();
+    } else if (command === "/setup chat" || command === "/griller") {
+      draft.change("");
+      const next = command === "/griller" ? "griller" : "setup";
+      void chat
+        .openRole(next, models.selection)
+
+        .catch((error) => setNotice(errorMessage(error)));
     } else if (command === "/guidance") {
       draft.change("");
-      void guidance.inspect();
+      void guidance.inspect(role === "setup" ? { phase: "setup" } : undefined);
     } else if (command.startsWith("/guidance phase ")) {
       draft.change("");
       void guidance.inspect({
@@ -238,7 +275,11 @@ export function HarnessScreen({
       });
     } else if (command === "/guidance reset") {
       draft.change("");
-      void guidance.inspect({ phase: "grilling", scopes: [], references: [] });
+      void guidance.inspect({
+        phase: role === "setup" ? "setup" : "grilling",
+        scopes: [],
+        references: [],
+      });
     } else if (command === "/guidance adopt") {
       draft.change("");
       const inspected = guidance.guidance;
@@ -288,7 +329,7 @@ export function HarnessScreen({
         models.selection?.model ?? chat.conversation?.model,
       )}
       contentAlignment={models.picker ? "end" : "start"}
-      showPrompt={!models.picker && !map && !guidance.open}
+      showPrompt={!models.picker && !map && !guidance.open && !setup.open}
       selectedModel={
         models.selection
           ? `${models.selection.model.providerId}/${models.selection.model.id}${models.selection.effort ? ` · ${models.selection.effort}` : ""}`
@@ -323,10 +364,20 @@ export function HarnessScreen({
       )}
       {stopConfirmation && (
         <TerminalText>
-          Stop Griller's active leaf run? No descendants. Completed effects
-          remain; uncertain effects are not rolled back. Y/Enter Stop · Esc
-          close
+          {`Stop ${role === "setup" ? "Setup" : "Griller"}'s active leaf run? No descendants. Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
         </TerminalText>
+      )}
+      {setup.open && (
+        <SetupPanel
+          view={setup.view}
+          loading={setup.loading}
+          saving={setup.saving}
+          error={setup.error}
+          columns={columns}
+          rows={rows}
+          refresh={() => void setup.inspect()}
+          update={(id, confirm) => void setup.update(id, confirm)}
+        />
       )}
       {guidance.open && (
         <GuidancePanel
@@ -340,7 +391,7 @@ export function HarnessScreen({
           }}
         />
       )}
-      {map && !stopConfirmation && !guidance.open && (
+      {map && !stopConfirmation && !guidance.open && !setup.open && (
         <AgentMap
           conversation={chat.conversation}
           busy={chat.busy}
@@ -353,7 +404,11 @@ export function HarnessScreen({
       <Box
         flexDirection="column"
         flexGrow={1}
-        display={map || stopConfirmation || guidance.open ? "none" : "flex"}
+        display={
+          map || stopConfirmation || guidance.open || setup.open
+            ? "none"
+            : "flex"
+        }
       >
         {models.picker ? (
           <ModelPicker
@@ -378,6 +433,13 @@ export function HarnessScreen({
           <ProviderConnectionStatus state={connection.state} />
         ) : (
           <>
+            {role === "setup" && !chat.messages.length && (
+              <TerminalText>
+                Repository Setup · missing guidance detected. Choose /auth and
+                /model, then discuss only missing outputs. /setup inspects
+                durable proposals before any file confirmation.
+              </TerminalText>
+            )}
             {chat.messages.length === 0 && !connectionError && (
               <StartupWordmark />
             )}

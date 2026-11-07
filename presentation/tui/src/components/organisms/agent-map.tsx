@@ -31,7 +31,9 @@ export function AgentMap({
       >
         <TerminalText bold>
           {agent
-            ? "› Griller"
+            ? agent.role === "setup"
+              ? "› Setup"
+              : "› Griller"
             : conversation
               ? "Unassociated pilot history"
               : "No repository Griller yet"}
@@ -57,7 +59,7 @@ export function AgentMap({
           <TerminalText wrap="truncate-end">
             {conversation.workspace ?? "Workspace not yet bound"}
           </TerminalText>
-          <TerminalText wrap="truncate-end">{`${busy ? "Last saved context · " : ""}${agent ? "grilling · " : ""}${conversation.model.providerId}/${run?.modelId ?? conversation.model.id} · ${(run ? run.effort : conversation.effort) ?? "no effort"}`}</TerminalText>
+          <TerminalText wrap="truncate-end">{`${busy ? "Last saved context · " : ""}${agent ? `${agent.role} · ` : ""}${conversation.model.providerId}/${run?.modelId ?? conversation.model.id} · ${(run ? run.effort : conversation.effort) ?? "no effort"}`}</TerminalText>
           {run && (
             <TerminalText
               dimColor

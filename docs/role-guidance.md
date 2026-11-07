@@ -10,7 +10,8 @@ resolves the embedded bundle, explicit configuration and repository documents.
 adopts an inspected candidate under the conversation lock and checked revision.
 Domain values remain Serde-free. Each conversation adapter owns its own records.
 
-Only Griller executes. Setup, Research, Chief of Staff, Implementer, Reviewer,
+Griller and [Setup](repository-setup.md) execute through the ordinary coordinator.
+Research, Chief of Staff, Implementer, Reviewer,
 review-axis, Retro and handoff assets are bundled for later assignment owners;
 inspection is not an agent roster, dispatch API or creation relationship. Native
 Jev Decider has a separate typed-decision contract, not a conversational/tool role.
@@ -18,7 +19,7 @@ All conversational roles use shared configured tools. Guidance cannot grant scop
 settle work, reset allowances, authorize writes/merge or resolve Unknown effects.
 Bash/MCP are OS-user trusted; source worktrees do not isolate services or secrets.
 
-Setup detection/generation/consent/wiki, approval-to-CoS, execution/joins/steering,
+Approval-to-CoS, execution/joins/steering,
 completion/continuation, compaction and provider fallback are not implemented by
 this module. Missing glossary/ADR files are not unconditional Setup triggers.
 

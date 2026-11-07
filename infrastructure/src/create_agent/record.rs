@@ -47,12 +47,21 @@ impl Record {
         provider_connection_id: String,
         workspace: std::path::PathBuf,
         now: u64,
+        role: domain::AgentRole,
     ) -> Self {
         Self {
-            version: 3,
+            version: if role == domain::AgentRole::Setup {
+                5
+            } else {
+                3
+            },
             agent: AgentRecord {
                 id: agent_id,
-                role: "griller",
+                role: if role == domain::AgentRole::Setup {
+                    "setup"
+                } else {
+                    "griller"
+                },
             },
             runs: [],
             resume_required: false,

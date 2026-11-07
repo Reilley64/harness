@@ -14,15 +14,16 @@ pub fn create_agent(
     Option<domain::ModelEffort>,
     domain::ProviderConnection,
     std::path::PathBuf,
+    domain::AgentRole,
 ) -> PortFuture<Result<String, conversations::StorageError>>
 + Send
 + Sync
 + use<> {
     let directory = directory.to_owned();
-    move |model, effort, connection, workspace| {
+    move |model, effort, connection, workspace, role| {
         let directory = directory.clone();
         Box::pin(async move {
-            let (workspace, id) = repository::identity(&workspace).await?;
+            let (workspace, id) = repository::agent_identity(&workspace, role.clone()).await?;
             let _guard = conversations::lock(&directory, &id).await?;
             match tokio::fs::symlink_metadata(directory.join(format!("{id}.json"))).await {
                 Ok(_) => return Ok(id),
@@ -43,6 +44,7 @@ pub fn create_agent(
                     connection.id,
                     workspace,
                     now,
+                    role,
                 );
                 encode_bounded(&record, 16 * 1024 * 1024)
             })

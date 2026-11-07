@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Agent } from "../services/acp.js";
 import { errorMessage } from "../services/acp.js";
 import { PresentationError } from "../services/errors.js";
@@ -32,6 +32,17 @@ export function useConversation(agent: Agent, initial?: Conversation) {
         },
   );
   const active = useRef(false);
+  const roleOperation = useRef(0);
+  const roleController = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      roleOperation.current++;
+      roleController.current?.abort();
+    };
+  }, []);
   const cancelled = useRef(false);
   const sessionReady = useRef<Promise<string | null>>(Promise.resolve(null));
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +105,8 @@ export function useConversation(agent: Agent, initial?: Conversation) {
       );
       return { accepted: false, draft: content };
     }
+    roleOperation.current++;
+    roleController.current?.abort();
     active.current = true;
     cancelled.current = false;
     let ready!: (id: string | null) => void;
@@ -280,6 +293,59 @@ export function useConversation(agent: Agent, initial?: Conversation) {
         setError(null);
       }
       return updated;
+    },
+    openRole: async (
+      role: "setup" | "griller",
+      selection: ModelSelection | null,
+    ) => {
+      if (active.current)
+        throw new PresentationError(
+          "Stop or finish the active role before switching.",
+        );
+      roleController.current?.abort();
+      const controller = new AbortController();
+      roleController.current = controller;
+      const sequence = ++roleOperation.current;
+      const original = current.current;
+      const existing = await agent.readAgent(role, controller.signal);
+      if (
+        !mounted.current ||
+        sequence !== roleOperation.current ||
+        current.current !== original ||
+        active.current
+      )
+        throw new PresentationError("Role navigation was superseded.");
+      const updated =
+        existing ??
+        (selection ? await agent.startAgent(selection, role) : null);
+      if (!updated)
+        throw new PresentationError(
+          "Choose a model before starting this role.",
+        );
+      if (
+        !mounted.current ||
+        sequence !== roleOperation.current ||
+        current.current !== original ||
+        active.current
+      )
+        throw new PresentationError(
+          "Conversation changed while opening the role.",
+        );
+      current.current = updated;
+      setConversation(updated);
+      setUsage(updated.usage ?? null);
+      setError(null);
+      return updated;
+    },
+    reconcile: (updated: Conversation) => {
+      if (
+        current.current?.id !== updated.id ||
+        updated.revision < current.current.revision
+      )
+        return;
+      current.current = updated;
+      setConversation(updated);
+      setUsage(updated.usage ?? null);
     },
     cancel,
   };

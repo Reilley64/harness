@@ -23,6 +23,12 @@ mod read_instructions;
 pub use read_instructions::ReadInstructions;
 pub use read_instructions::ReadInstructionsError;
 
+mod read_setup_draft;
+pub use read_setup_draft::*;
+mod update_setup_draft;
+pub use update_setup_draft::*;
+mod read_setup;
+pub use read_setup::*;
 mod read_agent;
 pub use read_agent::ReadAgent;
 pub use read_agent::ReadAgentError;
