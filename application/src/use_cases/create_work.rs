@@ -1,11 +1,14 @@
 use crate::error_context::ResultExt;
 use tokio_util::sync::CancellationToken;
+
 mod dependencies;
 mod error;
 mod output;
+
 pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
+
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     sender_id: &str,
@@ -28,6 +31,7 @@ pub async fn call(
     let agent = sender_agent
         .filter(|a| a.role == domain::AgentRole::Griller)
         .ok_or_else(|| Error::caused_by("Publication requires the repository Griller"))?;
+
     let proposal = d
         .read_work_proposal
         .call(workspace.clone(), path, cancellation.clone())
@@ -50,6 +54,7 @@ pub async fn call(
     if work.creator_id != agent.id.0 || work.conversation_id != sender_id {
         return Err(Error::caused_by("Work belongs to another Griller"));
     }
+
     let prior = (work.revision != 0).then_some(work.revision);
     if work
         .publish(intent, proposal, revision)
@@ -62,6 +67,7 @@ pub async fn call(
                 "Publication cancelled before committing",
             )));
         }
+
         work = d
             .update_work
             .call(work, prior)
@@ -69,5 +75,6 @@ pub async fn call(
             .context("Publication could not be committed; reload approved work before retrying the original intent")
             .map_err(Error::caused_by)?;
     }
+
     Ok(Output { work })
 }

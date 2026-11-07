@@ -58,6 +58,7 @@ where
                 "{}/responses",
                 base_url.trim_end_matches('/')
             ))?;
+
             let (model, effort, assignment, coordinator_id, reply_metadata, conversation) = tokio::task::spawn_blocking(move || {
                 let reply_metadata = conversation.messages.last().map(|message| (message.id.clone(), message.content.len()));
                 (
@@ -73,6 +74,7 @@ where
             if cancellation.is_cancelled() {
                 return Err("Model generation was cancelled".into());
             }
+
             let stream = tokio::time::timeout(
                 Duration::from_secs(timeout_seconds),
                 async {
@@ -81,6 +83,7 @@ where
                         .connect_timeout(Duration::from_secs(15))
                         .build()?;
                     let body = tokio::task::spawn_blocking(move || serde_json::to_vec(&body)).await??;
+
                     let current = read_models.call().await.context("Capability blocked: the current model catalog is unavailable")?
                         .into_iter().find(|current| current.provider_id == model.provider_id && current.id == model.id)
                         .ok_or("The selected model is no longer in the catalog")
@@ -101,6 +104,7 @@ where
                         let work=read_work.call(a.work_id.clone()).await?.ok_or("Approved work is unavailable")?;
                         work.authorize_assignment(a,&coordinator_id).context("Approved work changed; inspect and approve the current scope/criteria version")?;
                     }
+
                     attempted = true;
                     let mut response = http
                         .post(url)
@@ -120,6 +124,7 @@ where
                         return Err(format!("Model request failed (HTTP {})", response.status().as_u16()))
                             .context(message).map_err(Into::into);
                     }
+
                     let media_type = response
                         .headers()
                         .get(reqwest::header::CONTENT_TYPE)

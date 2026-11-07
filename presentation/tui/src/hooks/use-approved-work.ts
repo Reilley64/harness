@@ -3,6 +3,7 @@ import type { Agent } from "../services/acp.js";
 import { errorMessage } from "../services/acp.js";
 import type { Conversation } from "../types/conversation.js";
 import type { ApprovedWork } from "../types/work.js";
+
 export function useApprovedWork(
   agent: Agent,
   conversation: Conversation | null,
@@ -25,12 +26,14 @@ export function useApprovedWork(
     conversation: Conversation;
     intent: string;
   } | null>(null);
+
   const close = useCallback(() => {
     request.current++;
     controller.current?.abort();
     setOpen(false);
     setLoading(false);
   }, []);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -39,6 +42,7 @@ export function useApprovedWork(
       controller.current?.abort();
     };
   }, []);
+
   const owner = useRef({ agent, id: conversation?.id });
   useEffect(() => {
     owner.current = { agent, id: conversation?.id };
@@ -48,6 +52,7 @@ export function useApprovedWork(
     last.current = null;
     intent.current = null;
   }, [agent, conversation?.id, close]);
+
   async function inspect(id: string) {
     close();
     const sequence = request.current;
@@ -74,6 +79,7 @@ export function useApprovedWork(
       if (mounted.current && sequence === request.current) setLoading(false);
     }
   }
+
   async function approve() {
     if (!work || !conversation || saving || loading) return;
     if (work.sessionId !== conversation.id) {
@@ -82,6 +88,7 @@ export function useApprovedWork(
       );
       return;
     }
+
     const sequence = request.current,
       id = conversation.id;
     const payload = last.current ?? {
@@ -121,6 +128,7 @@ export function useApprovedWork(
       if (mounted.current) setSaving(false);
     }
   }
+
   return {
     open,
     work,
