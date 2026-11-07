@@ -67,6 +67,7 @@ fn input(
             let items: Vec<serde_json::Value> = serde_json::from_str(&step.output)?;
             let compatible = reply.model_id == conversation.model.id
                 && reply.provider_id == conversation.model.provider_id
+                && step.catalog_canonical_id == conversation.model.canonical_id
                 && step.resolved_model_id.as_ref().is_none_or(|resolved| {
                     resolved == &conversation.model.id
                         || Some(resolved) == conversation.model.canonical_id.as_ref()
@@ -205,6 +206,7 @@ pub(super) fn step(
         id: uuid::Uuid::new_v4().to_string(),
         output: encoded,
         resolved_model_id: None,
+        catalog_canonical_id: None,
         serving_provider: None,
         usage,
         calls,

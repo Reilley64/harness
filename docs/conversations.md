@@ -69,8 +69,12 @@ provider or model changes, only ordinary assistant text and reconstructed functi
 requests/results are replayed: private reasoning, output item IDs and original
 provider call IDs are omitted. Function request/result pairs use recorded local
 execution IDs for this translation. Compatible same-provider/model continuation
-retains its original opaque items; a recorded canonical resolution that no longer
-matches the current catalog also excludes private items. Safe snapshots expose message/run provider IDs,
+retains its original opaque items only while its generation-time catalog canonical
+identity still matches, even if the response reported the unversioned requested ID.
+Missing historical canonical ownership cannot establish compatibility with an
+available canonical identity. A canonical change between body preparation and HTTP
+admission rejects the request before sending; it does not transmit the old private
+context or automatically retry. Safe snapshots expose message/run provider IDs,
 not private continuation.
 
 SSE parsing handles fragmented UTF-8, CRLF, multiline data, and keepalive comments.
@@ -126,8 +130,8 @@ Version three adds an optional Griller identity, linked runs and an interruption
 gate. Version four adds immutable instruction snapshots, a selected reference and
 each run's actual snapshot reference; absent historical instructions remain
 unknown. Version five adds required per-message/run provider provenance. Optional
-step-level resolved identity/serving provider and catalog canonical/worker
-capabilities are retained in independently owned records. Versions one through
+step-level resolved identity/serving provider, generation-time catalog canonical
+ownership and catalog canonical/worker capabilities are retained in independently owned records. Versions one through
 four remain readable without rewriting; their single stored provider is the only
 justified legacy message/run provider when those fields are absent. Mutation
 writes version five. See [role guidance](role-guidance.md).

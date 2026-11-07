@@ -72,6 +72,10 @@ where
                         .into_iter().find(|model| model.provider_id == conversation.model.provider_id && model.id == conversation.model.id)
                         .ok_or("The selected model is no longer in the catalog")
                         .context("Capability blocked: the selected model is unavailable; choose a supported model with /model")?;
+                    if current.canonical_id != conversation.model.canonical_id {
+                        return Err("The catalog canonical identity changed after request preparation")
+                            .context("Capability blocked: the model identity changed during admission; retry with the current catalog").map_err(Into::into);
+                    }
                     current.validate_effort(conversation.effort).context("Capability blocked: this effort is unsupported; choose an effort with /model")?;
                     current.validate_worker().context("Capability blocked: this identity is not a compatible worker; choose a supported model with /model")?;
                     let policy = read_model_allowlist.call().await
@@ -277,6 +281,7 @@ where
                                         reported_usage,
                                     )?;
                                     step.resolved_model_id = resolved_model_id;
+                                    step.catalog_canonical_id = current.canonical_id.clone();
                                     step.serving_provider = serving_provider;
                                     return Ok(step);
                                 }
@@ -285,6 +290,7 @@ where
                                         id: uuid::Uuid::new_v4().to_string(),
                                         output: "[]".into(),
                                         resolved_model_id: None,
+                                        catalog_canonical_id: current.canonical_id.clone(),
                                         serving_provider: None,
                                         calls: Vec::new(),
                                         status: domain::MessageStatus::Incomplete,

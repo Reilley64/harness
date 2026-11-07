@@ -142,6 +142,8 @@ struct StepRecord {
     #[serde(default)]
     resolved_model_id: Option<String>,
     #[serde(default)]
+    catalog_canonical_id: Option<String>,
+    #[serde(default)]
     serving_provider: Option<String>,
     calls: Vec<CallRecord>,
     usage: Option<UsageRecord>,
@@ -179,6 +181,7 @@ impl From<domain::ModelStep> for StepRecord {
             id: step.id,
             output: step.output,
             resolved_model_id: step.resolved_model_id,
+            catalog_canonical_id: step.catalog_canonical_id,
             serving_provider: step.serving_provider,
             usage: step.usage.map(|usage| UsageRecord {
                 input_tokens: usage.input_tokens,

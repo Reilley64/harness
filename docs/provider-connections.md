@@ -111,6 +111,9 @@ inference is separately billed to the authorizing account, not a ChatGPT plan.
 Records and locks are separate: `auth/openrouter.json` and
 `auth/openrouter.lock`, under the shared app-data root. Existing corrupt,
 oversized, unsafe or issuer-incompatible records are preserved and rejected.
+Saved keys use the same nonempty, 16,384-byte and no-control-character checks as
+exchanged keys and inference admission; invalid saved keys are rejected before
+opening a browser callback or starting a key exchange.
 Cancel/disconnect/timeout closes the listener and releases the lock. A completed
 atomic commit may already have saved the new key; cancellation is not revocation.
 

@@ -57,6 +57,7 @@ pub(crate) fn create_provider_connection(
                     Ok(bytes) => {
                         let record: Record = tokio::task::spawn_blocking(move || serde_json::from_slice(&bytes)).await??;
                         if record.version != 1 || record.issuer != origin || record.key.is_empty()
+                            || record.key.len() > 16384 || record.key.chars().any(char::is_control)
                             || uuid::Uuid::parse_str(&record.connection_id).is_err() {
                             return Err("Invalid or incompatible stored OpenRouter credentials".into());
                         }

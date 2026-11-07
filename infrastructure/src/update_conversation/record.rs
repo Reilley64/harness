@@ -561,6 +561,8 @@ struct StepRecord {
     #[serde(default)]
     resolved_model_id: Option<String>,
     #[serde(default)]
+    catalog_canonical_id: Option<String>,
+    #[serde(default)]
     serving_provider: Option<String>,
     calls: Vec<CallRecord>,
     #[serde(default)]
@@ -600,6 +602,7 @@ impl From<domain::ModelStep> for StepRecord {
             id: step.id,
             output: step.output,
             resolved_model_id: step.resolved_model_id,
+            catalog_canonical_id: step.catalog_canonical_id,
             serving_provider: step.serving_provider,
             usage: step.usage.map(|usage| UsageRecord {
                 input_tokens: usage.input_tokens,
@@ -642,6 +645,10 @@ impl TryFrom<StepRecord> for domain::ModelStep {
             .resolved_model_id
             .as_ref()
             .is_some_and(|s| s.is_empty() || s.len() > 512 || s.chars().any(char::is_control))
+            || step
+                .catalog_canonical_id
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > 512 || s.chars().any(char::is_control))
             || step
                 .serving_provider
                 .as_ref()
@@ -701,6 +708,7 @@ impl TryFrom<StepRecord> for domain::ModelStep {
             id: step.id,
             output: step.output,
             resolved_model_id: step.resolved_model_id,
+            catalog_canonical_id: step.catalog_canonical_id,
             serving_provider: step.serving_provider,
             usage: step
                 .usage
