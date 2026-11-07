@@ -6,6 +6,7 @@ use crate::read_file;
 use crate::read_paths;
 use crate::read_text_matches;
 use crate::read_web_search;
+use crate::read_work_proposal;
 use crate::tool_io;
 use crate::update_file;
 
@@ -25,6 +26,7 @@ pub fn read_tool_invocation()
             domain::Tool::Grep => read_text_matches::decode(&arguments),
             domain::Tool::AstSearch => read_code_matches::decode(&arguments),
             domain::Tool::WebSearch => read_web_search::decode(&arguments),
+            domain::Tool::PublishWork => read_work_proposal::decode(&arguments),
         }
     }
 }

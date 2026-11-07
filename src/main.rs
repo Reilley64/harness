@@ -21,6 +21,8 @@ async fn run() -> Result<(), AppError> {
 
     let presentation = presentation_acp::Dependencies::builder()
         .providers(|_| (&dependencies).into())
+        .read_work(|_| (&dependencies).into())
+        .update_work(|_| (&dependencies).into())
         .authentication(|_| (&dependencies).into())
         .models(|_| (&dependencies).into())
         .create_agent(|_| (&dependencies).into())

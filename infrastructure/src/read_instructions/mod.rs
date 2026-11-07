@@ -92,7 +92,10 @@ async fn resolve(
     mut references: Vec<String>,
     resolution: &mut domain::InstructionResolution,
 ) -> Result<domain::InstructionSnapshot, Error> {
-    if !matches!(phase.as_str(), "grilling" | "specification" | "tickets") {
+    if !matches!(
+        phase.as_str(),
+        "grilling" | "specification" | "tickets" | "coordination"
+    ) {
         return Err("Required phase must be grilling, specification or tickets".into());
     }
     if scopes.len() > 32 || references.len() > 32 {
@@ -175,7 +178,12 @@ async fn resolve(
         .iter()
         .map(|instruction| (instruction.id.clone(), instruction.clone()))
         .collect();
-    let mut needed = vec!["role/griller".to_owned(), format!("procedure/{phase}")];
+    let role = if phase == "coordination" {
+        "role/chief-of-staff"
+    } else {
+        "role/griller"
+    };
+    let mut needed = vec![role.to_owned(), format!("procedure/{phase}")];
     let mut loaded = BTreeMap::new();
     while let Some(id) = needed.pop() {
         if loaded.contains_key(&id) {

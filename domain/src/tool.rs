@@ -9,9 +9,10 @@ pub enum Tool {
     Grep,
     AstSearch,
     WebSearch,
+    PublishWork,
 }
 impl Tool {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Read,
         Self::Bash,
         Self::Edit,
@@ -21,6 +22,7 @@ impl Tool {
         Self::Grep,
         Self::AstSearch,
         Self::WebSearch,
+        Self::PublishWork,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -33,12 +35,16 @@ impl Tool {
             Self::Grep => "grep",
             Self::AstSearch => "ast_search",
             Self::WebSearch => "web_search",
+            Self::PublishWork => "publish_work",
         }
     }
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|tool| tool.as_str() == value)
     }
     pub fn may_mutate(self) -> bool {
-        matches!(self, Self::Bash | Self::Edit | Self::Write)
+        matches!(
+            self,
+            Self::Bash | Self::Edit | Self::Write | Self::PublishWork
+        )
     }
 }

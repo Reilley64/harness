@@ -15,6 +15,7 @@ pub fn create_model_step_factory(
     provider_id: &domain::ProviderId,
     read_model_allowlist: application::ports::ReadModelAllowlist,
     read_models: application::ports::ReadModels,
+    read_work: application::ports::ReadWork,
 ) -> Result<CreateModelStep, ModelStepError> {
     match provider_id.0.as_str() {
         "openai" => {
@@ -24,6 +25,7 @@ pub fn create_model_step_factory(
                 &credentials_path.join("openai.json"),
                 read_model_allowlist,
                 read_models,
+                read_work,
             );
             Ok(CreateModelStep::new(create))
         }
@@ -34,6 +36,7 @@ pub fn create_model_step_factory(
                 &credentials_path.join("openrouter.json"),
                 read_model_allowlist,
                 read_models,
+                read_work,
             );
             Ok(CreateModelStep::new(create))
         }

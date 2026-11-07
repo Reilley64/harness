@@ -196,7 +196,11 @@ at a non-older revision; a delayed reply cannot erase a newer completed turn or
 regress the map's run state. A stale initial Griller-creation acknowledgement is
 rejected before adopting instructions, without replacing newer history; inspect
 again to adopt against the current conversation. Durable commits are not rolled
-back by these presentation guards.
+back by these presentation guards. The hook also owns Griller lookup through
+conversation load and model restoration, aborting/invalidation on replacement,
+navigation, send and unmount. Interruption acknowledgements require the same
+selected actor, current navigation ownership and a non-older revision; a durable
+acknowledgement cannot overwrite newer history or another actor's context/model.
 The first send creates a session; opening a picker or choosing a model does not.
 After failure the hook reloads saved history so it does not mistake optimistic
 text for persisted messages or automatically resend a failed turn.
@@ -250,7 +254,11 @@ Ctrl+O expands/collapses output; resume reconstructs the same panels from snapsh
 Mouse wheel, PgUp/PgDn, and Shift+Up/Down scroll during both generation and idle.
 The viewport fills its measured available height, bottom-aligns short transcripts,
 and preserves its anchor while output streams; reaching the bottom resumes
-following new output. Escape preserves the anchor while navigating. Native terminal selection uses
+following new output. A screen-owned viewport hook retains independent anchors
+and tool-expansion state by durable conversation identity for the current UI
+session. Switching Griller/CoS, opening pickers or visiting an empty conversation
+cannot reuse another actor's numeric anchor or erase the previous reading position.
+This is in-session state, not durable scroll restoration after process restart. Escape preserves the anchor while navigating. Native terminal selection uses
 Shift+drag while mouse reporting is enabled. Mouse modes are restored on unmount.
 Unchanged immutable message objects retain cached row layouts; each message keeps
 only its current width/expansion layout in a weak cache. Visible rows are memoized,
@@ -306,7 +314,9 @@ Explicit resume takes precedence and does not overwrite this default just by
 reading a conversation. A missing preference is normal; an invalid one produces
 a nonfatal warning and can be replaced by choosing a model. Picker commits are
 serialized through `_harness/model-selection/update`; exit waits for these saves.
-There is no conversation command or picker.
+`/open <conversation-id>` opens an existing saved conversation while idle;
+`F3` or `/griller` returns to the repository Griller. No general conversation
+picker or background conversation switching is implemented here.
 
 The ACP service translates standard sessions/prompts/updates/cancellation, parses
 safe conversation metadata, and never receives credentials. On exit it cancels
@@ -338,7 +348,8 @@ rather than presented as the active run. Legacy pilot conversations remain
 unassociated. Multi-agent growth, pan/collapse and execution subtrees belong to
 later slices.
 
-Plain Left from the empty focused editor opens the map; whitespace, modifiers,
+Plain Left from the empty focused editor invalidates any pending conversation
+open before showing the map; whitespace, modifiers,
 paste and picker input retain their editing meaning. Function-key-shaped bytes
 inside bracketed paste never execute navigation, including fragmented markers
 and large paste chunks. Paste tracking survives picker activation changes.
@@ -381,10 +392,26 @@ observations are not a human terminal-emulator visual signoff.
 `/guidance` opens the real ACP-backed [guidance inspection](role-guidance.md),
 including selected/latest-run/available snapshots, exact source/version/upstream,
 required blocks and explicit overrides. Scoped/reference/phase commands inspect
-candidates; `/guidance adopt` records explicit adoption for future work. Bundled
-later roles are assets only, never map nodes or creation arrows. Inspection
+candidates; `/guidance adopt` records explicit adoption for future work. Bundled later roles remain assets only. The approved-work CoS is a separately
+created actual conversation with recorded creator and coordination instructions;
+inspection alone never creates it. Inspection
 preserves the mounted chat, drafts, titles and Escape-back behavior. It does not
 start inference; active runs continue with their captured snapshot.
+
+## Approved work and CoS
+
+`/work <work-id>` opens a scrollable exact-source/version/scope/criteria proposal
+inspector. `a` then `y` records trusted approval and hands off to a separate durable
+CoS through real ACP/application operations; `n`/Escape declines/dismisses. No
+chat/prose/model tool is approval. `o` opens the delivered CoS without inference.
+The title is `harness - Chief of Staff` for that conversation. `F3` returns to
+Griller, and per-conversation draft buckets retain unsubmitted and rejected text.
+Stale read/open/approval results cannot take over a newer target/view. Admitted
+writes are drained on shutdown, not falsely rolled back by dismissal. Both roles
+retain ordinary selected-leaf Stop and explicit Resume; creator is not Stop
+ownership. See [approved work](approved-work.md) for authority, repeat clicks,
+publication conventions, missing guidance recovery and unavailable later execution.
+The current map describes the selected real agent, not a simulated full fleet.
 
 ## TanStack AI
 

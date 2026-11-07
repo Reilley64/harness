@@ -8,6 +8,7 @@ mod prompt;
 mod steering;
 mod tools;
 mod usage;
+mod work;
 
 mod model_allowlist;
 mod model_selection;
@@ -64,6 +65,8 @@ use crate::providers::ProvidersResponse;
 pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
     let Dependencies {
         providers,
+        read_work,
+        update_work,
         authentication,
         models,
         create_agent,
@@ -106,6 +109,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/usage".into(), serde_json::json!(true)),
                     ("harness/agents".into(), serde_json::json!(true)),
                     ("harness/guidance".into(), serde_json::json!(true)),
+                    ("harness/approvedWork".into(), serde_json::json!(true)),
                 ]
                 .into_iter()
                 .collect();
@@ -119,6 +123,31 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                         ])
                         .meta(metadata),
                 )
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: work::ReadRequest, responder, connection| {
+                let d=read_work.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_work::call(d,request.id).await {
+                        Ok(o)=>responder.respond(work::Response {work:o.work.as_ref().map(work::summary),conversation_id:None}),
+                        Err(e)=>responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: work::ApproveRequest, responder, connection| {
+                let d=update_work.clone();
+                connection.spawn(async move {
+                    let selection=domain::ModelSelection {provider_id:domain::ProviderId(request.provider_id),model_id:request.model_id,effort:request.effort.map(|e|match e {models::ModelEffort::Low=>domain::ModelEffort::Low,models::ModelEffort::Medium=>domain::ModelEffort::Medium,models::ModelEffort::High=>domain::ModelEffort::High,models::ModelEffort::ExtraHigh=>domain::ModelEffort::ExtraHigh})};
+                    match application::use_cases::update_work::call(d,request.id,request.revision,request.version,request.intent,selection,request.session_revision).await {
+                        Ok(o)=>responder.respond(work::Response {work:Some(work::summary(&o.work)),conversation_id:Some(o.conversation_id)}),
+                        Err(e)=>responder.respond_with_error(conversations::error(e)),
+                    }
+                })
             },
             agent_client_protocol::on_receive_request!(),
         )

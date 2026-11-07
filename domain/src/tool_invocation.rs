@@ -1,5 +1,6 @@
 use crate::CreateFileArguments;
 use crate::CreateProcessArguments;
+use crate::PublishWorkArguments;
 use crate::ReadCodeMatchesArguments;
 use crate::ReadDirectoryArguments;
 use crate::ReadFileArguments;
@@ -19,4 +20,5 @@ pub enum ToolInvocation {
     ReadTextMatches(ReadTextMatchesArguments),
     ReadCodeMatches(ReadCodeMatchesArguments),
     ReadWebSearch(ReadWebSearchArguments),
+    PublishWork(PublishWorkArguments),
 }

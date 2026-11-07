@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../services/acp.js";
 import { errorMessage } from "../services/acp.js";
 import { PresentationError } from "../services/errors.js";
@@ -9,7 +9,11 @@ import type { ToolCall } from "../types/tool.js";
 import type { Usage } from "../types/usage.js";
 
 type SendResult = { accepted: boolean; draft: string };
-export function useConversation(agent: Agent, initial?: Conversation) {
+export function useConversation(
+  agent: Agent,
+  initial?: Conversation,
+  onOpen?: (next: Conversation) => void,
+) {
   const [conversation, setConversation] = useState<Conversation | null>(
     initial ?? null,
   );
@@ -32,6 +36,26 @@ export function useConversation(agent: Agent, initial?: Conversation) {
         },
   );
   const active = useRef(false);
+  const opening = useRef(0);
+  const navigation = useRef<AbortController | null>(null);
+  const owner = useRef(agent);
+  const mounted = useRef(true);
+  const restore = useRef(onOpen);
+  owner.current = agent;
+  restore.current = onOpen;
+  const cancelOpen = useCallback(() => {
+    opening.current++;
+    navigation.current?.abort();
+    navigation.current = null;
+  }, []);
+  useEffect(() => {
+    owner.current = agent;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      cancelOpen();
+    };
+  }, [agent, cancelOpen]);
   const cancelled = useRef(false);
   const sessionReady = useRef<Promise<string | null>>(Promise.resolve(null));
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +118,7 @@ export function useConversation(agent: Agent, initial?: Conversation) {
       );
       return { accepted: false, draft: content };
     }
+    cancelOpen();
     active.current = true;
     cancelled.current = false;
     let ready!: (id: string | null) => void;
@@ -221,6 +246,45 @@ export function useConversation(agent: Agent, initial?: Conversation) {
     : (conversation?.messages ?? []);
   return {
     conversation,
+    cancelOpen,
+    open: async (id?: string) => {
+      if (active.current)
+        throw new PresentationError(
+          "Stop or finish the current run before opening another conversation.",
+        );
+      cancelOpen();
+      const request = opening.current;
+      const controller = new AbortController();
+      navigation.current = controller;
+      const owns = () =>
+        mounted.current &&
+        owner.current === agent &&
+        request === opening.current &&
+        !controller.signal.aborted &&
+        !active.current;
+      try {
+        const target = id ?? (await agent.readAgent(controller.signal))?.id;
+        if (!owns()) return null;
+        if (!target)
+          throw new PresentationError(
+            "No saved repository Griller is available.",
+          );
+        const next = await agent.loadConversation(target, controller.signal);
+        if (!owns()) return null;
+        current.current = next;
+        setConversation(next);
+        setUsage(next.usage ?? null);
+        setError(null);
+        setWork(null);
+        restore.current?.(next);
+        return next;
+      } catch (error) {
+        if (owns()) throw error;
+        return null;
+      } finally {
+        if (navigation.current === controller) navigation.current = null;
+      }
+    },
     usage,
     messages,
     busy,
@@ -230,14 +294,30 @@ export function useConversation(agent: Agent, initial?: Conversation) {
     send,
     resume: () => send("", null, true),
     acknowledge: async () => {
-      if (!current.current || active.current) return;
+      const target = current.current;
+      if (!target || active.current) return;
+      const request = opening.current;
+      const owns = () =>
+        mounted.current &&
+        owner.current === agent &&
+        request === opening.current &&
+        current.current?.id === target.id &&
+        !active.current;
       try {
-        const updated = await agent.acknowledgeInterruption(current.current.id);
-        current.current = updated;
-        setConversation(updated);
-        setError(null);
+        const updated = await agent.acknowledgeInterruption(target.id);
+        if (
+          owns() &&
+          updated.id === target.id &&
+          updated.revision >= (current.current?.revision ?? target.revision)
+        ) {
+          current.current = updated;
+          setConversation(updated);
+          setUsage(updated.usage ?? null);
+          setError(null);
+        }
       } catch (error) {
-        setError(errorMessage(error));
+        if (owns() && current.current?.revision === target.revision)
+          setError(errorMessage(error));
       }
     },
     adoptGuidance: async (

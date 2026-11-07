@@ -36,13 +36,28 @@ function reduce(state: State, action: Action): State {
   };
 }
 
-export function usePromptDraft() {
-  const [state, dispatch] = useReducer(reduce, {
-    value: "",
-    submission: 0,
-    rejected: [],
-    restored: false,
-  });
+const empty: State = {
+  value: "",
+  submission: 0,
+  rejected: [],
+  restored: false,
+};
+function reduceDrafts(
+  states: Map<string, State>,
+  event: { key: string; action: Action },
+) {
+  const next = new Map(states);
+  next.set(event.key, reduce(states.get(event.key) ?? empty, event.action));
+  return next;
+}
+export function usePromptDraft(key = "initial") {
+  const firstTarget = useRef<string | null>(key === "initial" ? null : key);
+  if (firstTarget.current === null && key !== "initial")
+    firstTarget.current = key;
+  const storageKey = key === firstTarget.current ? "initial" : key;
+  const [states, update] = useReducer(reduceDrafts, new Map<string, State>());
+  const state = states.get(storageKey) ?? empty;
+  const dispatch = (action: Action) => update({ key: storageKey, action });
   const sequence = useRef(0);
   const mounted = useRef(true);
   useEffect(() => {

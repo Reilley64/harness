@@ -1,5 +1,6 @@
 use crate::create_agent;
 use crate::create_conversation;
+use crate::create_coordinator;
 use crate::create_file;
 use crate::create_model_step_factory;
 use crate::create_process;
@@ -19,10 +20,13 @@ use crate::read_text_matches;
 use crate::read_tool_invocation;
 use crate::read_tools;
 use crate::read_web_search;
+use crate::read_work;
+use crate::read_work_proposal;
 use crate::update_conversation;
 use crate::update_file;
 use crate::update_model_allowlist;
 use crate::update_model_selection;
+use crate::update_work;
 
 use std::time::Duration;
 
@@ -36,6 +40,11 @@ use crate::settings::Settings;
 #[fundle::bundle]
 pub struct Dependencies {
     settings: Settings,
+    create_work: application::use_cases::create_work::Dependencies,
+    read_work: ports::ReadWork,
+    update_work: ports::UpdateWork,
+    read_work_proposal: ports::ReadWorkProposal,
+    create_coordinator: ports::CreateCoordinator,
     read_file: ports::ReadFile,
     create_process: ports::CreateProcess,
     update_file: ports::UpdateFile,
@@ -90,6 +99,48 @@ impl Dependencies {
                         },
                     ))
                 })
+            })
+            .read_work(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_work::read_work(&settings.app_data_path.join("work"));
+                ports::ReadWork::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_work(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = update_work::update_work(&settings.app_data_path.join("work"));
+                ports::UpdateWork::new(move |work, revision| {
+                    let result = implementation(work, revision);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_work_proposal(|_| {
+                let implementation = read_work_proposal::read_work_proposal();
+                ports::ReadWorkProposal::new(move |workspace, path, cancellation| {
+                    let result = implementation(workspace, path, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .create_coordinator(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = create_coordinator::create_coordinator(
+                    &settings.app_data_path.join("conversations"),
+                );
+                ports::CreateCoordinator::new(
+                    move |work, approval, model, connection, instructions, adopt_default| {
+                        let result = implementation(
+                            work,
+                            approval,
+                            model,
+                            connection,
+                            instructions,
+                            adopt_default,
+                        );
+                        Box::pin(async move { Ok(result.await?) })
+                    },
+                )
             })
             .create_agent(|deps| {
                 let settings: &Settings = deps.as_ref();
@@ -211,6 +262,8 @@ impl Dependencies {
                 let authentication = settings.authentication.clone();
                 let read_models: &ports::ReadModels = deps.as_ref();
                 let read_models = read_models.clone();
+                let read_work: &ports::ReadWork = deps.as_ref();
+                let read_work = read_work.clone();
                 let credentials_path = settings.app_data_path.join("auth");
                 ports::CreateModelStepFactory::new(move |provider_id| {
                     let create = create_model_step_factory::create_model_step_factory(
@@ -220,6 +273,7 @@ impl Dependencies {
                         &provider_id,
                         read_model_allowlist.clone(),
                         read_models.clone(),
+                        read_work.clone(),
                     )?;
                     Ok(create)
                 })
@@ -352,6 +406,7 @@ impl Dependencies {
                     Box::pin(async move { Ok(future.await?) })
                 })
             })
+            .create_work(|deps| deps.into())
             .build()
     }
 }

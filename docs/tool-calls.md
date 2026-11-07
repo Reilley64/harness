@@ -17,6 +17,7 @@ second model loop.
 | `grep` | `ReadTextMatches` | `read_text_matches` |
 | `ast_search` | `ReadCodeMatches` | `read_code_matches` |
 | `web_search` | `ReadWebSearch` | `read_web_search` |
+| `publish_work` | `PublishWork` | `read_work_proposal` + application `create_work` |
 
 `domain::Tool` identifies the fixed tool set; `ToolInvocation` carries typed
 arguments. Each adapter owns its strict camelCase `Arguments` representation and
@@ -25,9 +26,10 @@ produce invalid-call results without executing anything.
 
 Tools are enabled by default. `TOOLS__ENABLED=false` disables advertisement and
 execution for text-only operation. AST search is advertised only when
-`ast-grep --version` reports exactly `ast-grep 0.51.0`. There are no plugins,
-MCP servers, subagents, browser automation, PTYs, persistent shells, or managed
-background jobs.
+`ast-grep --version` reports exactly `ast-grep 0.51.0`. There are no plugins, MCP servers, managed child dispatch, browser automation,
+PTYs, persistent shells or managed background jobs. Trusted exact-version
+[approved handoff](approved-work.md) can create a separate conversational CoS;
+model tools cannot grant human approval.
 
 ## Permissions and workspace
 
@@ -71,9 +73,9 @@ reported incompatible model is an error before tools, never a replacement worker
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 5 with per-message/run provider provenance, optional
+Records are schema version 6, retaining v5 per-message/run provider provenance, optional
 resolved-model/serving-provider metadata, agent/run associations and immutable
-instruction snapshots. Versions 1 through 4 remain readable without rewriting
+instruction snapshots. Versions 1 through 5 remain readable without rewriting
 until mutation/recovery; their single stored provider supplies missing legacy
 provider provenance, and historical instruction provenance is never invented.
 See [role guidance](role-guidance.md).
@@ -99,6 +101,10 @@ replays a failed request.
 
 ## Tool behavior
 
+- `publish_work`: capture a real proposal file, immutable source document/version
+  and explicit publication intent through the application use case. Amendments
+  invalidate affected authority; this tool cannot approve or launch implementation.
+  See [approved work](approved-work.md) for schema, idempotency and bounds.
 - `read`: regular UTF-8 files only, 1-based offset, default 200/max 2,000 lines.
   The input file is bounded at 1 MiB. No image or binary decoding.
 - `bash`: noninteractive `/bin/bash --noprofile --norc -c`, no stdin or shared
