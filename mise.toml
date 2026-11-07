@@ -46,9 +46,7 @@ depends = ["check:rust", "check:tui", "lint:automation", "lint:secrets"]
 
 [tasks."check:rust"]
 description = "Check Rust formatting and run strict Clippy"
-depends = ["lint:rust"]
-dir = "{{config_root}}"
-run = "cargo fmt --all -- --check"
+depends = ["lint:rust", "format:check:rust"]
 
 [tasks."install:tui"]
 description = "Install locked TUI dependencies"
@@ -57,9 +55,7 @@ run = "bun install --cwd presentation/tui --frozen-lockfile"
 
 [tasks."check:tui"]
 description = "Check TUI types, formatting and lint"
-depends = ["typecheck", "lint:tui"]
-dir = "{{config_root}}/presentation/tui"
-run = "bun run --bun format:check"
+depends = ["typecheck", "lint:tui", "format:check:tui"]
 
 [tasks.lint]
 description = "Lint Rust, the TUI and automation"
@@ -91,6 +87,21 @@ run = ["actionlint", "bash -n bin/harness", "shellcheck bin/harness", "python3 -
 description = "Scan first-party files for secrets without displaying matched values"
 dir = "{{config_root}}"
 run = "gitleaks dir --config .gitleaks.toml --redact=100 --no-banner --ignore-gitleaks-allow --timeout=60 ."
+
+[tasks."format:check"]
+description = "Check Rust and TUI formatting without rewriting source"
+depends = ["format:check:rust", "format:check:tui"]
+
+[tasks."format:check:rust"]
+description = "Check Rust formatting without rewriting source"
+dir = "{{config_root}}"
+run = "cargo fmt --all -- --check"
+
+[tasks."format:check:tui"]
+description = "Check TUI formatting without rewriting source"
+depends = ["install:tui"]
+dir = "{{config_root}}/presentation/tui"
+run = "bun run --bun format:check"
 
 [tasks.format]
 description = "Format Rust and the TUI"

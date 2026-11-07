@@ -38,8 +38,11 @@ jobs:
         with:
           shared-key: test
 
-      - name: "Scan: Check Rust formatting and lint"
-        run: mise run check:rust
+      - name: "Scan: Check Rust formatting"
+        run: mise run format:check:rust
+
+      - name: "Scan: Lint Rust with strict Clippy"
+        run: mise run lint:rust
 
       - name: "Test: Run Rust test targets and doctests"
         run: mise run test
@@ -60,8 +63,14 @@ jobs:
         with:
           version: "2026.10.22"
 
-      - name: "Scan: Check TUI types, formatting and lint"
-        run: mise run check:tui
+      - name: "Scan: Check TUI types"
+        run: mise run typecheck
+
+      - name: "Scan: Check TUI formatting"
+        run: mise run format:check:tui
+
+      - name: "Scan: Lint TUI and check imports"
+        run: mise run lint:tui
 
   test-automation:
     name: "Test: Automation checks"
