@@ -385,11 +385,20 @@ export function connectAgent() {
   async function readGuidance(
     id?: string,
     query: GuidanceQuery = {},
+    signal?: AbortSignal,
   ): Promise<Guidance> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const cancellationSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000);
+    cancellationSignal.throwIfAborted();
     await initialize();
+    cancellationSignal.throwIfAborted();
+    if (closing) throw new PresentationError("The agent is closing.");
     const response = await connection.agent.request<unknown>(
       "_harness/guidance/read",
       { cwd: workspace, sessionId: id ?? null, ...query },
+      { cancellationSignal, stopWaitingOnCancel: true },
     );
     return parseGuidance(response);
   }

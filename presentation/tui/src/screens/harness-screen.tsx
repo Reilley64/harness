@@ -68,8 +68,14 @@ export function HarnessScreen({
     !!models.picker || !!providers.picker || connection.busy || guidance.open;
   useContextNavigation(
     !modal && !stopConfirmation,
-    () => setMap((value) => !value),
-    () => setMap(false),
+    () => {
+      guidance.close();
+      setMap((value) => !value);
+    },
+    () => {
+      guidance.close();
+      setMap(false);
+    },
   );
   useContextTitle(
     map
@@ -93,6 +99,7 @@ export function HarnessScreen({
       !models.picker &&
       !providers.picker
     ) {
+      guidance.close();
       draft.recover();
       return;
     }
@@ -109,11 +116,13 @@ export function HarnessScreen({
       return;
     }
     if (map && !modal) {
+      guidance.close();
       if (key.escape || key.return) setMap(false);
       else if (key.ctrl && input === "x") setStopConfirmation(true);
       return;
     }
     if (key.escape && !modal) {
+      guidance.close();
       setMap(true);
       return;
     }
@@ -171,6 +180,7 @@ export function HarnessScreen({
 
   function submit(value: string) {
     const command = value.trim();
+    if (!command.startsWith("/guidance")) guidance.close();
     if (
       chat.busy &&
       command.startsWith("/") &&
@@ -237,17 +247,9 @@ export function HarnessScreen({
           "Inspect /guidance and resolve REQUIRED blocks before explicit adoption.",
         );
       } else {
-        void chat
-          .adoptGuidance(inspected, models.selection)
-          .then((updated) =>
-            guidance.inspect(
-              {
-                phase: inspected.available?.phase,
-                scopes: inspected.available?.scopes,
-                references: inspected.available?.references,
-              },
-              updated.id,
-            ),
+        void guidance
+          .adopt(inspected, () =>
+            chat.adoptGuidance(inspected, models.selection),
           )
           .catch((error) => setNotice(errorMessage(error)));
       }
@@ -301,9 +303,15 @@ export function HarnessScreen({
         <PromptBox
           working={chat.busy}
           value={draft.value}
-          onChange={draft.change}
+          onChange={(value) => {
+            guidance.close();
+            draft.change(value);
+          }}
           onSubmit={submit}
-          onOpenMap={() => setMap(true)}
+          onOpenMap={() => {
+            guidance.close();
+            setMap(true);
+          }}
           focused={!modal && !map && !stopConfirmation}
         />
       }
@@ -336,7 +344,10 @@ export function HarnessScreen({
         <AgentMap
           conversation={chat.conversation}
           busy={chat.busy}
-          open={() => setMap(false)}
+          open={() => {
+            guidance.close();
+            setMap(false);
+          }}
         />
       )}
       <Box

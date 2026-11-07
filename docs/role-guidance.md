@@ -177,9 +177,18 @@ In the stock launcher/Ink application:
 - `/guidance` inspects; `s` selected, `c` latest run, `a` available, `b` bundled-only.
 - `d` toggles exact instruction text; arrows/PgUp/PgDn scroll; `r` refreshes.
 - Escape closes without stopping work or discarding chat drafts/scroll anchors.
+  Inspection request waits are cancelled and late responses invalidated on
+  dismissal, replacement, unmount or agent/target changes. Already admitted
+  filesystem work may finish; cancellation does not claim to undo it. The last
+  completed inspection is retained separately, so cancelling its replacement
+  does not discard the candidate already inspected for adoption.
 - Close inspection, then `/guidance adopt` explicitly adopts the inspected
   candidate. A first adoption can create the Griller using the selected model,
-  without inference. Existing interrupted/active work cannot adopt.
+  without inference. Existing interrupted/active work cannot adopt. An
+  uninterrupted adoption opens updated provenance, including when it creates the
+  Griller. Completion cannot reopen a dismissed inspector or replace newer
+  phase/reference selection, map/picker navigation or an edited draft. Dismissal
+  does not cancel or roll back the independently durable adoption.
 - `/guidance phase grilling|specification|tickets` inspects a phase candidate.
 - `/guidance scope <relative-directory>` and `/guidance reference <relative-file>`
   add relevant context to the inspected candidate.
