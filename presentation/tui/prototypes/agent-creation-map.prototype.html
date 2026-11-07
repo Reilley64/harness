@@ -25,7 +25,7 @@
 <section class="diagnostics">
 <p id="state-summary" aria-live="polite"></p>
 <details open><summary>Simulation trace / proposed controls</summary>
-<p>F2 chat/map · F3 Griller · map arrows pan, Tab selects, Enter or double-click opens chat · C collapses a creation branch · /inspect /model /delivery /scenes open mock details.</p>
+<p>Left from an empty prompt opens the map; with draft text it edits normally. Window title follows context (browser tab title in this simulation). F2 chat/map · F3 Griller · map arrows pan, Tab selects, Enter or double-click opens chat · C collapses a creation branch · /inspect /model /delivery /scenes open mock details.</p>
 <p class="warn">Keys remain proposals: Escape navigates/closes here, unlike the pilot's Escape cancellation. Ctrl+X opens scoped Stop outside editors; /stop works in the prompt. Browser gestures do not validate Ink/PTY input.</p>
 <p>Drafts and transcript scroll offsets survive navigation in this page session. Reset/reload discards everything. CoS visibility is a simulated durable-record design, not actual persistence.</p>
 <ol id="event-log"></ol>
@@ -36,7 +36,7 @@
 <script>
 const names={A:'Pilot-like conversation',B:'Growing creation map'};
 const initialVariant=new URLSearchParams(location.search).get('variant');
-let variant=names[initialVariant]?initialVariant:'B',selected='cos',overlay=null,size='wide',focusC=false,highlight=0,restarted=false;
+let variant=names[initialVariant]?initialVariant:'A',selected='griller',overlay=null,size='wide',focusC=false,highlight=0,restarted=false;
 let patterns=['openai/*','openrouter/anthropic/*','openrouter/demo/native-*'];
 let connections={openai:true,openrouter:true},nativeChoice='openrouter/demo/native-latest';
 let configDraft='',configError='',pendingStop=[],approval=null,candidate='demo-c91',target='demo-t14',pr='draft',cleanup='not yet eligible',mustFix=true,retroPublished=false;
@@ -54,7 +54,7 @@ const agents=[
 ];
 const catalog=[{id:'openai/demo-worker',effort:'high',supported:true},{id:'openai/demo-research',effort:'medium',supported:true},{id:'openrouter/anthropic/demo-worker',effort:'high',supported:true},{id:'openrouter/demo/hosted-router',effort:'unknown',supported:false}];
 for(const a of agents){a.deciderRequested=nativeChoice;a.deciderResolved='openrouter/demo/native-r1';const p=agents.find(x=>x.id===a.parent);a.parentModel=p?.pair??null;a.parentThinking=p?.thinking??null;a.parentSnapshot=p?`${p.pair} · ${p.thinking}`:null;a.draft='';a.scroll=null;a.messages=[['user',a.id==='griller'?'I want to keep planning while the approved spec is being built.':'Keep the approved scope. Report evidence and blockers, not just completion.'],['assistant',a.id==='griller'?'What would make concurrent work understandable enough that you would trust leaving it running? CoS is coordinating the approved spec separately.':`${a.task}. My assignment is ${a.ticket}.`],['tool','read · docs/frontend.md\nConversation-first transcript; prompt remains editable. Simulated output.'],['assistant',a.id==='implementer'?'Routing abstained. Recorded fallback is the exact CoS pair: openai/demo-worker + high. No worker-failure failover.':a.id==='spec'?'Needs human: criterion “ready” is ambiguous. This run ended; a response starts a later run.':a.id==='griller'?'You can speak directly to any participant. Returning here does not stop them.':'Progress and version-bound findings are recorded for Chief of Staff.']];}
-agents[0].draft='What is still blocked?';
+agents[0].draft='';
 const get=id=>agents.find(a=>a.id===id),current=()=>get(selected);
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const btn=(label,action,extra='')=>`<button data-action="${action}" ${extra}>${label}</button>`;
@@ -222,10 +222,11 @@ function conversation(){
  const a=current(),decider=a.id==='decider',recipient=decider?'Chief of Staff':a.name;
  const activity=decider?'Decider discussion is answered by Chief of Staff':resumeGated(a)?'Resume required · no inference started':a.status==='routing pending'?'Routing pending · no application deadline':a.status==='quota timed'?'Quota wait · provider reset 14:32 (demo clock)':a.status==='quota unknown'?'Quota wait · reset unknown; user Resume':a.status==='model disabled'?'Selected model disabled by you · configure, no replacement':a.status==='waiting children'?'Waiting for child results · no model polling':a.status==='running'?'✳ Working · simulated activity':a.status==='needs-human'?'Needs your answer · previous run ended':'Worked for 2m 14s · simulated';
  const workspace=a.id==='griller'?'~/harness (main)':a.role==='Implementer'?'~/.harness/worktrees/demo/'+a.id+' (demo/'+a.id+')':'~/harness (demo/spec-01)';
- return `<section class="conversation pilot-conversation"><div class="transcript" tabindex="0" aria-label="Transcript for ${esc(a.name)}">${decider?`<p class="warn">Decider is a typed engine, not a chat agent. Input here is answered visibly by Chief of Staff.</p><p>Requested ${esc(nativeChoice)} → resolved openrouter/demo/native-r1. No Decider thinking control.</p>`:a.messages.map(([kind,text])=>`<div class="message ${kind}">${esc(text)}</div>`).join('')}</div><div class="pilot-activity">${esc(activity)}</div><form id="prompt" class="prompt"><textarea id="draft" rows="2" aria-label="Message ${esc(recipient)}" placeholder="Message ${esc(recipient)}…">${esc(a.draft)}</textarea></form><div class="pilot-footer"><div><span>${esc(workspace)}</span><span>≥ 12,400 in / 2,100 out · ctx —</span></div><div><span>${esc(recipient)} · Enter send · F2 map · /</span><span>${esc(pair(a))}</span></div></div></section>`;
+ return `<section class="conversation pilot-conversation"><div class="transcript" tabindex="0" aria-label="Transcript for ${esc(a.name)}">${decider?`<p class="warn">Decider is a typed engine, not a chat agent. Input here is answered visibly by Chief of Staff.</p><p>Requested ${esc(nativeChoice)} → resolved openrouter/demo/native-r1. No Decider thinking control.</p>`:a.messages.map(([kind,text])=>`<div class="message ${kind}">${esc(text)}</div>`).join('')}</div><div class="pilot-activity">${esc(activity)}</div><form id="prompt" class="prompt"><textarea id="draft" rows="2" aria-label="Message ${esc(recipient)}" placeholder="Message ${esc(recipient)}…">${esc(a.draft)}</textarea></form><div class="pilot-footer"><div><span>${esc(workspace)}</span><span>≥ 12,400 in / 2,100 out · ctx —</span></div><div><span>${esc(recipient)} · Enter send · ← empty: map · /</span><span>${esc(pair(a))}</span></div></div></section>`;
 }
 function render(){
  const a=current(),terminal=document.getElementById('terminal');terminal.className='terminal '+(size==='narrow'?'narrow':'');
+ document.title='harness - '+(variant==='B'?'Agent map':a.name.replace(/^↳\s*/,'').replace(/ · inspect$/,'')).replace(/[\u0000-\u001f\u007f-\u009f]/g,'');
  terminal.innerHTML=`<div class="workspace ${variant==='B'?'map-workspace':'chat-workspace'}">${variant==='B'?mapMarkup():conversation()}<div id="overlay-host"></div></div>`;
  const transcript=document.querySelector('.transcript');if(transcript)transcript.scrollTop=a.scroll===null?transcript.scrollHeight:a.scroll;
  const viewport=document.getElementById('map-viewport');if(viewport){viewport.scrollLeft=mapLeft;viewport.scrollTop=mapTop;if(mapAnchor){const p=mapLayout.positions.get(mapAnchor.id);if(p){viewport.scrollLeft=p.x*cellWidth()-mapAnchor.x;viewport.scrollTop=p.y*lineHeight-mapAnchor.y;}mapAnchor=null;}if(needsMapCentre){centreNode(selected);needsMapCentre=false;}if(followTarget){centreNode(followTarget);followTarget=null;}mapLeft=viewport.scrollLeft;mapTop=viewport.scrollTop;}
@@ -233,7 +234,7 @@ function render(){
  document.getElementById('variant-label').textContent=variant==='B'?'Creation map':'Pilot-like conversation';
  document.querySelectorAll('[data-size]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.size===size));
  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===variant));
- document.getElementById('state-summary').textContent=`SIMULATED STATE · ${agents.length} durable agents · ${newAgents} new · ${variant==='B'?'map':'conversation'} · selected ${a.name} / ${a.status} · draft ${a.draft.length} chars · ${events[0]}`;
+ document.getElementById('state-summary').textContent=`SIMULATED STATE · ${document.title} · ${agents.length} durable agents · ${newAgents} new · ${variant==='B'?'map':'conversation'} · selected ${a.name} / ${a.status} · draft ${a.draft.length} chars · ${events[0]}`;
  document.getElementById('event-log').innerHTML=events.slice(0,8).map(x=>`<li>${esc(x)}</li>`).join('');
 }
 function createDemoAgent(role,parentId){
@@ -294,6 +295,7 @@ document.addEventListener('keydown',e=>{
  if(e.key==='F2'){e.preventDefault();if(variant==='B')openAgent(selected);else openMap();return;}
  if(e.key==='F3'){e.preventDefault();openAgent('griller');return;}
  const editing=e.target.matches('input,textarea,select,[contenteditable="true"]');
+ if(!overlay&&e.target.id==='draft'&&e.target.value===''&&e.key==='ArrowLeft'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey&&!e.isComposing){e.preventDefault();openMap();return;}
  if(e.key==='Escape'){e.preventDefault();if(overlay){saveView();overlay=null;render();}else if(variant==='B')openAgent(selected);else openMap();return;}
  if(editing){if(e.target.id==='draft'&&e.key==='Enter'&&!e.shiftKey&&!e.altKey&&!e.ctrlKey){e.preventDefault();send();}return;}
  if(e.ctrlKey&&e.key.toLowerCase()==='x'){e.preventDefault();act('stop');return;}
