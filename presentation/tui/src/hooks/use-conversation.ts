@@ -248,23 +248,37 @@ export function useConversation(agent: Agent, initial?: Conversation) {
         throw new PresentationError(
           "Stop or finish the run before adopting instructions.",
         );
-      if (!current.current) {
+      let target = current.current;
+      if (!target) {
         if (!selection)
           throw new PresentationError(
             "Choose a model before creating the Griller.",
           );
-        current.current = await agent.startAgent(selection);
-        setConversation(current.current);
+        const created = await agent.startAgent(selection);
+        const latest = current.current;
+        if (
+          latest &&
+          (latest.id !== created.id || latest.revision > created.revision)
+        )
+          throw new PresentationError(
+            "The conversation changed while creating the Griller; inspect again before adopting instructions.",
+          );
+        target = created;
+        current.current = created;
+        setConversation(created);
       }
-      const revision = guidance.revision ?? current.current.revision;
-      const updated = await agent.adoptGuidance(
-        current.current.id,
-        revision,
-        guidance,
-      );
-      current.current = updated;
-      setConversation(updated);
-      setError(null);
+      const id = target.id;
+      const revision = guidance.revision ?? target.revision;
+      const updated = await agent.adoptGuidance(id, revision, guidance);
+      if (
+        current.current?.id === id &&
+        updated.id === id &&
+        updated.revision >= current.current.revision
+      ) {
+        current.current = updated;
+        setConversation(updated);
+        setError(null);
+      }
       return updated;
     },
     cancel,

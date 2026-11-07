@@ -184,6 +184,12 @@ test files or test-only dependencies were added.
 `useConversation` owns optimistic streaming display, explicit cancellation,
 error reconciliation, and the last authoritative snapshot. Rust owns the turn/tool
 loop and steering; the hook sends instructions rather than cancelling/resending.
+An instruction-adoption acknowledgement updates only its same conversation target
+at a non-older revision; a delayed reply cannot erase a newer completed turn or
+regress the map's run state. A stale initial Griller-creation acknowledgement is
+rejected before adopting instructions, without replacing newer history; inspect
+again to adopt against the current conversation. Durable commits are not rolled
+back by these presentation guards.
 The first send creates a session; opening a picker or choosing a model does not.
 After failure the hook reloads saved history so it does not mistake optimistic
 text for persisted messages or automatically resend a failed turn.
