@@ -7,6 +7,11 @@ It spawns the Rust `harness` executable, whose `presentation/acp` adapter uses
 the official Rust ACP SDK. The frontend uses the official TypeScript SDK.
 Both select stable ACP v1; no unstable provider/auth extensions are enabled.
 
+Model catalog and historical model summaries expose a typed `capabilities` array
+with `chat` and `decisions` values. Missing historical metadata remains an empty
+array, not implied chat support. `blocked` reflects current backend admission;
+historical summaries never authorize inference.
+
 ## Responsibility split
 
 - Ink owns terminal layout, prompt editing, command parsing, picker state, and

@@ -4,7 +4,7 @@ import type {
   ModelPricing,
   ModelSelection,
 } from "../types/model.js";
-import { modelEfforts } from "../types/model.js";
+import { modelCapabilities, modelEfforts } from "../types/model.js";
 import { PresentationError } from "./errors.js";
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -56,6 +56,17 @@ export function parseModels(value: unknown): Model[] {
       throw new PresentationError(
         "Invalid model entry returned by the ACP agent.",
       );
+    const capabilities = entry.capabilities ?? [];
+    if (
+      !Array.isArray(capabilities) ||
+      capabilities.some(
+        (capability: unknown) =>
+          !modelCapabilities.some((known) => known === capability),
+      )
+    )
+      throw new PresentationError(
+        "Invalid model capabilities returned by the ACP agent.",
+      );
     const efforts = entry.efforts ?? [];
     if (
       !Array.isArray(efforts) ||
@@ -81,6 +92,9 @@ export function parseModels(value: unknown): Model[] {
       id: entry.id,
       name: entry.name,
       providerId: entry.providerId,
+      capabilities: modelCapabilities.filter((capability) =>
+        capabilities.includes(capability),
+      ),
       efforts: modelEfforts.filter((effort) => efforts.includes(effort)),
       pricing: parsePricing(entry.pricing),
       contextWindow:

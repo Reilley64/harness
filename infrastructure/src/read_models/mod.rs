@@ -4,7 +4,6 @@ use crate::cache::with_memory_cache;
 use application::error_context::ResultExt;
 use application::ports::PortFuture;
 use std::path::Path;
-mod openrouter;
 mod response;
 mod settings;
 
@@ -36,7 +35,6 @@ fn remote(url: &str) -> impl Fn() -> ReadModelsFuture + Send + Sync + use<> {
 
 pub fn read_models(
     url: &str,
-    openrouter_url: &str,
     path: &Path,
     ttl: Duration,
 ) -> impl Fn() -> PortFuture<Result<Vec<domain::Model>, Box<dyn std::error::Error + Send + Sync>>>
@@ -44,45 +42,12 @@ pub fn read_models(
 + Sync
 + use<> {
     let cached = with_memory_cache(with_file_fallback(remote(url), path), ttl);
-    let router_url = openrouter_url.to_owned();
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .expect("HTTP client initialization failed");
-    let router = with_memory_cache(
-        with_file_fallback(
-            move || {
-                let client = client.clone();
-                let url = router_url.clone();
-                Box::pin(remote_json::<openrouter::Response>(client, url))
-                    as PortFuture<
-                        Result<openrouter::Response, Box<dyn std::error::Error + Send + Sync>>,
-                    >
-            },
-            &path.with_file_name("openrouter-models.json"),
-        ),
-        ttl,
-    );
     move || {
         let future = cached();
-        let router = router();
         Box::pin(async move {
-            let (primary, router) = tokio::join!(future, router);
-            if primary.is_err() && router.is_err() {
-                return Err(primary.err().ok_or("Model catalogs are unavailable")?)
-                    .context("Could not load model catalogs")
-                    .map_err(Into::into);
-            }
+            let responses = future.await.context("Could not load model catalog")?;
             tokio::task::spawn_blocking(move || {
-                let mut models: Vec<domain::Model> = primary
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|m| m.provider_id != "openrouter")
-                    .map(Into::into)
-                    .collect();
-                if let Ok(router) = router {
-                    models.extend(router.models());
-                }
+                let models: Vec<domain::Model> = responses.into_iter().map(Into::into).collect();
                 let mut ids = std::collections::HashSet::new();
                 if models.iter().any(|model| {
                     model.id.is_empty()
@@ -93,7 +58,7 @@ pub fn read_models(
                 Ok(models)
             })
             .await
-            .context("Could not process model catalogs")?
+            .context("Could not process model catalog")?
         })
     }
 }

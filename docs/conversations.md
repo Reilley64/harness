@@ -133,8 +133,13 @@ each run's actual snapshot reference; absent historical instructions remain
 unknown. Version five adds required per-message/run provider provenance. Version six
 adds exact approved assignment/CoS metadata without dropping version-five fields. Optional
 step-level resolved identity/serving provider, generation-time catalog canonical
-ownership and catalog canonical/worker capabilities are retained in independently owned records. Versions one through
-five remain readable without rewriting; their single stored provider is the only
+ownership and catalog canonical/capability snapshots are retained in independently
+owned records. The additive `capabilities` array contains `chat` and/or `decisions`;
+absent historical arrays remain empty/unknown. Obsolete boolean metadata is ignored,
+not converted into permission. This optional metadata preserves version-five
+provider provenance, instruction snapshots and version-six assignment authority.
+Versions one through five remain readable without rewriting; their single stored
+provider is the only
 justified legacy message/run provider when those fields are absent. Mutation
 writes version six. See [role guidance](role-guidance.md).
 Each run records its own stable identity, agent identity,
@@ -152,7 +157,11 @@ same-directory temporary file, flush/sync, atomic rename, and directory sync.
 Tokio handles filesystem I/O; blocking temporary creation/locking/sync use
 `spawn_blocking`. Bounded record decoding, nested continuation parsing and validation,
 record conversion, cloning for creation, and bounded JSON encoding also run on
-blocking workers. Each adapter keeps its own record directions. Credential,
+blocking workers. Model request preparation takes ownership of its conversation
+instead of copying full history before the blocking builder. Only model/effort
+and assignment identity facts needed for fresh HTTP admission are retained;
+necessary metadata copies run on a blocking worker too. Each adapter keeps its
+own record directions. Credential,
 conversation, catalog-cache, and artifact writes share the private replacement helper.
 Revision checks reject stale updates before encoding and writing the replacement. Errors at/after the atomic commit point can
 mean the replacement already exists; reload rather than blindly resending.
@@ -180,15 +189,19 @@ sensitive plaintext history; protect/back up the app data directory accordingly.
 ## Catalog caches
 
 Model/provider catalogs retain their TTL memory cache and remote-first disk
-fallback. The model adapter independently combines the configured pilot catalog
-(`MODELS__URL`) with OpenRouter's public catalog
-(`MODELS__OPENROUTER_URL`, default `https://openrouter.ai/api/v1/models`).
-OpenRouter entries cannot be supplied by the pilot catalog. Its raw independently
-owned response is cached at `openrouter-models.json`. Either source can remain
-usable if the other fails; entries from the unavailable source are unavailable
-unless its bounded fallback succeeds. Catalog presence/parameter support never
-proves account access, inference quality or actual execution. Remote bodies, fallback files, and encoded cache files each have a
-16 MiB limit, checked before parsing or growing the encoded buffer past that
+fallback. The model adapter reads only the Harness-owned JSON catalog at
+`MODELS__URL`, with embedded configuration and environment overrides. All provider
+identities use that one response format and the existing `models.json` cache.
+There is no secondary OpenRouter catalog request, import, merge or fallback;
+obsolete extra environment settings have no effect. Existing secondary cache files
+are neither read nor removed. `server/models.json` contains curated static entries
+from the public OpenAI, Anthropic, xAI and TypeSafe author namespaces on OpenRouter,
+plus the original four direct-OpenAI entries. Public metadata was consulted only
+at development time, including the TypeSafe Decisions catalog and verified latest
+alias; catalog reads and provider connects never refresh it from OpenRouter or
+invoke a model. Catalog presence/parameter support never proves account access,
+inference quality or actual execution. Remote bodies, fallback files, and encoded
+cache files each have a 16 MiB limit, checked before parsing or growing the encoded buffer past that
 limit. Both advertised HTTP lengths and streamed chunks are bounded. Parsing,
 cache encoding, memory-cache cloning, and domain conversion run on blocking
 workers. Each catalog adapter owns its response/cache representation.

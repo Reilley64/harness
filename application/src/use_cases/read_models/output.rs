@@ -5,6 +5,7 @@ pub struct Output {
     pub name: String,
     pub context_window: Option<u64>,
     pub provider_id: domain::ProviderId,
+    pub capabilities: Vec<domain::ModelCapability>,
     pub efforts: Vec<domain::ModelEffort>,
     pub pricing: Option<domain::ModelPricing>,
 }
@@ -17,6 +18,7 @@ impl From<domain::Model> for Output {
             name: model.name,
             context_window: model.context_window,
             provider_id: model.provider_id,
+            capabilities: model.capabilities,
             efforts: model.efforts,
             pricing: model.pricing,
         }

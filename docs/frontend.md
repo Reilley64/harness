@@ -174,10 +174,12 @@ input/cached-input/output pricing block.
 - Pending requests are aborted on dismissal, disconnect, reload, or unmount.
 
 Data comes from `_harness/models` through the existing application `read_models`
-use case, combining pilot and public OpenRouter catalogs with independently bounded
-fallbacks. OpenRouter entries without compatible protocol/tool/context metadata
-and hosted routers remain capability-blocked; missing effort metadata adds no
-thinking controls. Explicit provider/model switches apply on the next prompt,
+use case. Its only runtime model source is the Harness-owned JSON at `MODELS__URL`,
+with one bounded memory/disk cache and the existing remote-first disk fallback.
+There is no secondary OpenRouter catalog fetch, merge or cache. Ordinary workers
+require a positive `chat` capability; empty, missing, legacy boolean and
+`decisions`-only metadata never authorize chat. Hosted routers remain blocked;
+missing effort metadata adds no thinking controls. Explicit provider/model switches apply on the next prompt,
 preserving history and usage while backend translation excludes incompatible
 private continuation. The frontend never fetches the HTTP catalog directly.
 

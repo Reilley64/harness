@@ -58,10 +58,23 @@ where
                 "{}/responses",
                 base_url.trim_end_matches('/')
             ))?;
-            let (token, body) = prepare(conversation.clone(), tools, finalizing, cancellation.clone()).await?;
+
+            let (model, effort, assignment, coordinator_id, reply_metadata, conversation) = tokio::task::spawn_blocking(move || {
+                let reply_metadata = conversation.messages.last().map(|message| (message.id.clone(), message.content.len()));
+                (
+                    conversation.model.clone(),
+                    conversation.effort,
+                    conversation.assignment.clone(),
+                    conversation.id.clone(),
+                    reply_metadata,
+                    conversation,
+                )
+            }).await?;
+            let (token, body) = prepare(conversation, tools, finalizing, cancellation.clone()).await?;
             if cancellation.is_cancelled() {
                 return Err("Model generation was cancelled".into());
             }
+
             let stream = tokio::time::timeout(
                 Duration::from_secs(timeout_seconds),
                 async {
@@ -70,26 +83,28 @@ where
                         .connect_timeout(Duration::from_secs(15))
                         .build()?;
                     let body = tokio::task::spawn_blocking(move || serde_json::to_vec(&body)).await??;
+
                     let current = read_models.call().await.context("Capability blocked: the current model catalog is unavailable")?
-                        .into_iter().find(|model| model.provider_id == conversation.model.provider_id && model.id == conversation.model.id)
+                        .into_iter().find(|current| current.provider_id == model.provider_id && current.id == model.id)
                         .ok_or("The selected model is no longer in the catalog")
                         .context("Capability blocked: the selected model is unavailable; choose a supported model with /model")?;
-                    if current.canonical_id != conversation.model.canonical_id {
+                    if current.canonical_id != model.canonical_id {
                         return Err("The catalog canonical identity changed after request preparation")
                             .context("Capability blocked: the model identity changed during admission; retry with the current catalog").map_err(Into::into);
                     }
-                    current.validate_effort(conversation.effort).context("Capability blocked: this effort is unsupported; choose an effort with /model")?;
+                    current.validate_effort(effort).context("Capability blocked: this effort is unsupported; choose an effort with /model")?;
                     current.validate_worker().context("Capability blocked: this identity is not a compatible worker; choose a supported model with /model")?;
                     let policy = read_model_allowlist.call().await
                         .context("Allowlist configuration could not be read; open /model settings")?;
-                    if !policy.permits(&conversation.model.provider_id, &conversation.model.id) {
+                    if !policy.permits(&model.provider_id, &model.id) {
                         return Err::<domain::ModelStep, ModelStepError>("Model identity is outside the positive allowlist".into())
                             .context("Allowlist blocked: this provider/model is no longer permitted; open /model settings").map_err(Into::into);
                     }
-                    if let Some(a)=&conversation.assignment {
+                    if let Some(a)=&assignment {
                         let work=read_work.call(a.work_id.clone()).await?.ok_or("Approved work is unavailable")?;
-                        work.authorize_assignment(a,&conversation.id).context("Approved work changed; inspect and approve the current scope/criteria version")?;
+                        work.authorize_assignment(a,&coordinator_id).context("Approved work changed; inspect and approve the current scope/criteria version")?;
                     }
+
                     attempted = true;
                     let mut response = http
                         .post(url)
@@ -109,6 +124,7 @@ where
                         return Err(format!("Model request failed (HTTP {})", response.status().as_u16()))
                             .context(message).map_err(Into::into);
                     }
+
                     let media_type = response
                         .headers()
                         .get(reqwest::header::CONTENT_TYPE)
@@ -193,12 +209,7 @@ where
                                     }
                                     text.push_str(delta);
                                     present.call(domain::TurnEvent::Text {
-                                        message_id: conversation
-                                            .messages
-                                            .last()
-                                            .ok_or("Missing assistant message")?
-                                            .id
-                                            .clone(),
+                                        message_id: reply_metadata.as_ref().ok_or("Missing assistant message")?.0.clone(),
                                         delta: delta.to_owned(),
                                     })?;
                                 }
@@ -260,12 +271,7 @@ where
                                             return Err("Model text exceeds 1 MiB".into());
                                         }
                                         present.call(domain::TurnEvent::Text {
-                                            message_id: conversation
-                                                .messages
-                                                .last()
-                                                .ok_or("Missing assistant message")?
-                                                .id
-                                                .clone(),
+                                            message_id: reply_metadata.as_ref().ok_or("Missing assistant message")?.0.clone(),
                                             delta: missing.into(),
                                         })?;
                                         text = completed_text;
@@ -278,12 +284,7 @@ where
                                         } else {
                                             domain::MessageStatus::Completed
                                         },
-                                        conversation
-                                            .messages
-                                            .last()
-                                            .ok_or("Missing assistant message")?
-                                            .content
-                                            .len(),
+                                        reply_metadata.as_ref().ok_or("Missing assistant message")?.1,
                                         reported_usage,
                                     )?;
                                     step.resolved_model_id = resolved_model_id;

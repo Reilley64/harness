@@ -50,7 +50,7 @@ Type `/auth` and press Enter to open the provider picker. Use the arrow keys to
 select, Enter to connect, Escape to close, and `r` to retry a failed catalog
 load. Selecting ChatGPT opens browser sign-in for an eligible ChatGPT plan.
 OpenRouter uses protected browser PKCE and a separately billed API key; connecting
-performs no paid inference. Compatible OpenRouter workers come from its public
+performs no paid inference. Compatible OpenRouter workers come from Harness's own curated static
 catalog, not a promise of account entitlement.
 While waiting, Escape cancels and `o` reopens the sign-in page. Ctrl+Q or Ctrl+C
 exits. After signing in and choosing a model, enter a message to start a streamed,
@@ -174,7 +174,11 @@ or model switches on later prompts preserve ordinary history, effects and usage,
 without forwarding incompatible private reasoning or response-item/call IDs.
 OpenAI and OpenRouter credential stores remain separate.
 
-`MODELS__OPENROUTER_URL` defaults to `https://openrouter.ai/api/v1/models`.
+`MODELS__URL` is the only model-catalog source, with the existing bounded TTL
+memory/disk fallback. Harness does not fetch OpenRouter's catalog at runtime.
+The static catalog includes the four approved author families; only explicit
+`capabilities: ["chat"]` entries are ordinary workers. `decisions` is reserved for
+the later native typed Decider; hosted routing remains disabled.
 `AUTHENTICATION__OPENROUTER__ISSUER` defaults to `https://openrouter.ai`; the
 inference origin in `REPLIES__OPENROUTER__BASE_URL` must match it and the stored
 issuer. Both auth and reply sections have a nonzero `TIMEOUT_SECONDS` default of
@@ -239,10 +243,17 @@ individual fields may be omitted or null. Prices above are illustrative USD per
 million tokens, not published rates for an actual model. A numeric zero means
 free; missing means unavailable.
 
-`server/models.json` is a static catalog, not a live provider inventory. Its prices
-are OpenAI's published Standard, short-context USD rates per million tokens,
-verified on 2026-11-06. Long-context requests, processing modes, cache writes, and
-other fees may differ. See [pricing sources and limitations](docs/research/model-pricing.md).
+`server/models.json` is a static Harness-owned catalog, not a live provider
+inventory or runtime OpenRouter metadata import. Its four original direct-OpenAI
+rows retain OpenAI's published Standard, short-context USD rates per million
+tokens, verified on 2026-11-06. The 168 curated OpenRouter rows come from public
+metadata captured on 2026-11-07 for OpenAI, Anthropic, xAI and TypeSafe, including
+the verified TypeSafe latest alias; their listed per-token prices were converted
+to USD per million tokens. Those rows are not covered by the direct-OpenAI
+verification date or Standard short-context pricing claim. These snapshots do not
+prove entitlement, current availability or actual billing. Long-context requests,
+processing modes, cache writes and other fees may differ. See
+[pricing sources and limitations](docs/research/model-pricing.md).
 
 ## Infrastructure layout
 

@@ -225,7 +225,7 @@ struct ModelRecord {
     #[serde(default)]
     canonical_id: Option<String>,
     #[serde(default)]
-    worker_supported: Option<bool>,
+    capabilities: Vec<CapabilityRecord>,
     provider_id: String,
     efforts: Vec<EffortRecord>,
     pricing: Option<PricingRecord>,
@@ -265,7 +265,7 @@ impl From<domain::Model> for ModelRecord {
             name: model.name,
             context_window: model.context_window,
             canonical_id: model.canonical_id,
-            worker_supported: model.worker_supported,
+            capabilities: model.capabilities.into_iter().map(Into::into).collect(),
             provider_id: model.provider_id.0,
             efforts: model.efforts.into_iter().map(Into::into).collect(),
             pricing: model.pricing.map(|pricing| PricingRecord {
@@ -273,6 +273,22 @@ impl From<domain::Model> for ModelRecord {
                 cached_input: pricing.cached_input,
                 output: pricing.output,
             }),
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum CapabilityRecord {
+    Chat,
+    Decisions,
+}
+
+impl From<domain::ModelCapability> for CapabilityRecord {
+    fn from(capability: domain::ModelCapability) -> Self {
+        match capability {
+            domain::ModelCapability::Chat => Self::Chat,
+            domain::ModelCapability::Decisions => Self::Decisions,
         }
     }
 }

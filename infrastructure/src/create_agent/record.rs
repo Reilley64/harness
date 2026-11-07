@@ -29,7 +29,7 @@ struct ModelRecord {
     #[serde(default)]
     canonical_id: Option<String>,
     #[serde(default)]
-    worker_supported: Option<bool>,
+    capabilities: Vec<CapabilityRecord>,
     provider_id: String,
     efforts: Vec<&'static str>,
     pricing: Option<PricingRecord>,
@@ -68,7 +68,7 @@ impl Record {
                 name: model.name,
                 context_window: model.context_window,
                 canonical_id: model.canonical_id,
-                worker_supported: model.worker_supported,
+                capabilities: model.capabilities.into_iter().map(Into::into).collect(),
                 provider_id: model.provider_id.0,
                 efforts: model.efforts.into_iter().map(effort_name).collect(),
                 pricing: model.pricing.map(|pricing| PricingRecord {
@@ -92,5 +92,21 @@ fn effort_name(effort: domain::ModelEffort) -> &'static str {
         domain::ModelEffort::Medium => "medium",
         domain::ModelEffort::High => "high",
         domain::ModelEffort::ExtraHigh => "extra_high",
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum CapabilityRecord {
+    Chat,
+    Decisions,
+}
+
+impl From<domain::ModelCapability> for CapabilityRecord {
+    fn from(capability: domain::ModelCapability) -> Self {
+        match capability {
+            domain::ModelCapability::Chat => Self::Chat,
+            domain::ModelCapability::Decisions => Self::Decisions,
+        }
     }
 }

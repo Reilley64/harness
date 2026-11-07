@@ -89,15 +89,23 @@ The Serde-free domain `ModelPattern` and `ModelAllowlist` contain the positive
 matching rule plus customization and initialize-once transitions. Storage owns
 record conversion, locking and atomic replacement, not permission decisions.
 Application admission is shared by workers and model settings.
-OpenRouter workers reuse these policy ports and require positive Responses,
-text input/output, non-router tokenizer, tools and bounded context metadata from
-OpenRouter's own public catalog. Missing metadata is unknown, not permission.
-Hosted router identities, router tokenizers and tilde aliases are not workers.
-Selectable efforts are only the intersection of explicit provider effort metadata
-with Harness's low/medium/high/extra-high controls; omitted metadata exposes no
-effort. Explicit null supported efforts means the documented gateway effort set,
-not an invented native thinking setting. Native Decider inference is separate and
-is not implemented by this worker adapter.
+Every ordinary System 0 worker, including direct OpenAI, requires a positive
+`chat` entry in the current Harness-owned catalog's typed `capabilities` array.
+Missing/empty arrays, historical booleans, provider names and `decisions` alone
+never grant chat admission. Saved history/selection snapshots remain inspectable
+without fabricating missing capabilities; each new inference revalidates against
+the current authoritative catalog, including at HTTP admission.
+OpenRouter workers reuse these policy ports. Static `chat` classification requires
+advertised Responses, text input/output, tools, a non-router tokenizer and bounded
+context metadata. Hosted routers and tilde aliases are not chat workers. The
+retained TypeSafe hosted router has an empty capabilities array and cannot be
+dispatched; verified Decisions entries have `decisions` only. Native typed Decider
+inference is reserved for later and is not implemented here.
+Selectable efforts are only explicit supported values mapped to Harness's
+low/medium/high/extra-high controls (`xhigh` becomes `extra_high`); missing/null
+metadata and reasoning flags alone expose no efforts. Prices are static USD per
+million tokens; missing or negative-sentinel rates remain unknown. No catalog read,
+connect or selection probes entitlement, picks a model or starts inference.
 
 ## Storage and public interfaces
 

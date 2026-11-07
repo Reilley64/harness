@@ -26,6 +26,7 @@ pub use instruction_resolution::InstructionResolution;
 
 mod conversation;
 mod model;
+mod model_capability;
 mod model_effort;
 mod model_pricing;
 mod model_selection;
@@ -90,6 +91,7 @@ pub use agent_id::AgentId;
 pub use agent_role::AgentRole;
 pub use conversation::Conversation;
 pub use model::Model;
+pub use model_capability::ModelCapability;
 pub use model_effort::ModelEffort;
 pub use model_pricing::ModelPricing;
 pub use model_selection::ModelSelection;
