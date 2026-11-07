@@ -117,6 +117,7 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
         name: conversation.model.name.clone(),
         context_window: conversation.model.context_window,
         provider_id: conversation.model.provider_id.clone(),
+        capabilities: conversation.model.capabilities.clone(),
         efforts: conversation.model.efforts.clone(),
         pricing: conversation.model.pricing.clone(),
     });

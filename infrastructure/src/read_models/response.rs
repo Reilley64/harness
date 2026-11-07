@@ -7,7 +7,7 @@ pub(super) struct Response {
     #[serde(default)]
     pub canonical_id: Option<String>,
     #[serde(default)]
-    pub worker_supported: Option<bool>,
+    pub capabilities: Vec<Capability>,
     pub provider_id: String,
     #[serde(default)]
     pub efforts: Vec<Effort>,
@@ -51,36 +51,6 @@ impl From<Pricing> for domain::ModelPricing {
     }
 }
 
-impl From<domain::ModelEffort> for Effort {
-    fn from(effort: domain::ModelEffort) -> Self {
-        match effort {
-            domain::ModelEffort::Low => Self::Low,
-            domain::ModelEffort::Medium => Self::Medium,
-            domain::ModelEffort::High => Self::High,
-            domain::ModelEffort::ExtraHigh => Self::ExtraHigh,
-        }
-    }
-}
-
-impl From<domain::Model> for Response {
-    fn from(model: domain::Model) -> Self {
-        Self {
-            id: model.id,
-            name: model.name,
-            context_window: model.context_window,
-            canonical_id: model.canonical_id,
-            worker_supported: model.worker_supported,
-            provider_id: model.provider_id.0,
-            efforts: model.efforts.into_iter().map(Into::into).collect(),
-            pricing: model.pricing.map(|pricing| Pricing {
-                input: pricing.input,
-                cached_input: pricing.cached_input,
-                output: pricing.output,
-            }),
-        }
-    }
-}
-
 impl From<Response> for domain::Model {
     fn from(dto: Response) -> Self {
         Self {
@@ -88,10 +58,26 @@ impl From<Response> for domain::Model {
             name: dto.name,
             context_window: dto.context_window,
             canonical_id: dto.canonical_id,
-            worker_supported: dto.worker_supported,
+            capabilities: dto.capabilities.into_iter().map(Into::into).collect(),
             provider_id: domain::ProviderId(dto.provider_id),
             efforts: dto.efforts.into_iter().map(Into::into).collect(),
             pricing: dto.pricing.map(Into::into),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Capability {
+    Chat,
+    Decisions,
+}
+
+impl From<Capability> for domain::ModelCapability {
+    fn from(capability: Capability) -> Self {
+        match capability {
+            Capability::Chat => Self::Chat,
+            Capability::Decisions => Self::Decisions,
         }
     }
 }

@@ -22,7 +22,6 @@ base_url = "https://api.openai.com/v1"
 timeout_seconds = 600
 
 [models]
-openrouter_url = "https://openrouter.ai/api/v1/models"
 url = "http://localhost:3000/models.json"
 memory_ttl_seconds = 300
 

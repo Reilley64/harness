@@ -736,7 +736,7 @@ struct ModelRecord {
     #[serde(default)]
     canonical_id: Option<String>,
     #[serde(default)]
-    worker_supported: Option<bool>,
+    capabilities: Vec<CapabilityRecord>,
     provider_id: String,
     #[serde(default)]
     efforts: Vec<EffortRecord>,
@@ -798,7 +798,7 @@ impl From<domain::Model> for ModelRecord {
             name: model.name,
             context_window: model.context_window,
             canonical_id: model.canonical_id,
-            worker_supported: model.worker_supported,
+            capabilities: model.capabilities.into_iter().map(Into::into).collect(),
             provider_id: model.provider_id.0,
             efforts: model.efforts.into_iter().map(Into::into).collect(),
             pricing: model.pricing.map(|pricing| PricingRecord {
@@ -817,10 +817,35 @@ impl From<ModelRecord> for domain::Model {
             name: dto.name,
             context_window: dto.context_window,
             canonical_id: dto.canonical_id,
-            worker_supported: dto.worker_supported,
+            capabilities: dto.capabilities.into_iter().map(Into::into).collect(),
             provider_id: domain::ProviderId(dto.provider_id),
             efforts: dto.efforts.into_iter().map(Into::into).collect(),
             pricing: dto.pricing.map(Into::into),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CapabilityRecord {
+    Chat,
+    Decisions,
+}
+
+impl From<domain::ModelCapability> for CapabilityRecord {
+    fn from(capability: domain::ModelCapability) -> Self {
+        match capability {
+            domain::ModelCapability::Chat => Self::Chat,
+            domain::ModelCapability::Decisions => Self::Decisions,
+        }
+    }
+}
+
+impl From<CapabilityRecord> for domain::ModelCapability {
+    fn from(capability: CapabilityRecord) -> Self {
+        match capability {
+            CapabilityRecord::Chat => Self::Chat,
+            CapabilityRecord::Decisions => Self::Decisions,
         }
     }
 }

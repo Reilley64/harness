@@ -1,3 +1,7 @@
+export const modelCapabilities = ["chat", "decisions"] as const;
+
+export type ModelCapability = (typeof modelCapabilities)[number];
+
 export const modelEfforts = ["low", "medium", "high", "extra_high"] as const;
 
 export type ModelEffort = (typeof modelEfforts)[number];
@@ -13,6 +17,7 @@ export type Model = {
   id: string;
   name: string;
   providerId: string;
+  capabilities: ModelCapability[];
   efforts: ModelEffort[];
   pricing: ModelPricing | null;
   contextWindow?: number | null;

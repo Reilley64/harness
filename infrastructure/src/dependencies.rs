@@ -194,7 +194,6 @@ impl Dependencies {
                 let settings: &Settings = deps.as_ref();
                 let read = read_models(
                     &settings.models.url,
-                    &settings.models.openrouter_url,
                     &settings.app_data_path.join("models.json"),
                     Duration::from_secs(settings.models.memory_ttl_seconds),
                 );
