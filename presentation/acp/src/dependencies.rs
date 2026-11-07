@@ -5,10 +5,12 @@ use application::use_cases::read_conversation;
 use application::use_cases::read_model_selection;
 use application::use_cases::read_models;
 use application::use_cases::read_providers;
+use application::use_cases::update_mcp_configuration;
 use application::use_cases::update_model_selection;
 
 #[fundle::bundle]
 pub struct Dependencies {
+    pub mcp: update_mcp_configuration::Dependencies,
     pub providers: read_providers::Dependencies,
     pub authentication: create_provider_connection::Dependencies,
     pub models: read_models::Dependencies,

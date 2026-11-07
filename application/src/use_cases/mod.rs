@@ -5,4 +5,5 @@ pub mod read_conversation;
 pub mod read_model_selection;
 pub mod read_models;
 pub mod read_providers;
+pub mod update_mcp_configuration;
 pub mod update_model_selection;

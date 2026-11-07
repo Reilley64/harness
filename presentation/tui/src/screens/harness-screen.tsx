@@ -6,6 +6,7 @@ import { MessageLine } from "../components/molecules/message-line.js";
 import { PromptBox } from "../components/molecules/prompt-box.js";
 import { StartupWordmark } from "../components/molecules/startup-wordmark.js";
 import { WorkingIndicator } from "../components/molecules/working-indicator.js";
+import { McpPanel } from "../components/organisms/mcp-panel.js";
 import { ModelPicker } from "../components/organisms/model-picker.js";
 import { ProviderConnectionStatus } from "../components/organisms/provider-connection-status.js";
 import { ProviderPicker } from "../components/organisms/provider-picker.js";
@@ -15,6 +16,7 @@ import { useAgentConnection } from "../hooks/use-agent-connection.js";
 import { useConversation } from "../hooks/use-conversation.js";
 import { useCreateProviderConnection } from "../hooks/use-create-provider-connection.js";
 import { useGitBranch } from "../hooks/use-git-branch.js";
+import { useMcp } from "../hooks/use-mcp.js";
 import { useModelPicker } from "../hooks/use-model-picker.js";
 import { usePromptDraft } from "../hooks/use-prompt-draft.js";
 import { useProviderPicker } from "../hooks/use-provider-picker.js";
@@ -51,6 +53,7 @@ export function HarnessScreen({
     agent.workspace ??
     process.env.INIT_CWD ??
     process.cwd();
+  const mcp = useMcp(agent, workspace, columns, rows);
   const gitBranch = useGitBranch(workspace);
   const connection = useCreateProviderConnection(agent);
   const draft = usePromptDraft();
@@ -70,6 +73,10 @@ export function HarnessScreen({
       !providers.picker
     ) {
       draft.recover();
+      return;
+    }
+    if (mcp.visible) {
+      if (!(key.return && key.eventType === "repeat")) mcp.input(input, key);
       return;
     }
     if (chat.busy) {
@@ -131,6 +138,8 @@ export function HarnessScreen({
     }
     if (command === "/quit" || command === "/exit") {
       exit();
+    } else if (command === "/mcp" || command.startsWith("/mcp ")) {
+      mcp.open(command.slice(4).trim());
     } else if (command === "/auth") {
       draft.change("");
       setNotice(null);
@@ -177,7 +186,12 @@ export function HarnessScreen({
           value={draft.value}
           onChange={draft.change}
           onSubmit={submit}
-          focused={!providers.picker && !models.picker && !connection.busy}
+          focused={
+            !mcp.visible &&
+            !providers.picker &&
+            !models.picker &&
+            !connection.busy
+          }
         />
       }
     >
@@ -186,7 +200,9 @@ export function HarnessScreen({
           {connectionError}
         </TerminalText>
       )}
-      {models.picker ? (
+      {mcp.visible ? (
+        <McpPanel state={mcp} rows={rows} />
+      ) : models.picker ? (
         <ModelPicker
           picker={models.picker}
           query={models.query}
@@ -230,6 +246,16 @@ export function HarnessScreen({
                 kind: "status",
                 tone: "error",
                 content: models.error,
+              }}
+            />
+          )}
+          {(mcp.error || mcp.configuration?.stale) && (
+            <MessageLine
+              line={{
+                id: "mcp-configuration-error",
+                kind: "status",
+                tone: "error",
+                content: `${mcp.error ?? mcp.configuration?.error ?? "MCP is using its last validated snapshot."} Open /mcp to inspect and reload.`,
               }}
             />
           )}

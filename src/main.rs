@@ -20,6 +20,7 @@ async fn run() -> Result<(), AppError> {
         Dependencies::build(Settings::load().context("Could not load Harness configuration")?);
 
     let presentation = presentation_acp::Dependencies::builder()
+        .mcp(|_| (&dependencies).into())
         .providers(|_| (&dependencies).into())
         .authentication(|_| (&dependencies).into())
         .models(|_| (&dependencies).into())

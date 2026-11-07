@@ -1,9 +1,11 @@
 use crate::create_conversation;
 use crate::create_file;
+use crate::create_mcp_call;
 use crate::create_model_step_factory;
 use crate::create_process;
 use crate::create_tool_output;
 use crate::lock_conversation;
+use crate::mcp::Connections;
 use crate::read_code_matches;
 use crate::read_conversation;
 use crate::read_directory;
@@ -17,6 +19,7 @@ use crate::read_tools;
 use crate::read_web_search;
 use crate::update_conversation;
 use crate::update_file;
+use crate::update_mcp_configuration;
 use crate::update_model_selection;
 
 use std::time::Duration;
@@ -40,6 +43,9 @@ pub struct Dependencies {
     read_text_matches: ports::ReadTextMatches,
     read_code_matches: ports::ReadCodeMatches,
     read_web_search: ports::ReadWebSearch,
+    mcp_connections: Connections,
+    update_mcp_configuration: ports::UpdateMcpConfiguration,
+    create_mcp_call: ports::CreateMcpCall,
     read_tools: ports::ReadTools,
     read_tool_invocation: ports::ReadToolInvocation,
     create_tool_output: ports::CreateToolOutput,
@@ -60,6 +66,29 @@ impl Dependencies {
     pub fn build(settings: Settings) -> Self {
         Self::builder()
             .settings(|_| settings.clone())
+            .mcp_connections(|_| Connections::new())
+            .update_mcp_configuration(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let connections: &Connections = deps.as_ref();
+                let update = update_mcp_configuration::update_mcp_configuration(
+                    &settings.app_data_path,
+                    &settings.mcp.registry_url,
+                    connections,
+                );
+                ports::UpdateMcpConfiguration::new(move |workspace, action, cancellation| {
+                    let future = update(workspace, action, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .create_mcp_call(|deps| {
+                let connections: &Connections = deps.as_ref();
+                let configuration: &ports::UpdateMcpConfiguration = deps.as_ref();
+                let create = create_mcp_call::create_mcp_call(connections, configuration.clone());
+                ports::CreateMcpCall::new(move |workspace, arguments, cancellation| {
+                    let future = create(workspace, arguments, cancellation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
             .create_provider_connection_factory(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let credentials_path = settings.app_data_path.join("auth");

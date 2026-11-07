@@ -1,5 +1,7 @@
 use crate::CreateFileArguments;
 use crate::CreateProcessArguments;
+use crate::McpCallArguments;
+use crate::McpConfigurationAction;
 use crate::ReadCodeMatchesArguments;
 use crate::ReadDirectoryArguments;
 use crate::ReadFileArguments;
@@ -10,6 +12,8 @@ use crate::UpdateFileArguments;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolInvocation {
+    McpCall(McpCallArguments),
+    McpConfiguration(McpConfigurationAction),
     ReadFile(ReadFileArguments),
     CreateProcess(CreateProcessArguments),
     UpdateFile(UpdateFileArguments),
