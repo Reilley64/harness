@@ -300,6 +300,16 @@ safe conversation metadata, and never receives credentials. On exit it cancels
 active replies and waits for their durable finalization before closing the
 subprocess. See [conversations](conversations.md).
 
+## Model permission settings
+
+The existing `/model` picker labels locally blocked entries and shows the
+authentication, allowlist or worker-capability reason. Ctrl+A opens its
+application-wide positive-pattern editor, even when the catalog fails to load.
+Enter saves the complete list, Ctrl+U clears it and Escape discards the draft.
+An empty list permits no inference; overlapping broad positives still permit
+covered identities. No settings dismissal retries blocked work or selects a
+replacement. See [model allowlist](model-allowlist.md) for policy and persistence.
+
 ## TanStack AI
 
 TanStack AI can fit this architecture without replacing ACP or moving provider

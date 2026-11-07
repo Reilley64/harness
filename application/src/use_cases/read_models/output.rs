@@ -1,5 +1,6 @@
 #[derive(Debug)]
 pub struct Output {
+    pub blocked: Option<String>,
     pub id: String,
     pub name: String,
     pub context_window: Option<u64>,
@@ -11,6 +12,7 @@ pub struct Output {
 impl From<domain::Model> for Output {
     fn from(model: domain::Model) -> Self {
         Self {
+            blocked: None,
             id: model.id,
             name: model.name,
             context_window: model.context_window,

@@ -82,7 +82,20 @@ export function HarnessScreen({
       return;
     }
     if (models.picker) {
-      if (key.escape) models.close();
+      if (models.policyDraft !== null) {
+        if (models.policySaving) return;
+        if (key.escape) models.cancelPolicy();
+        else if (key.return && key.eventType !== "repeat")
+          void models.savePolicy();
+        else if (key.ctrl && input === "u") models.changePolicy("");
+        else if (key.backspace || key.delete)
+          models.changePolicy([...models.policyDraft].slice(0, -1).join(""));
+        else if (input && !key.ctrl && !key.meta && !key.tab && !key.return)
+          models.changePolicy(models.policyDraft + input);
+        return;
+      }
+      if (key.ctrl && input === "a") void models.editPolicy();
+      else if (key.escape) models.close();
       else if (key.ctrl && input === "r") models.open();
       else if (models.picker.status === "ready") {
         if (key.upArrow || key.downArrow) models.move(key.upArrow ? -1 : 1);
@@ -188,6 +201,9 @@ export function HarnessScreen({
       )}
       {models.picker ? (
         <ModelPicker
+          policyDraft={models.policyDraft}
+          policyError={models.policyError}
+          policySaving={models.policySaving}
           picker={models.picker}
           query={models.query}
           models={models.models}

@@ -20,6 +20,7 @@ pub(crate) fn create_model_step(
     settings: &OpenaiSettings,
     authentication: &AuthenticationSettings,
     credentials_path: &Path,
+    read_model_allowlist: application::ports::ReadModelAllowlist,
 ) -> impl Fn(
     domain::Conversation,
     Vec<domain::Tool>,
@@ -37,6 +38,7 @@ pub(crate) fn create_model_step(
         let settings = settings.clone();
         let authentication = authentication.clone();
         let credentials_path = credentials_path.clone();
+        let read_model_allowlist = read_model_allowlist.clone();
         Box::pin(async move {
             let mut reported_usage = None;
             let result: Result<domain::ModelStep, ModelStepError> = async {
@@ -53,7 +55,7 @@ pub(crate) fn create_model_step(
                 &authentication,
                 &cancellation,
             )
-            .await?;
+            .await.context("Authentication blocked: the saved connection could not authorize inference; sign in with /auth")?;
             if cancellation.is_cancelled() {
                 return Err("Model generation was cancelled".into());
             }
@@ -77,6 +79,12 @@ pub(crate) fn create_model_step(
                         domain::ModelEffort::High => "high",
                         domain::ModelEffort::ExtraHigh => "xhigh",
                     } });
+                    }
+                    let policy = read_model_allowlist.call().await
+                        .context("Allowlist configuration could not be read; open /model settings")?;
+                    if !policy.permits(&conversation.model.provider_id, &conversation.model.id) {
+                        return Err::<domain::ModelStep, ModelStepError>("Model identity is outside the positive allowlist".into())
+                            .context("Allowlist blocked: this provider/model is no longer permitted; open /model settings").map_err(Into::into);
                     }
                     let mut response = http
                         .post(url)

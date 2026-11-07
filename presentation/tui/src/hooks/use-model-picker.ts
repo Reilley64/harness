@@ -16,6 +16,10 @@ export function useModelPicker(
 ) {
   const [picker, setPicker] = useState<ModelPickerState | null>(null);
   const [query, setQuery] = useState("");
+  const [policyDraft, setPolicyDraft] = useState<string | null>(null);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [policySaving, setPolicySaving] = useState(false);
+  const policyRequest = useRef(0);
   const [error, setError] = useState<string | null>(initialError);
   const mounted = useRef(true);
   const [selected, setSelected] = useState(0);
@@ -50,6 +54,7 @@ export function useModelPicker(
     setQuery("");
     setSelected(0);
     setEfforts({});
+    setPolicyDraft(null);
     setPicker({ status: "loading" });
     void agent.listModels(request.signal).then(
       (models) => {
@@ -74,6 +79,8 @@ export function useModelPicker(
 
   const close = useCallback(() => {
     loading.current?.abort();
+    policyRequest.current++;
+    setPolicyDraft(null);
     setPicker(null);
   }, []);
 
@@ -122,6 +129,10 @@ export function useModelPicker(
 
   function select(): ModelSelection | undefined {
     if (!highlighted) return;
+    if (highlighted.blocked) {
+      setError(highlighted.blocked);
+      return;
+    }
     const next = { model: highlighted, effort: effortFor(highlighted) };
     committed.current = next;
     setSelection(next);
@@ -144,7 +155,51 @@ export function useModelPicker(
     return next;
   }
 
+  async function editPolicy() {
+    const request = ++policyRequest.current;
+    setPolicyDraft("");
+    setPolicySaving(true);
+    setPolicyError(null);
+    try {
+      const patterns = await agent.modelAllowlist();
+      if (mounted.current && request === policyRequest.current)
+        setPolicyDraft(patterns.join(", "));
+    } catch (error) {
+      if (mounted.current && request === policyRequest.current)
+        setPolicyError(errorMessage(error));
+    } finally {
+      if (mounted.current && request === policyRequest.current)
+        setPolicySaving(false);
+    }
+  }
+
+  async function savePolicy() {
+    if (policyDraft === null || policySaving) return;
+    setPolicySaving(true);
+    setPolicyError(null);
+    try {
+      await agent.modelAllowlist(policyDraft.split(/[\s,]+/).filter(Boolean));
+      if (mounted.current) open();
+    } catch (error) {
+      if (mounted.current) setPolicyError(errorMessage(error));
+    } finally {
+      if (mounted.current) setPolicySaving(false);
+    }
+  }
+
+  function cancelPolicy() {
+    if (!policySaving) setPolicyDraft(null);
+  }
+
   return {
+    policyDraft,
+    policyError,
+    policySaving,
+    editPolicy,
+    savePolicy,
+    cancelPolicy,
+    changePolicy: (value: string) =>
+      setPolicyDraft(value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "")),
     picker,
     error,
     query,

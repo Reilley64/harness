@@ -35,6 +35,11 @@ not a conversation. The next
 message validates and saves the new model/effort and preserves older replies'
 provenance. Switching a conversation to another provider is rejected.
 
+Current application-wide model permission is revalidated before every inference
+step and again at provider HTTP admission after credential resolution. Revocation
+preserves started effects, results and usage but blocks the next disallowed
+request without a replacement. See [model allowlist](model-allowlist.md).
+
 ## Provider requests
 
 OpenAI inference uses `POST https://api.openai.com/v1/responses` with the subscription

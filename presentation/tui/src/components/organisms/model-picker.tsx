@@ -12,6 +12,9 @@ import { ModelPricing } from "../molecules/model-pricing.js";
 import { ModelSearch } from "../molecules/model-search.js";
 
 export function ModelPicker({
+  policyDraft,
+  policyError,
+  policySaving,
   picker,
   query,
   models,
@@ -20,6 +23,9 @@ export function ModelPicker({
   effortFor,
   visibleOptions,
 }: {
+  policyDraft: string | null;
+  policyError: string | null;
+  policySaving: boolean;
   picker: ModelPickerState;
   query: string;
   models: Model[];
@@ -28,6 +34,33 @@ export function ModelPicker({
   effortFor: (model: Model) => ModelEffort | null;
   visibleOptions: number;
 }) {
+  if (policyDraft !== null)
+    return (
+      <Box flexDirection="column">
+        <TerminalText bold>Application-wide model allowlist</TerminalText>
+        <TerminalText>
+          Positive provider/model patterns, separated by commas. * matches any
+          text.
+        </TerminalText>
+        <TerminalText>
+          Broad overlapping patterns still permit a model. Remove broader
+          coverage to narrow.
+        </TerminalText>
+        <TerminalText>
+          Empty permits no inference. Authentication and worker capability are
+          still required.
+        </TerminalText>
+        <TerminalText color="cyan" wrap="wrap">
+          {policyDraft || "(empty)"}
+        </TerminalText>
+        {policyError && <TerminalText color="red">{policyError}</TerminalText>}
+        <TerminalText dimColor>
+          {policySaving
+            ? "Loading / saving…"
+            : "Enter save · Ctrl+U clear · Esc cancel (no change)"}
+        </TerminalText>
+      </Box>
+    );
   const count = Math.max(1, visibleOptions);
   const start = Math.max(0, selected - count + 1);
   if (picker.status !== "ready")
@@ -41,7 +74,7 @@ export function ModelPicker({
           {picker.status === "loading" ? "Loading models…" : picker.message}
         </TerminalText>
         <Box marginTop={1}>
-          <TerminalText dimColor>Esc close</TerminalText>
+          <TerminalText dimColor>Ctrl+A allowlist · Esc close</TerminalText>
         </Box>
       </Box>
     );
@@ -71,10 +104,15 @@ export function ModelPicker({
       )}
       <Box marginTop={1} flexDirection="column">
         <ModelPricing model={models[selected]} />
+        {models[selected]?.blocked && (
+          <TerminalText color="yellow">
+            {models[selected]?.blocked}
+          </TerminalText>
+        )}
       </Box>
       <Box marginTop={1}>
         <TerminalText dimColor wrap="truncate-end">
-          ↑↓ model · ←→ effort · Enter select · Esc close
+          ↑↓ model · ←→ effort · Enter select · Ctrl+A allowlist · Esc close
         </TerminalText>
       </Box>
     </Box>

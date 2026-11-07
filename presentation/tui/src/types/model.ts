@@ -9,6 +9,7 @@ export type ModelPricing = {
 };
 
 export type Model = {
+  blocked?: string | null;
   id: string;
   name: string;
   providerId: string;

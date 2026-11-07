@@ -114,6 +114,14 @@ stay responsive while loading. Closing the Ink picker aborts the request and
 suppresses stale results. Selecting a model updates frontend state; the next
 session creation/prompt validates and persists the selection.
 
+## Model permission settings
+
+The `harness/modelAllowlist` extension exposes ordinary application policy reads
+and replacements. The catalog adds nullable `blocked` local-admission diagnostics;
+catalog presence alone is not eligibility or account entitlement. See
+[model allowlist](model-allowlist.md) for request shapes, errors and cancellation.
+Saved model snapshots do not establish current permission.
+
 ## Saved model selection
 
 `_harness/model-selection/read` accepts `{}` and returns

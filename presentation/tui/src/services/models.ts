@@ -74,7 +74,10 @@ export function parseModels(value: unknown): Model[] {
         entry.contextWindow > 1_000_000_000)
     )
       throw new PresentationError("Invalid model context window.");
+    if (entry.blocked != null && typeof entry.blocked !== "string")
+      throw new PresentationError("Invalid model availability.");
     const model: Model = {
+      blocked: entry.blocked == null ? null : String(entry.blocked),
       id: entry.id,
       name: entry.name,
       providerId: entry.providerId,

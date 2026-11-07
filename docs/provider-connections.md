@@ -11,6 +11,12 @@ Text chat consumes this connection and refreshes credentials on demand near
 access-token expiry. Account switching, connection listing, and logout/revocation
 are not implemented. No background refresh loop runs.
 
+Successful setup initializes an uncustomized provider wildcard through the application
+policy port. Re-authentication never broadens a custom model allowlist, including
+an empty list. Legacy credential discovery alone grants no model coverage. See
+[model allowlist](model-allowlist.md) for settings, initialization and commit
+boundaries.
+
 ## Modules and interfaces
 
 - `domain/src/provider_connection.rs`: safe connection identity and account

@@ -4,6 +4,8 @@ mod dependencies;
 mod error;
 mod output;
 
+use crate::error_context::ResultExt;
+use crate::model_access;
 pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
@@ -61,13 +63,24 @@ pub async fn call(
             .find(|model| {
                 model.id == selection.model_id && model.provider_id == selection.provider_id
             })
-            .ok_or_else(|| Error::caused_by("The selected model is unavailable"))?;
+            .ok_or("The selected model is missing from the catalog")
+            .context("Capability blocked: the selected model is unavailable; choose a supported model with /model")
+            .map_err(Error::caused_by)?;
         model
             .validate_effort(selection.effort)
+            .context("Capability blocked: this effort is unsupported; choose an effort with /model")
             .map_err(Error::caused_by)?;
         conversation.model = model;
         conversation.effort = selection.effort;
     }
+    model_access::read(
+        &dependencies.read_model_allowlist,
+        &dependencies.read_provider_connection,
+        &dependencies.create_model_step_factory,
+        &conversation.model,
+    )
+    .await
+    .map_err(Error::caused_by)?;
     let create_model_step = dependencies
         .create_model_step_factory
         .call(conversation.model.provider_id.clone())
@@ -230,6 +243,14 @@ async fn run(
         if deadline.elapsed().as_secs() > 1200 {
             return Err(Error::caused_by("Turn exceeded 20 minutes"));
         }
+        model_access::read(
+            &dependencies.read_model_allowlist,
+            &dependencies.read_provider_connection,
+            &dependencies.create_model_step_factory,
+            &conversation.model,
+        )
+        .await
+        .map_err(Error::caused_by)?;
         let reply = conversation.active_reply_mut().map_err(Error::caused_by)?;
         reply.content = buffer.lock().clone();
         reply.begin_generation().map_err(Error::caused_by)?;
