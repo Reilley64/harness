@@ -1,28 +1,12 @@
+mod dependencies;
+mod error;
+mod output;
+
 use crate::model_access;
-use crate::ports;
 
-#[fundle::deps]
-#[derive(Clone)]
-pub struct Dependencies {
-    create_agent: ports::CreateAgent,
-    read_agent: ports::ReadAgent,
-    read_conversation: ports::ReadConversation,
-    update_conversation: ports::UpdateConversation,
-    lock_conversation: ports::LockConversation,
-    read_models: ports::ReadModels,
-    read_provider_connection: ports::ReadProviderConnection,
-    read_model_allowlist: ports::ReadModelAllowlist,
-    create_model_step_factory: ports::CreateModelStepFactory,
-}
-
-#[ohno::error]
-#[derive(Default)]
-#[display("Could not open repository Griller")]
-pub struct Error;
-
-pub struct Output {
-    pub conversation: domain::Conversation,
-}
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
