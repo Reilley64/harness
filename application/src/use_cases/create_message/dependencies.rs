@@ -15,6 +15,7 @@ pub struct Dependencies {
     pub(super) read_model_allowlist: ReadModelAllowlist,
     pub(super) read_provider_connection: ReadProviderConnection,
     pub(super) read_conversation: ReadConversation,
+    pub(super) read_instructions: ports::ReadInstructions,
     pub(super) lock_conversation: LockConversation,
     pub(super) update_conversation: UpdateConversation,
     pub(super) read_models: ReadModels,

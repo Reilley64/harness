@@ -53,7 +53,7 @@ impl Record {
         now: u64,
     ) -> Self {
         Self {
-            version: 4,
+            version: 5,
             agent: AgentRecord {
                 id: agent_id,
                 role: "griller",

@@ -122,12 +122,16 @@ callers cannot supply paths. Port-owned JSON records stay in infrastructure, dom
 no Serde dependency, and unknown versions/corrupt records are rejected unchanged.
 Creation owns encode-only records, reading owns decode-only records, and updating
 owns both directions; no serialized representation is shared between adapters.
-Version four retains version three's optional Griller identity, linked runs and
-interruption gate, and requires per-message/run provider provenance. Optional
+Version three adds an optional Griller identity, linked runs and an interruption
+gate. Version four adds immutable instruction snapshots, a selected reference and
+each run's actual snapshot reference; absent historical instructions remain
+unknown. Version five adds required per-message/run provider provenance. Optional
 step-level resolved identity/serving provider and catalog canonical/worker
 capabilities are retained in independently owned records. Versions one through
-three are still readable without rewriting; their single stored provider is the
-only justified legacy message/run provider. Mutation writes version four. Each run records its own stable identity, agent identity,
+four remain readable without rewriting; their single stored provider is the only
+justified legacy message/run provider when those fields are absent. Mutation
+writes version five. See [role guidance](role-guidance.md).
+Each run records its own stable identity, agent identity,
 model/effort snapshot and lifecycle status. Reading/updating validates associations
 and chronological reply/status consistency, including complete run coverage for
 Griller messages. An associated Griller requires an absolute stored workspace;
@@ -234,7 +238,8 @@ legacy adoption occurs. An explicit `--resume` continues an old pilot conversati
 without inventing an agent association.
 
 The Griller uses the stock provider factory, ordinary tools, and Harness-owned
-`griller-v1.txt` role guidance. It refines ideas and asks for human input; this slice
+versioned role/phase instructions, explicit repository guidance and durable snapshots
+through the [role-guidance resolver](role-guidance.md). It refines ideas and asks for human input; this slice
 does not publish specs, delegate work, create CoS, or infer implementation/merge
 approval. Each submitted answer starts a later grilling run on the same agent;
 steering stays within the active run. A successful response ends the run for human

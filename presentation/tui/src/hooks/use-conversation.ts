@@ -3,6 +3,7 @@ import type { Agent } from "../services/acp.js";
 import { errorMessage } from "../services/acp.js";
 import { PresentationError } from "../services/errors.js";
 import type { Conversation, Message } from "../types/conversation.js";
+import type { Guidance } from "../types/guidance.js";
 import type { ModelSelection } from "../types/model.js";
 import type { ToolCall } from "../types/tool.js";
 import type { Usage } from "../types/usage.js";
@@ -238,6 +239,47 @@ export function useConversation(agent: Agent, initial?: Conversation) {
       } catch (error) {
         setError(errorMessage(error));
       }
+    },
+    adoptGuidance: async (
+      guidance: Guidance,
+      selection: ModelSelection | null,
+    ) => {
+      if (active.current)
+        throw new PresentationError(
+          "Stop or finish the run before adopting instructions.",
+        );
+      let target = current.current;
+      if (!target) {
+        if (!selection)
+          throw new PresentationError(
+            "Choose a model before creating the Griller.",
+          );
+        const created = await agent.startAgent(selection);
+        const latest = current.current;
+        if (
+          latest &&
+          (latest.id !== created.id || latest.revision > created.revision)
+        )
+          throw new PresentationError(
+            "The conversation changed while creating the Griller; inspect again before adopting instructions.",
+          );
+        target = created;
+        current.current = created;
+        setConversation(created);
+      }
+      const id = target.id;
+      const revision = guidance.revision ?? target.revision;
+      const updated = await agent.adoptGuidance(id, revision, guidance);
+      if (
+        current.current?.id === id &&
+        updated.id === id &&
+        updated.revision >= current.current.revision
+      ) {
+        current.current = updated;
+        setConversation(updated);
+        setError(null);
+      }
+      return updated;
     },
     cancel,
   };

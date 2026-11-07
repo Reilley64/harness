@@ -191,6 +191,12 @@ test files or test-only dependencies were added.
 `useConversation` owns optimistic streaming display, explicit cancellation,
 error reconciliation, and the last authoritative snapshot. Rust owns the turn/tool
 loop and steering; the hook sends instructions rather than cancelling/resending.
+An instruction-adoption acknowledgement updates only its same conversation target
+at a non-older revision; a delayed reply cannot erase a newer completed turn or
+regress the map's run state. A stale initial Griller-creation acknowledgement is
+rejected before adopting instructions, without replacing newer history; inspect
+again to adopt against the current conversation. Durable commits are not rolled
+back by these presentation guards.
 The first send creates a session; opening a picker or choosing a model does not.
 After failure the hook reloads saved history so it does not mistake optimistic
 text for persisted messages or automatically resend a failed turn.
@@ -369,6 +375,16 @@ backend kill/restart/Resume, empty versus whitespace/modified Left, Unicode
 multiline paste/draft retention, F2/F3, split SGR clicks, Escape during inference,
 confirmed Stop and normal terminal-mode restoration. These byte-report
 observations are not a human terminal-emulator visual signoff.
+
+## Instruction provenance
+
+`/guidance` opens the real ACP-backed [guidance inspection](role-guidance.md),
+including selected/latest-run/available snapshots, exact source/version/upstream,
+required blocks and explicit overrides. Scoped/reference/phase commands inspect
+candidates; `/guidance adopt` records explicit adoption for future work. Bundled
+later roles are assets only, never map nodes or creation arrows. Inspection
+preserves the mounted chat, drafts, titles and Escape-back behavior. It does not
+start inference; active runs continue with their captured snapshot.
 
 ## TanStack AI
 

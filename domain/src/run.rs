@@ -12,4 +12,5 @@ pub struct Run {
     pub provider_id: ProviderId,
     pub effort: Option<ModelEffort>,
     pub status: RunStatus,
+    pub instructions: Option<String>,
 }

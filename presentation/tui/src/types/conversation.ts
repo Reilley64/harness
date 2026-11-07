@@ -38,7 +38,8 @@ export type Run = {
   replyId: string;
   modelId: string;
   effort: ModelEffort | null;
-  task: "grilling";
+  task: "grilling" | "specification" | "tickets";
+  instructions?: string | null;
   status: "running" | "needs_human" | "stopped" | "failed" | "interrupted";
 };
 
@@ -46,6 +47,7 @@ export type Conversation = {
   agent?: AgentIdentity | null;
   runs?: Run[];
   resumeRequired?: boolean;
+  selectedInstructions?: string | null;
   workspace?: string | null;
   usage?: Usage;
   id: string;

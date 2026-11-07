@@ -49,7 +49,7 @@ struct MessageRecord {
 impl From<domain::Conversation> for Record {
     fn from(conversation: domain::Conversation) -> Self {
         Self {
-            version: 4,
+            version: 5,
             agent: conversation.agent.map(|agent| AgentRecord {
                 id: agent.id.0,
                 role: "griller".into(),

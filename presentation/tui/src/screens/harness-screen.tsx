@@ -7,6 +7,7 @@ import { PromptBox } from "../components/molecules/prompt-box.js";
 import { StartupWordmark } from "../components/molecules/startup-wordmark.js";
 import { WorkingIndicator } from "../components/molecules/working-indicator.js";
 import { AgentMap } from "../components/organisms/agent-map.js";
+import { GuidancePanel } from "../components/organisms/guidance-panel.js";
 import { ModelPicker } from "../components/organisms/model-picker.js";
 import { ProviderConnectionStatus } from "../components/organisms/provider-connection-status.js";
 import { ProviderPicker } from "../components/organisms/provider-picker.js";
@@ -18,10 +19,12 @@ import { useContextTitle } from "../hooks/use-context-title.js";
 import { useConversation } from "../hooks/use-conversation.js";
 import { useCreateProviderConnection } from "../hooks/use-create-provider-connection.js";
 import { useGitBranch } from "../hooks/use-git-branch.js";
+import { useGuidance } from "../hooks/use-guidance.js";
 import { useModelPicker } from "../hooks/use-model-picker.js";
 import { usePromptDraft } from "../hooks/use-prompt-draft.js";
 import { useProviderPicker } from "../hooks/use-provider-picker.js";
 import type { Agent } from "../services/acp.js";
+import { errorMessage } from "../services/acp.js";
 import { usageLabel } from "../services/usage.js";
 import type { Conversation } from "../types/conversation.js";
 import type { ModelSelection } from "../types/model.js";
@@ -49,6 +52,7 @@ export function HarnessScreen({
     initialModelError,
   );
   const chat = useConversation(agent, initialConversation);
+  const guidance = useGuidance(agent, chat.conversation);
   const workspace =
     chat.conversation?.workspace ??
     agent.workspace ??
@@ -60,11 +64,18 @@ export function HarnessScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [map, setMap] = useState(false);
   const [stopConfirmation, setStopConfirmation] = useState(false);
-  const modal = !!models.picker || !!providers.picker || connection.busy;
+  const modal =
+    !!models.picker || !!providers.picker || connection.busy || guidance.open;
   useContextNavigation(
     !modal && !stopConfirmation,
-    () => setMap((value) => !value),
-    () => setMap(false),
+    () => {
+      guidance.close();
+      setMap((value) => !value);
+    },
+    () => {
+      guidance.close();
+      setMap(false);
+    },
   );
   useContextTitle(
     map
@@ -83,11 +94,17 @@ export function HarnessScreen({
     if (
       key.ctrl &&
       input === "r" &&
+      !guidance.open &&
       !connection.busy &&
       !models.picker &&
       !providers.picker
     ) {
+      guidance.close();
       draft.recover();
+      return;
+    }
+    if (guidance.open) {
+      if (key.escape) guidance.close();
       return;
     }
     if (stopConfirmation) {
@@ -99,11 +116,13 @@ export function HarnessScreen({
       return;
     }
     if (map && !modal) {
+      guidance.close();
       if (key.escape || key.return) setMap(false);
       else if (key.ctrl && input === "x") setStopConfirmation(true);
       return;
     }
     if (key.escape && !modal) {
+      guidance.close();
       setMap(true);
       return;
     }
@@ -161,13 +180,15 @@ export function HarnessScreen({
 
   function submit(value: string) {
     const command = value.trim();
+    if (!command.startsWith("/guidance")) guidance.close();
     if (
       chat.busy &&
       command.startsWith("/") &&
       command !== "/quit" &&
       command !== "/exit" &&
       command !== "/stop" &&
-      command !== "/map"
+      command !== "/map" &&
+      command !== "/guidance"
     ) {
       setNotice(
         "Use /stop to stop this Griller before using commands. Escape only navigates.",
@@ -185,6 +206,53 @@ export function HarnessScreen({
     } else if (command === "/map") {
       draft.change("");
       setMap(true);
+    } else if (command === "/guidance") {
+      draft.change("");
+      void guidance.inspect();
+    } else if (command.startsWith("/guidance phase ")) {
+      draft.change("");
+      void guidance.inspect({
+        phase: command.slice("/guidance phase ".length),
+      });
+    } else if (command.startsWith("/guidance scope ")) {
+      draft.change("");
+      const scopes = [
+        ...(guidance.guidance?.available?.scopes ?? []),
+        command.slice("/guidance scope ".length),
+      ];
+      void guidance.inspect({
+        phase: guidance.guidance?.available?.phase,
+        references: guidance.guidance?.available?.references,
+        scopes,
+      });
+    } else if (command.startsWith("/guidance reference ")) {
+      draft.change("");
+      const references = [
+        ...(guidance.guidance?.available?.references ?? []),
+        command.slice("/guidance reference ".length),
+      ];
+      void guidance.inspect({
+        phase: guidance.guidance?.available?.phase,
+        scopes: guidance.guidance?.available?.scopes,
+        references,
+      });
+    } else if (command === "/guidance reset") {
+      draft.change("");
+      void guidance.inspect({ phase: "grilling", scopes: [], references: [] });
+    } else if (command === "/guidance adopt") {
+      draft.change("");
+      const inspected = guidance.guidance;
+      if (!inspected?.available) {
+        setNotice(
+          "Inspect /guidance and resolve REQUIRED blocks before explicit adoption.",
+        );
+      } else {
+        void guidance
+          .adopt(inspected, () =>
+            chat.adoptGuidance(inspected, models.selection),
+          )
+          .catch((error) => setNotice(errorMessage(error)));
+      }
     } else if (command === "/resume") {
       draft.change("");
       void chat.resume();
@@ -220,7 +288,7 @@ export function HarnessScreen({
         models.selection?.model ?? chat.conversation?.model,
       )}
       contentAlignment={models.picker ? "end" : "start"}
-      showPrompt={!models.picker && !map}
+      showPrompt={!models.picker && !map && !guidance.open}
       selectedModel={
         models.selection
           ? `${models.selection.model.providerId}/${models.selection.model.id}${models.selection.effort ? ` · ${models.selection.effort}` : ""}`
@@ -235,9 +303,15 @@ export function HarnessScreen({
         <PromptBox
           working={chat.busy}
           value={draft.value}
-          onChange={draft.change}
+          onChange={(value) => {
+            guidance.close();
+            draft.change(value);
+          }}
           onSubmit={submit}
-          onOpenMap={() => setMap(true)}
+          onOpenMap={() => {
+            guidance.close();
+            setMap(true);
+          }}
           focused={!modal && !map && !stopConfirmation}
         />
       }
@@ -254,17 +328,32 @@ export function HarnessScreen({
           close
         </TerminalText>
       )}
-      {map && !stopConfirmation && (
+      {guidance.open && (
+        <GuidancePanel
+          guidance={guidance.guidance}
+          loading={guidance.loading}
+          error={guidance.error}
+          columns={columns}
+          rows={rows}
+          refresh={() => {
+            void guidance.inspect();
+          }}
+        />
+      )}
+      {map && !stopConfirmation && !guidance.open && (
         <AgentMap
           conversation={chat.conversation}
           busy={chat.busy}
-          open={() => setMap(false)}
+          open={() => {
+            guidance.close();
+            setMap(false);
+          }}
         />
       )}
       <Box
         flexDirection="column"
         flexGrow={1}
-        display={map || stopConfirmation ? "none" : "flex"}
+        display={map || stopConfirmation || guidance.open ? "none" : "flex"}
       >
         {models.picker ? (
           <ModelPicker

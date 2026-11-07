@@ -124,13 +124,15 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
         "id": conversation.id,
         "workspace": conversation.workspace,
         "resumeRequired": conversation.resume_required,
+        "selectedInstructions": conversation.selected_instructions,
         "agent": conversation.agent.as_ref().map(|agent| serde_json::json!({
             "id": agent.id.0, "role": "griller", "creatorId": null,
         })),
         "runs": conversation.runs.iter().map(|run| serde_json::json!({
             "id": run.id, "agentId": run.agent_id.0, "replyId": run.reply_id,
             "modelId": run.model_id, "providerId": run.provider_id.0, "effort": effort(run.effort),
-            "task": "grilling",
+            "task": run.instructions.as_ref().and_then(|id| conversation.instruction_snapshots.iter().find(|snapshot| &snapshot.id == id)).map_or("grilling", |snapshot| snapshot.phase.as_str()),
+            "instructions": run.instructions,
             "status": match run.status {
                 domain::RunStatus::Running => "running",
                 domain::RunStatus::NeedsHuman => "needs_human",

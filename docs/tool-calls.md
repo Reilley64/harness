@@ -71,10 +71,12 @@ reported incompatible model is an error before tools, never a replacement worker
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 4 with per-message/run provider provenance and
-optional resolved-model/serving-provider metadata. Versions 1 through 3 remain
-readable without rewriting until mutation or recovery; their single stored
-provider supplies legacy provenance.
+Records are schema version 5 with per-message/run provider provenance, optional
+resolved-model/serving-provider metadata, agent/run associations and immutable
+instruction snapshots. Versions 1 through 4 remain readable without rewriting
+until mutation/recovery; their single stored provider supplies missing legacy
+provider provenance, and historical instruction provenance is never invented.
+See [role guidance](role-guidance.md).
 Read/create/update conversation adapters and preference adapters each own their
 serialized `Record` types. Shared filesystem helpers operate on bytes, not DTOs.
 
