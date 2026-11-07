@@ -2,6 +2,16 @@
 
 Follow [the repository coding standards](../CODING_STANDARDS.md).
 
+## Use-case modules
+
+- Keep each use case's `call` and orchestration in `src/use_cases/<name>.rs`.
+- Declare private `dependencies`, `error`, and `output` child modules, each in
+  its own file under `src/use_cases/<name>/`.
+- Define `Dependencies`, `Error`, and `Output` in their respective child modules
+  and re-export them from the use-case file.
+- Apply this layout to small use cases too; keep the type definitions in the
+  child modules rather than inline in the use-case file.
+
 ## Turn coordination
 
 - Keep pure state rules in domain transition methods. Use cases own effect

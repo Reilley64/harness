@@ -6,6 +6,39 @@ steps and preserve the meaning of interrupted work.
 
 ## Language
 
+**Agent**:
+A durable, role-bound participant assigned to work. Its identity persists across
+model invocations and changes in model selection; multiple agents may share a role.
+
+**System 0 agent**:
+A conversational agent that carries out tool-assisted work. The Decider, which
+returns typed decisions rather than performing tool-assisted work, is not a
+System 0 agent.
+
+**Model allowlist**:
+The user's set of model identities permitted for inference, shared by workers and
+the Decider. Membership alone does not establish authentication or compatibility
+with assigned work.
+
+**Task**:
+A kind of work an agent performs, defined once and executable many times, such as
+research, implementation, or review.
+_Avoid_: Job, workflow, action
+
+**Run**:
+One execution of a task by an agent, from its trigger to a terminal outcome.
+Waiting for delegated work may suspend the same run; a human answer starts a later
+run after the preceding run ends for input.
+
+**Ticket acceptance**:
+The state in which a ticket's submitted changes have met required review and
+checks and have been integrated into its spec. It does not imply tracker closure
+or final merge.
+
+**Spec completion**:
+The state in which a spec's accepted changes have been verified as merged into
+their target branch. PR readiness and cleanup are separate states.
+
 **Conversation**:
 A durable history of interactions associated with a provider connection and a
 selected model. It can be continued through multiple turns.
