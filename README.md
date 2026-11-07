@@ -49,12 +49,16 @@ python3 -m http.server 3000 --bind 127.0.0.1 --directory server
 Type `/auth` and press Enter to open the provider picker. Use the arrow keys to
 select, Enter to connect, Escape to close, and `r` to retry a failed catalog
 load. Selecting ChatGPT opens browser sign-in for an eligible ChatGPT plan.
+OpenRouter uses protected browser PKCE and a separately billed API key; connecting
+performs no paid inference. Compatible OpenRouter workers come from its public
+catalog, not a promise of account entitlement.
 While waiting, Escape cancels and `o` reopens the sign-in page. Ctrl+Q or Ctrl+C
 exits. After signing in and choosing a model, enter a message to start a streamed,
 automatically saved conversation. While it works, keep typing and press Enter to
 steer: Rust durably accepts your instruction and continues the same turn. In-flight
 inference restarts; a running tool finishes before the remaining batch is skipped.
-Escape cancels without a follow-up and preserves partial text and unsent drafts.
+Escape closes or navigates without stopping work and preserves drafts. Use
+`/stop`, or Ctrl+X from the agent map, then confirm to stop the active leaf run.
 The nine automatic tools and their limits are described in [tool calls](docs/tool-calls.md).
 Whole tool panels turn green on success or red on failure; Ctrl+O expands output.
 
@@ -70,7 +74,8 @@ The pricing section shows catalog USD rates per million input, cached-input,
 and output tokens. Missing prices display `—`, not zero. These are catalog
 rates, not ChatGPT subscription billing or an estimate of the current request.
 
-The prompt is single-line; pasted newlines are removed without submitting.
+The prompt preserves multiline pasted text without submitting. Alt+Enter or
+Ctrl+J inserts a newline when the terminal cannot report Shift+Enter.
 Command prefixes show dim inline suggestions for `/auth`, `/model`, `/quit`, and `/exit`.
 Press Tab to complete a suggestion, then Enter to run it. `/quit` and `/exit`
 close the TUI and its ACP child process.
@@ -78,7 +83,8 @@ close the TUI and its ACP child process.
 The Rust `presentation/acp` adapter uses stable ACP v1. The custom
 `_harness/providers` and `_harness/models` requests call their respective read
 use cases. Initialization advertises them through `_meta["harness/providerCatalog"]`
-and `_meta["harness/modelCatalog"]`, along with the `openai` authentication method. Standard ACP `authenticate` calls the
+and `_meta["harness/modelCatalog"]`, along with separate `openai` and `openrouter`
+authentication methods. Standard ACP `authenticate` calls the
 `create_provider_connection` use case. Tokens remain in Rust; only browser
 instructions and safe connection information reach Ink.
 
@@ -111,7 +117,9 @@ All local storage derives from one setting, `app_data_path`, defaulting to
 ~/.harness/
 ├── auth/
 │   ├── openai.json
-│   └── openai.lock
+│   ├── openai.lock
+│   ├── openrouter.json
+│   └── openrouter.lock
 ├── conversations/
 │   ├── <conversation-id>.json
 │   └── <conversation-id>.lock
@@ -155,6 +163,28 @@ Defaults are embedded in `application.toml`. Environment overrides include:
 Sign-in, returning sign-in, text inference, and on-demand token refresh are
 implemented. There is no background refresh loop, account switching, or logout.
 See [provider connections](docs/provider-connections.md) for security details.
+
+## OpenRouter workers
+
+Choose OpenRouter in `/auth`, then an allowed compatible model/effort in `/model`.
+The Rust provider factory uses the existing Responses stream/tool coordinator.
+It requires requested parameters, disables gateway provider fallback/plugins and
+rejects hosted routers and unknown protocol/tool/context capabilities. Provider
+or model switches on later prompts preserve ordinary history, effects and usage,
+without forwarding incompatible private reasoning or response-item/call IDs.
+OpenAI and OpenRouter credential stores remain separate.
+
+`MODELS__OPENROUTER_URL` defaults to `https://openrouter.ai/api/v1/models`.
+`AUTHENTICATION__OPENROUTER__ISSUER` defaults to `https://openrouter.ai`; the
+inference origin in `REPLIES__OPENROUTER__BASE_URL` must match it and the stored
+issuer. Both auth and reply sections have a nonzero `TIMEOUT_SECONDS` default of
+600; auth also has `OPEN_BROWSER`. Only HTTPS or explicit loopback HTTP fixtures
+are supported. Public catalog/PKCE fixtures are not live account, billing or
+quality proof. Native Jev decision inference is a later, separate capability.
+
+See [provider connections](docs/provider-connections.md),
+[model permission settings](docs/model-allowlist.md), and
+[conversation continuation](docs/conversations.md) for the full contracts.
 
 ## Provider configuration
 

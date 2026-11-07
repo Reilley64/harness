@@ -36,6 +36,7 @@ pub(crate) async fn read(
     factory: &CreateModelStepFactory,
     model: &domain::Model,
 ) -> Result<domain::ProviderConnection, Error> {
+    model.validate_worker().context("Capability blocked: this identity is not a compatible worker; choose a supported model with /model").map_err(Error::caused_by)?;
     factory.call(model.provider_id.clone())
         .context("Capability blocked: no worker protocol for this provider; choose a supported model with /model")
         .map_err(Error::caused_by)?;

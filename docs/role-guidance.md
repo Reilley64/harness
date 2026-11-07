@@ -117,7 +117,7 @@ selection, not tool-path confinement or a general policy sandbox.
 A content-addressed snapshot records the selected phase, scopes, references, actual
 instruction bodies, dependency closure, source paths, content versions and upstream
 links. Its SHA-256 identity covers these values, not timestamps or a claim about
-historical content. Conversation schema v4 stores deduplicated immutable snapshots,
+historical content. Conversation schema v4 introduced instruction persistence; current v5 stores deduplicated immutable snapshots,
 the selected snapshot ID and each run's actual snapshot ID, in the existing private
 bounded atomic/check-revision conversation file. Snapshot checksum/closure and run
 references are validated on read/update. Corrupt records are rejected unchanged.
@@ -139,7 +139,7 @@ again. Adoption changes future runs only; prior run references/text remain intac
 The durable selected reference and immutable retained snapshots record adoption;
 this is not a separate event/audit service.
 
-Versions 1–3 still load. Unassociated pilot conversations keep their historical
+Versions 1–4 still load, including existing v4 instruction snapshots. Unassociated pilot conversations keep their historical
 behavior without a fabricated role provenance. Historical Griller runs with no
 snapshot remain explicitly unknown. An interrupted such run cannot Resume through
 a newly invented snapshot: inspect history/effects, explicitly acknowledge the

@@ -3,6 +3,7 @@ use crate::MessageRole;
 use crate::MessageStatus;
 use crate::ModelEffort;
 use crate::ModelStep;
+use crate::ProviderId;
 use crate::SteeringInstruction;
 use crate::TokenUsage;
 
@@ -13,6 +14,7 @@ pub struct Message {
     pub content: String,
     pub status: MessageStatus,
     pub model_id: String,
+    pub provider_id: ProviderId,
     pub effort: Option<ModelEffort>,
     pub steps: Vec<ModelStep>,
     pub steering: Vec<SteeringInstruction>,

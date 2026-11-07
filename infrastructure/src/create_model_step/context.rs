@@ -1,8 +1,33 @@
 use super::ModelStepError;
+use crate::tool_contracts;
 use application::error_context::ResultExt;
 use serde_json::json;
 
-pub(super) fn input(
+pub(super) async fn request(
+    conversation: domain::Conversation,
+    tools: Vec<domain::Tool>,
+    finalizing: bool,
+) -> Result<serde_json::Value, ModelStepError> {
+    tokio::task::spawn_blocking(move || {
+    let input = input(&conversation, finalizing)?;
+    let mut body = json!({"model":conversation.model.id, "input":input, "store":false, "stream":true, "include":["reasoning.encrypted_content"]});
+    if !tools.is_empty() {
+        body["tools"] = tool_contracts::definitions(&tools);
+        body["parallel_tool_calls"] = json!(false);
+    }
+    if let Some(effort) = conversation.effort {
+        body["reasoning"] = json!({"effort":match effort {
+            domain::ModelEffort::Low => "low",
+            domain::ModelEffort::Medium => "medium",
+            domain::ModelEffort::High => "high",
+            domain::ModelEffort::ExtraHigh => "xhigh",
+        }});
+    }
+    Ok(body)
+    }).await?
+}
+
+fn input(
     conversation: &domain::Conversation,
     finalizing: bool,
 ) -> Result<Vec<serde_json::Value>, ModelStepError> {
@@ -40,16 +65,52 @@ pub(super) fn input(
         }
         for (index, step) in reply.steps.iter().enumerate() {
             let items: Vec<serde_json::Value> = serde_json::from_str(&step.output)?;
-            input.extend(
-                items.into_iter().filter(|i| {
-                    reply.model_id == conversation.model.id || i["type"] != "reasoning"
-                }),
-            );
+            let compatible = reply.model_id == conversation.model.id
+                && reply.provider_id == conversation.model.provider_id
+                && step.catalog_canonical_id == conversation.model.canonical_id
+                && step.resolved_model_id.as_ref().is_none_or(|resolved| {
+                    resolved == &conversation.model.id
+                        || Some(resolved) == conversation.model.canonical_id.as_ref()
+                });
+            if compatible {
+                input.extend(items);
+            } else {
+                for item in &items {
+                    if item["type"] == "function_call" {
+                        let call = step
+                            .calls
+                            .iter()
+                            .find(|call| item["call_id"].as_str() == Some(&call.call_id))
+                            .ok_or("Provider continuation and tool records do not match")?;
+                        input.push(json!({"type":"function_call","call_id":call.id,"name":call.name,"arguments":call.arguments}));
+                        continue;
+                    }
+                    if item["type"] != "message" && item["role"] != "assistant" {
+                        continue;
+                    }
+                    let text = item["content"]
+                        .as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| {
+                            item["content"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|part| {
+                                    part["text"].as_str().or_else(|| part["refusal"].as_str())
+                                })
+                                .collect::<String>()
+                        });
+                    if !text.is_empty() {
+                        input.push(json!({"role":"assistant","content":text}));
+                    }
+                }
+            }
             for call in &step.calls {
                 if !call.status.terminal() {
                     return Err("Cannot continue with an unfinished tool execution".into());
                 }
-                input.push(json!({"type":"function_call_output","call_id":call.call_id,"output":json!({"status":call.status.as_str(),"output":call.output,"artifact":call.artifact,"truncated":call.truncated}).to_string()}));
+                input.push(json!({"type":"function_call_output","call_id":if compatible { &call.call_id } else { &call.id },"output":json!({"status":call.status.as_str(),"output":call.output,"artifact":call.artifact,"truncated":call.truncated}).to_string()}));
             }
             for instruction in reply.steering.iter().filter(|s| s.after_step == index + 1) {
                 input.push(json!({"role":"user","content":instruction.text}));
@@ -144,6 +205,9 @@ pub(super) fn step(
     Ok(domain::ModelStep {
         id: uuid::Uuid::new_v4().to_string(),
         output: encoded,
+        resolved_model_id: None,
+        catalog_canonical_id: None,
+        serving_provider: None,
         usage,
         calls,
         status,
