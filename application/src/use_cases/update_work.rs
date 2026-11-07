@@ -1,11 +1,14 @@
 mod dependencies;
 mod error;
 mod output;
+
 use crate::error_context::ResultExt;
 use crate::model_access;
+
 pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
+
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     id: String,
@@ -24,6 +27,7 @@ pub async fn call(
             "Work and assignment intents must be canonical UUIDs",
         ));
     }
+
     let mut work = d
         .read_work
         .call(id)
@@ -41,6 +45,7 @@ pub async fn call(
     if work.current().map_err(Error::caused_by)?.version != version {
         return Err("Approval version is no longer current").context("Approval is stale; inspect the current proposal before approving its exact scope/criteria version").map_err(Error::caused_by);
     }
+
     let model = model_access::read_model(
         &d.read_models,
         &selection.provider_id,
@@ -57,6 +62,7 @@ pub async fn call(
     )
     .await
     .map_err(Error::caused_by)?;
+
     if prior.is_none() {
         let guard = d
             .lock_conversation
@@ -87,6 +93,7 @@ pub async fn call(
         {
             return Err(Error::caused_by("Work creator association changed"));
         }
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(Error::caused_by)?
@@ -110,6 +117,7 @@ pub async fn call(
             .map_err(Error::caused_by)?;
         drop(guard);
     }
+
     let approval = work
         .authorize(&intent, &version)
         .map_err(Error::caused_by)?
@@ -120,6 +128,7 @@ pub async fn call(
             conversation_id: coordinator_id,
         });
     }
+
     let resolution = d
         .read_instructions
         .call(
@@ -137,6 +146,7 @@ pub async fn call(
         .await
         .context("Approval retained but handoff could not be confirmed; inspect work and explicitly retry the original intent. No inference was dispatched")
         .map_err(Error::caused_by)?;
+
     let expected = work.revision;
     work.approvals
         .iter_mut()
@@ -148,6 +158,7 @@ pub async fn call(
         .call(work, Some(expected))
         .await
         .map_err(Error::caused_by)?;
+
     Ok(Output {
         work,
         conversation_id,

@@ -44,6 +44,15 @@
 - Constructors borrow paths/settings where practical and return owned closures.
   Use Rust 2024 `+ use<>` when needed to express precise captures.
 
+## Semantic spacing
+
+Use blank lines to separate logical phases, such as validation, state preparation,
+external effects and result construction. Keep closely related statements and
+checks together rather than separating every statement. Separate top-level
+definitions and distinct hook lifecycles. Do not insert spacing inside literals or
+change evaluation order for layout. Formatters normalize syntax; they do not infer
+these semantic groups.
+
 ## Errors, effects, and storage
 
 - Use `#[ohno::error]` for application errors and boxed `From` conversions at

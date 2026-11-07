@@ -8,6 +8,7 @@ export function useTranscriptViewport(key = "initial") {
   if (firstTarget.current === null && key !== "initial")
     firstTarget.current = key;
   const storageKey = key === firstTarget.current ? "initial" : key;
+
   const [states, setStates] = useState(new Map<string, TranscriptViewport>());
   const change = useCallback(
     (update: (current: TranscriptViewport) => TranscriptViewport) => {
@@ -19,5 +20,6 @@ export function useTranscriptViewport(key = "initial") {
     },
     [storageKey],
   );
+
   return { value: states.get(storageKey) ?? empty, change };
 }
