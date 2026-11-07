@@ -305,12 +305,19 @@ subprocess. See [conversations](conversations.md).
 The native map contains the actual repository Griller identity returned by Rust,
 not a static role roster. The node persists across human answers, model changes,
 stopped/completed runs and reloads. It shows the latest run status (or live local
-running state) and an explicitly unknown creator; no creation arrow or descendant
-is fabricated. Legacy pilot conversations remain unassociated. Multi-agent
-growth, pan/collapse and execution subtrees belong to later slices.
+work status) and an explicitly unknown creator; no creation arrow or descendant
+is fabricated. While local work is pending, unavailable live run details are
+explicitly marked pending; saved run identity/model/status are labelled historical
+rather than presented as the active run. Legacy pilot conversations remain
+unassociated. Multi-agent growth, pan/collapse and execution subtrees belong to
+later slices.
 
 Plain Left from the empty focused editor opens the map; whitespace, modifiers,
-paste and picker input retain their editing meaning. Synchronous event-batch
+paste and picker input retain their editing meaning. Function-key-shaped bytes
+inside bracketed paste never execute navigation, including fragmented markers
+and large paste chunks. Paste tracking survives picker activation changes.
+Ink retains its 20 ms ambiguity timeout for incomplete escape prefixes; recognized
+bracketed paste is not timeout-flushed. Synchronous event-batch
 editing state prevents coalesced space-plus-Left from navigating accidentally.
 F2 toggles chat/map; F3 returns to chat in the one-Griller context. Enter opens
 the sole selected node; Tab/arrows retain that selection. A single mouse click

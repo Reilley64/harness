@@ -38,7 +38,7 @@ export function AgentMap({
         </TerminalText>
         <TerminalText>
           {busy
-            ? "running"
+            ? "working · live run details pending"
             : conversation?.resumeRequired
               ? "interrupted · Resume required"
               : (run?.status ?? "ready")}
@@ -57,12 +57,12 @@ export function AgentMap({
           <TerminalText wrap="truncate-end">
             {conversation.workspace ?? "Workspace not yet bound"}
           </TerminalText>
-          <TerminalText wrap="truncate-end">{`${agent ? "grilling · " : ""}${conversation.model.providerId}/${run?.modelId ?? conversation.model.id} · ${(run ? run.effort : conversation.effort) ?? "no effort"}`}</TerminalText>
+          <TerminalText wrap="truncate-end">{`${busy ? "Last saved context · " : ""}${agent ? "grilling · " : ""}${conversation.model.providerId}/${run?.modelId ?? conversation.model.id} · ${(run ? run.effort : conversation.effort) ?? "no effort"}`}</TerminalText>
           {run && (
             <TerminalText
               dimColor
               wrap="truncate-end"
-            >{`Run ${run.id}`}</TerminalText>
+            >{`${busy ? "Last saved run" : "Run"} ${run.id}${busy ? ` · ${run.status}` : ""}`}</TerminalText>
           )}
         </>
       )}

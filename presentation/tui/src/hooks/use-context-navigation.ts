@@ -7,22 +7,37 @@ export function useContextNavigation(
   griller: () => void,
 ) {
   const { stdin } = useStdin();
-  const latest = useRef({ toggle, griller });
-  latest.current = { toggle, griller };
+  const latest = useRef({ active, toggle, griller });
+  latest.current = { active, toggle, griller };
   useEffect(() => {
-    if (!active) return;
     let pending = "";
+    let pasting = false;
+    const shortcuts = ["\x1bOQ", "\x1bOR", "\x1b[12~", "\x1b[13~", "\x1b[200~"];
+    const pasteEnd = ["\x1b[201~"];
     const input = (chunk: Buffer | string) => {
-      pending = (pending + chunk.toString()).slice(-64);
-      for (const match of pending.matchAll(/\x1b(?:O([QR])|\[(1[23])~)/g)) {
-        if (match[1] === "Q" || match[2] === "12") latest.current.toggle();
-        else latest.current.griller();
+      for (const character of chunk.toString()) {
+        pending += character;
+        const sequences = pasting ? pasteEnd : shortcuts;
+        while (
+          pending &&
+          !sequences.some((sequence) => sequence.startsWith(pending))
+        )
+          pending = pending.slice(1);
+        const sequence = sequences.find((sequence) => sequence === pending);
+        if (!sequence) continue;
+        pending = "";
+        if (sequence === "\x1b[200~") pasting = true;
+        else if (sequence === "\x1b[201~") pasting = false;
+        else if (latest.current.active) {
+          if (sequence === "\x1bOQ" || sequence === "\x1b[12~")
+            latest.current.toggle();
+          else latest.current.griller();
+        }
       }
-      pending = /\x1b(?:O?|\[(?:1[23]?)?)$/.exec(pending)?.[0] ?? "";
     };
     stdin.on("data", input);
     return () => {
       stdin.off("data", input);
     };
-  }, [stdin, active]);
+  }, [stdin]);
 }

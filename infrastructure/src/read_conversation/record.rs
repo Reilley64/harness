@@ -180,6 +180,9 @@ impl TryFrom<Record> for domain::Conversation {
         if dto.workspace.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err("Stored workspace must be absolute".into());
         }
+        if dto.agent.is_some() && dto.workspace.is_none() {
+            return Err("Associated Griller must have a stored workspace".into());
+        }
         if messages.len() % 2 != 0 {
             return Err("Incomplete conversation record".into());
         }

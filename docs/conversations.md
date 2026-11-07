@@ -95,7 +95,9 @@ Version three adds an optional Griller identity, runs linked to assistant replie
 and an interruption gate. Each run records its own stable identity, agent identity,
 model/effort snapshot and lifecycle status. Reading/updating validates associations
 and chronological reply/status consistency, including complete run coverage for
-Griller messages. Versions one and two retain legacy usage semantics;
+Griller messages. An associated Griller requires an absolute stored workspace;
+missing/null workspaces are corrupt records, not legacy workspace binding.
+Versions one and two retain legacy usage semantics;
 invalid counts, bounds and step/report mismatches are rejected. Legacy messages
 are not retroactively assigned runs, creators or approvals.
 
