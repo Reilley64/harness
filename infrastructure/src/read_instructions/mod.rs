@@ -224,7 +224,6 @@ async fn resolve(
             return Err("Required instruction dependency closure exceeds its bound".into());
         }
     }
-    validate_cycles(&loaded)?;
     let root = match root {
         Some(root) => relative(&root)?,
         None => steering(&workspace).await?.ok_or("Required root guidance is missing: select AGENTS.md or CLAUDE.md; Setup generation is a separate path")?,
@@ -390,35 +389,4 @@ async fn parse<T: serde::de::DeserializeOwned + Send + 'static>(
     bytes: Vec<u8>,
 ) -> Result<T, Error> {
     tokio::task::spawn_blocking(move || serde_json::from_slice(&bytes).map_err(Into::into)).await?
-}
-
-fn validate_cycles(instructions: &BTreeMap<String, domain::Instruction>) -> Result<(), Error> {
-    fn visit<'a>(
-        id: &'a str,
-        instructions: &'a BTreeMap<String, domain::Instruction>,
-        active: &mut BTreeSet<&'a str>,
-        done: &mut BTreeSet<&'a str>,
-    ) -> Result<(), Error> {
-        if done.contains(id) {
-            return Ok(());
-        }
-        if !active.insert(id) {
-            return Err("Required instruction dependencies contain a cycle".into());
-        }
-        for required in &instructions
-            .get(id)
-            .ok_or("Required dependency is missing")?
-            .requires
-        {
-            visit(required, instructions, active, done)?;
-        }
-        active.remove(id);
-        done.insert(id);
-        Ok(())
-    }
-    let mut done = BTreeSet::new();
-    for id in instructions.keys() {
-        visit(id, instructions, &mut BTreeSet::new(), &mut done)?;
-    }
-    Ok(())
 }

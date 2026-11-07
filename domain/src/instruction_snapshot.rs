@@ -1,4 +1,5 @@
 use crate::Instruction;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstructionSnapshot {
@@ -24,7 +25,7 @@ impl InstructionSnapshot {
         {
             return Err("Invalid instruction snapshot");
         }
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for instruction in &self.instructions {
             if instruction.id.is_empty()
                 || instruction.id.len() > 1024
@@ -55,6 +56,15 @@ impl InstructionSnapshot {
                 return Err("Instruction snapshot is missing a required dependency");
             }
         }
+        let mut done = HashSet::new();
+        for instruction in &self.instructions {
+            visit(
+                &instruction.id,
+                &self.instructions,
+                &mut HashSet::new(),
+                &mut done,
+            )?;
+        }
         if self
             .instructions
             .iter()
@@ -72,4 +82,28 @@ impl InstructionSnapshot {
         }
         Ok(())
     }
+}
+
+fn visit<'a>(
+    id: &'a str,
+    instructions: &'a [Instruction],
+    active: &mut HashSet<&'a str>,
+    done: &mut HashSet<&'a str>,
+) -> Result<(), &'static str> {
+    if done.contains(id) {
+        return Ok(());
+    }
+    if !active.insert(id) {
+        return Err("Required instruction dependencies contain a cycle");
+    }
+    let instruction = instructions
+        .iter()
+        .find(|instruction| instruction.id == id)
+        .ok_or("Instruction snapshot is missing a required dependency")?;
+    for required in &instruction.requires {
+        visit(required, instructions, active, done)?;
+    }
+    active.remove(id);
+    done.insert(id);
+    Ok(())
 }
