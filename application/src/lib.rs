@@ -1,3 +1,4 @@
+mod decision_access;
 pub mod error_context;
 mod model_access;
 pub mod ports;

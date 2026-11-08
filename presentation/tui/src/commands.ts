@@ -1,6 +1,8 @@
 export const commands: readonly string[] = [
   "/auth",
   "/model",
+  "/decider",
+  "/decision",
   "/map",
   "/work",
   "/open",

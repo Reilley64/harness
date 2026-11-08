@@ -10,6 +10,7 @@ import {
   PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk";
 import type { Conversation } from "../types/conversation.js";
+import type { Deciders, DecisionResponse } from "../types/decision.js";
 import type { Guidance, GuidanceQuery } from "../types/guidance.js";
 import type { Model, ModelSelection } from "../types/model.js";
 import type { Provider } from "../types/provider.js";
@@ -25,6 +26,7 @@ import {
   parseProviderConnection,
 } from "./authorization.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
+import { parseDeciders, parseDecision } from "./decisions.js";
 import { PresentationError } from "./errors.js";
 import { parseGuidance } from "./guidance.js";
 import { parseModelSelection, parseModels } from "./models.js";
@@ -103,6 +105,8 @@ export function connectAgent() {
   const pendingReplies = new Set<Promise<Conversation>>();
   const pendingPolicyWrites = new Set<Promise<string[]>>();
   const pendingWorkWrites = new Set<Promise<WorkResponse>>();
+  const pendingNative = new Set<Promise<unknown>>();
+  const nativeControllers = new Map<string, AbortController>();
   const connection = client({ name: "harness-tui" })
     .onNotification(methods.client.session.update, ({ params }) => {
       const update = params.update;
@@ -258,6 +262,65 @@ export function connectAgent() {
     if (patterns === undefined) return pending;
     pendingPolicyWrites.add(pending);
     return pending.finally(() => pendingPolicyWrites.delete(pending));
+  }
+
+  async function nativeRequest(
+    method: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const init = await initialize();
+    signal?.throwIfAborted();
+    if (closing || init._meta?.["harness/nativeDecider"] !== true)
+      throw new PresentationError("Native Decider unavailable or closing.");
+    return connection.agent.request<unknown>(method, params, {
+      cancellationSignal: signal,
+    });
+  }
+
+  async function deciders(signal: AbortSignal): Promise<Deciders> {
+    return parseDeciders(await nativeRequest("_harness/deciders", {}, signal));
+  }
+
+  async function chooseDecider(modelId: string): Promise<void> {
+    const pending = nativeRequest("_harness/decider/update", { modelId });
+    pendingNative.add(pending);
+    try {
+      parseDeciders(await pending);
+    } finally {
+      pendingNative.delete(pending);
+    }
+  }
+
+  async function readDecision(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<DecisionResponse> {
+    return parseDecision(
+      await nativeRequest("_harness/decision/read", { id }, signal),
+    );
+  }
+
+  async function selectDecision(id: string): Promise<DecisionResponse> {
+    const controller = new AbortController();
+    nativeControllers.set(id, controller);
+    const pending = nativeRequest(
+      "_harness/decision/select",
+      { id },
+      controller.signal,
+    );
+    pendingNative.add(pending);
+    try {
+      return parseDecision(await pending);
+    } finally {
+      pendingNative.delete(pending);
+      if (nativeControllers.get(id) === controller)
+        nativeControllers.delete(id);
+    }
+  }
+
+  async function stopDecision(id: string): Promise<DecisionResponse> {
+    return parseDecision(await nativeRequest("_harness/decision/stop", { id }));
   }
 
   async function readWork(
@@ -645,11 +708,13 @@ export function connectAgent() {
   async function close(): Promise<void> {
     if (closing) return;
     closing = true;
+    for (const controller of nativeControllers.values()) controller.abort();
     if (
       replies.size ||
       pendingSelections ||
       pendingPolicyWrites.size ||
-      pendingWorkWrites.size
+      pendingWorkWrites.size ||
+      pendingNative.size
     ) {
       await Promise.allSettled([...replies.keys()].map(cancelReply));
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -660,6 +725,7 @@ export function connectAgent() {
             selectionWrites,
             ...pendingPolicyWrites,
             ...pendingWorkWrites,
+            ...pendingNative,
           ]),
           new Promise<void>((resolve) => {
             timer = setTimeout(resolve, 60000);
@@ -693,6 +759,11 @@ export function connectAgent() {
     modelAllowlist,
     readWork,
     approveWork,
+    deciders,
+    chooseDecider,
+    readDecision,
+    selectDecision,
+    stopDecision,
     createProviderConnection,
     readModelSelection,
     updateModelSelection,

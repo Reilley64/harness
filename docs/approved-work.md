@@ -8,9 +8,10 @@ human can approve that version and deliver a durable handoff to a separate Chief
 of Staff (CoS). CoS uses the same real conversation, model-step and tool loop as
 Griller, with its own identity, instructions, messages, runs and accounting.
 
-This is approved handoff, not managed implementation. Native Decider, child
-routing/dispatch, joins, managed workspaces, review, integration and target merge
-are unavailable. Unknown tool names produce ordinary Invalid results; unknown
+This is approved handoff, not managed implementation. A CoS can now prepare and
+inspect a [native Decider selection](native-decider.md), without launching a child.
+Child dispatch, joins, managed workspaces, review, integration and target merge
+remain unavailable. Unknown tool names produce ordinary Invalid results; unknown
 ACP methods are unavailable. No synthetic child counts, execution, readiness or
 spec completion is produced. `complete` is always false here; a later completion
 owner must establish the exact human-authorized verified target merge.

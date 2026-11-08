@@ -1,5 +1,8 @@
 app_data_path = "~/.harness"
 
+[decider]
+url = "https://openrouter.ai/api/alpha/decisions"
+
 [authentication.openai]
 dynamic_client_id = "dynamic_agent_client"
 issuer = "https://auth.openai.com"

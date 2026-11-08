@@ -188,6 +188,18 @@ fallback/retry, parser rejection, search, effort changes and limits, confirmatio
 and cancellation, scrolling, terminal resize, and clean shutdown. No permanent
 test files or test-only dependencies were added.
 
+## Native Decider controls
+
+`/decider` opens the separate native release/alias picker; `/decision <intent>`
+opens its scrollable durable inspector. `s` selects once for an actual prepared
+CoS intent, `x` then `y` explicitly Stops, and Escape navigates without cancelling.
+`o` opens the actual CoS for discussion. Configuration blocks open the existing
+model settings without choosing a replacement. The picker never changes worker
+selection or exposes native thinking. These controls use real ACP/application
+paths and preserve per-conversation drafts/viewport; no child is launched.
+See [native Decider](native-decider.md) for policy, input limits, provenance,
+pending/restart behavior and the live/PTY evidence boundary.
+
 ## Conversations
 
 `useConversation` owns optimistic streaming display, explicit cancellation,

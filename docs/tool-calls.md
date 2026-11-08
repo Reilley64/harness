@@ -18,6 +18,7 @@ second model loop.
 | `ast_search` | `ReadCodeMatches` | `read_code_matches` |
 | `web_search` | `ReadWebSearch` | `read_web_search` |
 | `publish_work` | `PublishWork` | `read_work_proposal` + application `create_work` |
+| `prepare_assignment` | `PrepareAssignment` | application `create_assignment` + `update_decision` |
 
 `domain::Tool` identifies the fixed tool set; `ToolInvocation` carries typed
 arguments. Each adapter owns its strict camelCase `Arguments` representation and
@@ -105,6 +106,9 @@ replays a failed request.
   and explicit publication intent through the application use case. Amendments
   invalidate affected authority; this tool cannot approve or launch implementation.
   See [approved work](approved-work.md) for schema, idempotency and bounds.
+- `prepare_assignment`: only the actual approved CoS can prepare an exact durable
+  intent/brief and parent model/thinking snapshot for [native selection](native-decider.md).
+  This launches no child, workspace or review and cannot grant authority.
 - `read`: regular UTF-8 files only, 1-based offset, default 200/max 2,000 lines.
   The input file is bounded at 1 MiB. No image or binary decoding.
 - `bash`: noninteractive `/bin/bash --noprofile --norc -c`, no stdin or shared

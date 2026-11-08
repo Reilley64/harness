@@ -1,0 +1,131 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Agent } from "../services/acp.js";
+import { errorMessage } from "../services/acp.js";
+import type { Deciders, DecisionResponse } from "../types/decision.js";
+
+export function useNativeDecider(
+  agent: Agent,
+  conversationId: string | undefined,
+) {
+  const [mode, setMode] = useState<"picker" | "inspector" | null>(null);
+  const [settings, setSettings] = useState<Deciders | null>(null);
+  const [view, setView] = useState<DecisionResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sequence = useRef(0),
+    reading = useRef<AbortController | null>(null);
+  const target = useRef<string | null>(null),
+    mounted = useRef(true);
+  const close = useCallback(() => {
+    sequence.current++;
+    reading.current?.abort();
+    setMode(null);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      sequence.current++;
+      reading.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    void agent;
+    void conversationId;
+    close();
+  }, [agent, conversationId, close]);
+
+  async function inspect(id?: string) {
+    close();
+    const current = sequence.current;
+    const controller = new AbortController();
+    reading.current = controller;
+    target.current = id ?? null;
+    setMode(id ? "inspector" : "picker");
+    setLoading(true);
+    setError(null);
+    setView(null);
+    try {
+      if (id) {
+        const response = await agent.readDecision(id, controller.signal);
+        if (mounted.current && sequence.current === current) setView(response);
+      } else {
+        const response = await agent.deciders(controller.signal);
+        if (mounted.current && sequence.current === current)
+          setSettings(response);
+      }
+    } catch (e) {
+      if (mounted.current && sequence.current === current)
+        setError(errorMessage(e));
+    } finally {
+      if (mounted.current && sequence.current === current) setLoading(false);
+    }
+  }
+
+  async function choose(modelId: string) {
+    if (saving) return;
+    const current = sequence.current;
+    setSaving(true);
+    setError(null);
+    try {
+      await agent.chooseDecider(modelId);
+      if (mounted.current && sequence.current === current) close();
+    } catch (e) {
+      if (mounted.current && sequence.current === current)
+        setError(errorMessage(e));
+    } finally {
+      if (mounted.current) setSaving(false);
+    }
+  }
+
+  async function select() {
+    const id = target.current;
+    if (!id || pending || loading || view?.decision?.phase !== "prepared")
+      return;
+    const current = sequence.current;
+    setPending(true);
+    setError(null);
+    try {
+      const result = await agent.selectDecision(id);
+      if (mounted.current && sequence.current === current) setView(result);
+    } catch (e) {
+      if (mounted.current && sequence.current === current)
+        setError(errorMessage(e));
+    } finally {
+      if (mounted.current) setPending(false);
+    }
+  }
+
+  async function stop() {
+    const id = target.current;
+    if (!id) return;
+    const current = sequence.current;
+    try {
+      const result = await agent.stopDecision(id);
+      if (mounted.current && sequence.current === current) setView(result);
+    } catch (e) {
+      if (mounted.current && sequence.current === current)
+        setError(errorMessage(e));
+    }
+  }
+
+  return {
+    mode,
+    settings,
+    view,
+    loading,
+    saving,
+    pending,
+    error,
+    inspect,
+    choose,
+    select,
+    stop,
+    close,
+  };
+}

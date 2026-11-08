@@ -100,7 +100,9 @@ advertised Responses, text input/output, tools, a non-router tokenizer and bound
 context metadata. Hosted routers and tilde aliases are not chat workers. The
 retained TypeSafe hosted router has an empty capabilities array and cannot be
 dispatched; verified Decisions entries have `decisions` only. Native typed Decider
-inference is reserved for later and is not implemented here.
+inference uses its separate [selection/inspection path](native-decider.md), with
+the same current positive allowlist and protected OpenRouter connection; it never
+grants chat capability.
 Selectable efforts are only explicit supported values mapped to Harness's
 low/medium/high/extra-high controls (`xhigh` becomes `extra_high`); missing/null
 metadata and reasoning flags alone expose no efforts. Prices are static USD per

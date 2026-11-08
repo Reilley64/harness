@@ -223,7 +223,7 @@ pub(super) fn read() -> Vec<domain::Instruction> {
         .map(|(id, body, requires, upstream)| domain::Instruction {
             id: (*id).into(),
             version: if matches!(*id, "role/griller" | "procedure/coordination") {
-                "harness-approved-handoff-1 (Harness contract)"
+                "harness-native-selection-1 (Harness contract)"
             } else if upstream.is_empty() {
                 "harness-main-flow-1 (Harness contract)"
             } else {

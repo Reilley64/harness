@@ -19,6 +19,22 @@ macro_rules! port {
     };
 }
 
+mod read_decision;
+pub use read_decision::ReadDecision;
+pub use read_decision::ReadDecisionError;
+mod update_decision;
+pub use update_decision::UpdateDecision;
+pub use update_decision::UpdateDecisionError;
+mod create_native_decision;
+pub use create_native_decision::CreateNativeDecision;
+pub use create_native_decision::CreateNativeDecisionError;
+mod read_decider;
+pub use read_decider::ReadDecider;
+pub use read_decider::ReadDeciderError;
+mod update_decider;
+pub use update_decider::UpdateDecider;
+pub use update_decider::UpdateDeciderError;
+
 mod read_work;
 pub use read_work::ReadWork;
 pub use read_work::ReadWorkError;

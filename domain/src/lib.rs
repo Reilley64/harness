@@ -1,3 +1,16 @@
+mod assignment_brief;
+pub use assignment_brief::AssignmentBrief;
+mod decision_candidate;
+pub use decision_candidate::DecisionCandidate;
+mod decision_request;
+pub use decision_request::DecisionRequest;
+mod decision_response;
+pub use decision_response::DecisionResponse;
+mod decision_phase;
+pub use decision_phase::DecisionPhase;
+mod assignment_decision;
+pub use assignment_decision::AssignmentDecision;
+
 mod publish_work_arguments;
 pub use publish_work_arguments::PublishWorkArguments;
 mod approved_work;

@@ -1,4 +1,5 @@
 use crate::create_model_step;
+use crate::create_native_decision;
 
 use std::path::PathBuf;
 
@@ -19,6 +20,7 @@ pub struct Settings {
     #[serde(default)]
     pub tools: ToolsSettings,
     pub replies: create_model_step::Settings,
+    pub decider: create_native_decision::Settings,
     pub authentication: create_provider_connection::Settings,
     pub models: read_models::Settings,
     pub providers: read_providers::Settings,
