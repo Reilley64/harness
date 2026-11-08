@@ -37,6 +37,48 @@ impl AssignmentDecision {
             && self.brief == other.brief
     }
 
+    pub fn stop(&mut self) -> Result<(), &'static str> {
+        if !matches!(self.phase, DecisionPhase::Prepared | DecisionPhase::Pending) {
+            return Err("Only unsettled native work can be stopped");
+        }
+        self.response = self
+            .response
+            .take()
+            .map(DecisionResponse::into_report)
+            .transpose()?;
+        self.selected = None;
+        self.phase = DecisionPhase::Stopped;
+        Ok(())
+    }
+
+    pub fn retain_stopped_report(&mut self, completed: Self) -> Result<bool, &'static str> {
+        if self.phase != DecisionPhase::Stopped
+            || !self.same_intent(&completed)
+            || self.parent != completed.parent
+            || self.parent_connection_id != completed.parent_connection_id
+            || self.parent_revision != completed.parent_revision
+            || self.request != completed.request
+        {
+            return Err("Late native report differs from the stopped request");
+        }
+        let Some(report) = completed.response else {
+            return Ok(false);
+        };
+        if self.request.is_none() {
+            return Err("Stopped native report is missing its request");
+        }
+        let report = report.into_report()?;
+        if let Some(existing) = &self.response {
+            if existing != &report {
+                return Err("Stopped native report is already accounted with different values");
+            }
+            return Ok(false);
+        }
+        self.response = Some(report);
+        self.validate()?;
+        Ok(true)
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         self.brief.validate()?;
         if self.id != self.brief.intent
@@ -57,9 +99,26 @@ impl AssignmentDecision {
         if self.phase == DecisionPhase::Prepared
             && (self.request.is_some() || self.response.is_some() || self.selected.is_some())
             || self.phase == DecisionPhase::Pending
-                && (self.request.is_none() || self.response.is_some() || self.selected.is_some())
+                && (self.request.is_none() || self.selected.is_some())
         {
             return Err("Unsettled decision has inconsistent evidence");
+        }
+        if matches!(self.phase, DecisionPhase::Pending | DecisionPhase::Stopped) {
+            if self.selected.is_some() {
+                return Err("Pending or stopped native work cannot select a worker");
+            }
+            if let Some(report) = &self.response {
+                if self.request.is_none()
+                    || report.choice.is_some()
+                    || report.confidence.is_some()
+                    || !report.probabilities.is_empty()
+                {
+                    return Err(
+                        "Pending or stopped native work retains only safe accounting and provenance",
+                    );
+                }
+                report.validate(&[])?;
+            }
         }
         if self.phase == DecisionPhase::Selected {
             let request = self

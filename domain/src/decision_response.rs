@@ -11,11 +11,8 @@ pub struct DecisionResponse {
 }
 
 impl DecisionResponse {
-    pub fn validate(&self, keys: &[&str]) -> Result<(), &'static str> {
-        if self
-            .confidence
-            .is_some_and(|n| !n.is_finite() || !(0.0..=1.0).contains(&n))
-            || self.cost.is_some_and(|n| !n.is_finite() || n < 0.0)
+    pub fn validate_report(&self) -> Result<(), &'static str> {
+        if self.cost.is_some_and(|n| !n.is_finite() || n < 0.0)
             || self.input_tokens > 1_000_000_000
             || self.output_tokens > 1_000_000_000
             || self.resolved_model.is_empty()
@@ -26,6 +23,25 @@ impl DecisionResponse {
                 .is_some_and(|p| p.is_empty() || p.len() > 512)
         {
             return Err("Invalid native response numerics or provenance");
+        }
+        Ok(())
+    }
+
+    pub fn into_report(mut self) -> Result<Self, &'static str> {
+        self.validate_report()?;
+        self.choice = None;
+        self.confidence = None;
+        self.probabilities.clear();
+        Ok(self)
+    }
+
+    pub fn validate(&self, keys: &[&str]) -> Result<(), &'static str> {
+        self.validate_report()?;
+        if self
+            .confidence
+            .is_some_and(|n| !n.is_finite() || !(0.0..=1.0).contains(&n))
+        {
+            return Err("Invalid native confidence");
         }
         if self
             .choice

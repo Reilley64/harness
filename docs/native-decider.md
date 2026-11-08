@@ -65,6 +65,15 @@ unchanged. Griller/legacy conversations cannot prepare managed assignment intent
 - Configuration-required results preserve the intent/selected pair and open the
   existing model-settings surface with a reason. `/auth` remains explicit. Cancel
   preserves the block without selecting a replacement or reopening login loops.
+  Before admission, missing native preference, authentication, allowlist and
+  capability failures expose distinct safe configuration reasons without changing
+  the prepared intent, starting inference or selecting a replacement.
+
+In-flight UI ownership is keyed by intent and connection, not a panel-wide busy
+flag. Inspecting or selecting another prepared intent does not relabel it as the
+first pending request. A completion updates the same reopened inspector, while
+revision guards prevent an older read from replacing a newer result. Escape and
+actor navigation do not cancel outstanding requests.
 
 ## Policy, eligibility and validation
 
@@ -139,6 +148,22 @@ is inspectable/unknown and never automatically re-sent; explicit Stop can settle
 it. This slice has no Resume/retry/dispatch engine for an uncertain native request.
 A new intent is an explicit new request, not a hidden retry. Stopped requests never
 fall back. Missing reports/costs remain unknown rather than fabricated zero usage.
+
+A received valid accounting/provenance report is durably checkpointed before
+post-response authority or configuration reads. While Pending or Stopped, its
+`response` contains only tokens, optional cost and resolved/provider provenance:
+choice and confidence are null and probabilities empty. This is accounting, not
+a refusal or accepted selection. A competing Stop retains its outcome, finish
+time and lack of selected worker. The store atomically enriches that exact stopped
+request with a late report once; duplicates reuse it and conflicting reports fail.
+No inference, replacement or replay occurs to recover accounting. Cancellation
+after complete response decoding retains that bounded report-conversion result.
+
+Recovery outputs preserve internal original error chains until the presentation
+boundary. Persisted reasons and ACP project bounded safe categories rather than
+raw transport bodies, credentials or internal error strings. A storage failure
+is an error requiring inspection, not a successful result with silently lost
+accounting.
 
 ## Public interfaces and evidence boundary
 

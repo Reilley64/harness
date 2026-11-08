@@ -73,19 +73,42 @@ pub fn update_decision(
                 Err(e) => return Err(e.into()),
             };
             let (decision, encoded) = tokio::task::spawn_blocking(move || {
-                let prior: Option<domain::AssignmentDecision> = bytes.map(|b| serde_json::from_slice::<Record>(&b)).transpose()?.map(TryInto::try_into).transpose()?;
-                if let Some(prior) = &prior {
-                    if !prior.same_intent(&decision) { return Err::<_, Error>("Assignment intent conflicts with an exact accepted payload".into()); }
-                    if revision.is_none() { return Ok((prior.clone(), None)); }
-                    if Some(prior.revision) != revision { return Err("Stale decision revision; inspect existing intent without repeating inference".into()); }
-                    prior.validate_transition(&decision)?;
+                let prior: Option<domain::AssignmentDecision> = bytes
+                    .map(|b| serde_json::from_slice::<Record>(&b))
+                    .transpose()?
+                    .map(TryInto::try_into)
+                    .transpose()?;
+
+                if let Some(mut prior) = prior {
+                    if !prior.same_intent(&decision) {
+                        return Err::<_, Error>("Assignment intent conflicts with an exact accepted payload".into());
+                    }
+                    if revision.is_none() {
+                        return Ok((prior, None));
+                    }
+                    if prior.phase == domain::DecisionPhase::Stopped
+                        && (decision.phase == domain::DecisionPhase::Stopped || decision.response.is_some())
+                    {
+                        if !prior.retain_stopped_report(decision)? {
+                            return Ok((prior, None));
+                        }
+                        decision = prior;
+                    } else {
+                        if Some(prior.revision) != revision {
+                            return Err("Stale decision revision; inspect existing intent without repeating inference".into());
+                        }
+                        prior.validate_transition(&decision)?;
+                    }
                 } else if revision.is_some() || decision.revision != 0 || decision.phase != domain::DecisionPhase::Prepared {
                     return Err("Invalid initial assignment claim".into());
                 }
+
                 decision.validate()?;
                 decision.revision = decision.revision.checked_add(1).ok_or("Decision revision exhausted")?;
+
                 let encoded = encode_bounded(&Record::from(decision.clone()), 2 * 1024 * 1024)?;
                 let _: domain::AssignmentDecision = serde_json::from_slice::<Record>(&encoded)?.try_into()?;
+
                 Ok((decision, Some(encoded)))
             }).await??;
             if let Some(encoded) = encoded {

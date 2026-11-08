@@ -12,7 +12,11 @@ export function useNativeDecider(
   const [view, setView] = useState<DecisionResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [pending, setPending] = useState(false);
+  const [pendingIntents, setPendingIntents] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const inFlight = useRef(new Set<string>());
+  const owner = useRef(agent);
   const [error, setError] = useState<string | null>(null);
   const sequence = useRef(0),
     reading = useRef<AbortController | null>(null);
@@ -21,6 +25,7 @@ export function useNativeDecider(
   const close = useCallback(() => {
     sequence.current++;
     reading.current?.abort();
+    target.current = null;
     setMode(null);
     setLoading(false);
   }, []);
@@ -35,10 +40,26 @@ export function useNativeDecider(
   }, []);
 
   useEffect(() => {
-    void agent;
+    if (owner.current !== agent) {
+      owner.current = agent;
+      inFlight.current.clear();
+      setPendingIntents(new Set());
+    }
     void conversationId;
     close();
   }, [agent, conversationId, close]);
+
+  function receive(id: string, response: DecisionResponse) {
+    if (!mounted.current || owner.current !== agent || target.current !== id)
+      return;
+    setView((previous) =>
+      previous?.decision?.id === id &&
+      response.decision &&
+      previous.decision.revision > response.decision.revision
+        ? previous
+        : response,
+    );
+  }
 
   async function inspect(id?: string) {
     close();
@@ -53,7 +74,7 @@ export function useNativeDecider(
     try {
       if (id) {
         const response = await agent.readDecision(id, controller.signal);
-        if (mounted.current && sequence.current === current) setView(response);
+        if (sequence.current === current) receive(id, response);
       } else {
         const response = await agent.deciders(controller.signal);
         if (mounted.current && sequence.current === current)
@@ -85,19 +106,28 @@ export function useNativeDecider(
 
   async function select() {
     const id = target.current;
-    if (!id || pending || loading || view?.decision?.phase !== "prepared")
+    if (
+      !id ||
+      inFlight.current.has(id) ||
+      loading ||
+      view?.decision?.id !== id ||
+      view.decision.phase !== "prepared"
+    )
       return;
-    const current = sequence.current;
-    setPending(true);
+
+    inFlight.current.add(id);
+    setPendingIntents(new Set(inFlight.current));
     setError(null);
     try {
-      const result = await agent.selectDecision(id);
-      if (mounted.current && sequence.current === current) setView(result);
+      receive(id, await agent.selectDecision(id));
     } catch (e) {
-      if (mounted.current && sequence.current === current)
+      if (mounted.current && owner.current === agent && target.current === id)
         setError(errorMessage(e));
     } finally {
-      if (mounted.current) setPending(false);
+      if (mounted.current && owner.current === agent) {
+        inFlight.current.delete(id);
+        setPendingIntents(new Set(inFlight.current));
+      }
     }
   }
 
@@ -113,6 +143,12 @@ export function useNativeDecider(
         setError(errorMessage(e));
     }
   }
+
+  const pending =
+    pendingIntents.has(target.current ?? "") &&
+    (!view?.decision ||
+      view.decision.phase === "prepared" ||
+      view.decision.phase === "pending");
 
   return {
     mode,

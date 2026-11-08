@@ -4,6 +4,8 @@ use crate::storage;
 use application::ports;
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use tokio_util::sync::CancellationToken;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -74,12 +76,23 @@ pub fn create_native_decision(
         let read_work = read_work.clone();
         let read_conversation = read_conversation.clone();
         Box::pin(async move {
+            let report_received = AtomicBool::new(false);
             let operation = async {
+                let (decision, body) = tokio::task::spawn_blocking(move || {
+                    let request = decision.request.as_ref().ok_or("Native request snapshot is missing")?;
+                    request.validate_pool(decision.brief.context_tokens)?;
+                    let encoded = serde_json::to_vec(&body(&decision)?)?;
+                    if encoded.len() > 24576
+                        || encoded.len() as u64 > request.model.context_window.ok_or("Native context unknown")?
+                    {
+                        return Err::<_, Error>(std::io::Error::new(std::io::ErrorKind::Unsupported, "Unsupported native input: complete bounded brief/pool exceeds conservative byte envelope; no truncation or inference").into());
+                    }
+                    Ok((decision, encoded))
+                }).await??;
                 let request = decision
                     .request
                     .as_ref()
                     .ok_or("Native request snapshot is missing")?;
-                request.validate_pool(decision.brief.context_tokens)?;
                 let destination = checked_url(&url)?;
                 let authority = checked_url(&issuer)?;
                 let bytes = storage::read_private(&path, 1_048_576).await?;
@@ -100,17 +113,6 @@ pub fn create_native_decision(
                     );
                 }
 
-                let body = body(&decision)?;
-                let body = tokio::task::spawn_blocking(move || serde_json::to_vec(&body)).await??;
-                if body.len() > 24576
-                    || body.len() as u64
-                        > request
-                            .model
-                            .context_window
-                            .ok_or("Native context unknown")?
-                {
-                    return Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Unsupported native input: complete bounded brief/pool exceeds conservative byte envelope; no truncation or inference").into());
-                }
                 let current = read_models
                     .call()
                     .await?
@@ -169,44 +171,56 @@ pub fn create_native_decision(
                     .into());
                 }
                 let response: Response = http::json(response, 1_048_576).await?;
-                if response.answers.len() != 1 {
-                    return Err("Native response must contain exactly the requested answer".into());
-                }
-                let answer = response
-                    .answers
-                    .get("selection")
-                    .ok_or("Native selection answer is missing")?;
-                let (choice, confidence, probabilities) = match answer {
-                    AnswerResponse::Choice {
+                report_received.store(true, Ordering::SeqCst);
+                tokio::task::spawn_blocking(move || {
+                    if response.answers.len() != 1 {
+                        return Err::<_, Error>(
+                            "Native response must contain exactly the requested answer".into(),
+                        );
+                    }
+                    let answer = response
+                        .answers
+                        .into_iter()
+                        .find_map(|(key, answer)| (key == "selection").then_some(answer))
+                        .ok_or("Native selection answer is missing")?;
+                    let (choice, confidence, probabilities) = match answer {
+                        AnswerResponse::Choice {
+                            choice,
+                            confidence,
+                            probabilities,
+                        } => (
+                            Some(choice),
+                            confidence,
+                            probabilities.unwrap_or_default().into_iter().collect(),
+                        ),
+                        AnswerResponse::Refusal => (None, None, Vec::new()),
+                    };
+                    let response = domain::DecisionResponse {
                         choice,
                         confidence,
                         probabilities,
-                    } => (
-                        Some(choice.clone()),
-                        *confidence,
-                        probabilities
-                            .clone()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .collect(),
-                    ),
-                    AnswerResponse::Refusal => (None, None, Vec::new()),
-                };
-                Ok(domain::DecisionResponse {
-                    choice,
-                    confidence,
-                    probabilities,
-                    resolved_model: response.model,
-                    serving_provider: response.provider,
-                    input_tokens: response.usage.input_tokens,
-                    output_tokens: response.usage.output_tokens,
-                    cost: response.usage.cost,
+                        resolved_model: response.model,
+                        serving_provider: response.provider,
+                        input_tokens: response.usage.input_tokens,
+                        output_tokens: response.usage.output_tokens,
+                        cost: response.usage.cost,
+                    };
+                    response.validate_report()?;
+                    Ok(response)
                 })
+                .await?
             };
+            tokio::pin!(operation);
             tokio::select! {
                 biased;
-                _ = cancellation.cancelled() => Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "Native decision stopped").into()),
-                result = operation => result,
+                _ = cancellation.cancelled() => {
+                    if report_received.load(Ordering::SeqCst) {
+                        operation.await
+                    } else {
+                        Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "Native decision stopped").into())
+                    }
+                },
+                result = &mut operation => result,
             }
         })
     }
