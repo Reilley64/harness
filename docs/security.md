@@ -7,6 +7,12 @@ retained model continuation, tool definitions, and recorded tool results needed
 to continue the conversation. Responses requests use `store: false`; that is a
 provider API setting, not a guarantee about the provider's retention practices.
 Web search sends its query to DuckDuckGo. Catalog endpoints receive catalog GETs.
+Optional MCP registry search sends its query to the configured registry. Trusted
+stdio MCP processes receive configured tool arguments and only their explicitly
+provisioned environment references; their results can enter provider context.
+See [MCP connections](mcp-connections.md) for exact trust, reference, redaction and
+shared lifetime boundaries. Custom HTTP definitions are saved only; this slice
+does not contact their endpoints or implement browser OAuth.
 OAuth authorization, token exchange and identity verification contact the issuer.
 OpenRouter PKCE mints a separate API key without paid inference. That key is stored
 only in its private backend record and is never loaded from OpenAI credentials.
@@ -76,7 +82,11 @@ committed or disclosed, revoke/rotate it; deleting the current file is insuffici
 Git ignore rules cover common local environment files, key material and default
 in-repository runtime-storage paths, but cannot protect every custom location.
 
-Tools remain automatic, unsandboxed and run with OS-user permissions. File reads,
+Tools remain automatic, unsandboxed and run with OS-user permissions. MCP
+activation requires exact-definition protected local trust, not per-call or
+per-role approvals. Editable nonsecret definitions and protected trust are
+separate; neither registry metadata nor an agent configuration save grants trust.
+The provisioned `HARNESS_MCP_…` mechanism does not reuse model credentials. File reads,
 bash commands and web searches can expose secrets or personal information through
 outputs or queries; those outputs may be saved locally and sent to the configured
 model provider. There is no reliable universal redaction or confidentiality

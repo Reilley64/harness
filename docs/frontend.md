@@ -4,6 +4,19 @@ The frontend uses React and Ink, with Bun as both the package manager and the
 TypeScript/TSX runtime. `bun.lock` is the committed lockfile. There is no npm
 lockfile, separate JavaScript build, browser DOM, or `tsx` launcher.
 
+## MCP configuration
+
+`/mcp` opens native shared configuration without starting a conversation or
+inference. The MCP hook owns asynchronous ACP operations/cancellation, the
+service validates transport responses, and the panel renders effective source,
+trust status, nonsecret definitions, tool schemas and optional registry metadata.
+Connect has a paged exact-definition review and explicit confirmation; Escape
+cancels review without activation. Custom saves, manual files and explicit reload
+share the backend/schema with the agent configuration tool. The command draft
+and conversation stay intact while the panel is open. Provisioned references,
+not secrets, enter configuration. See [MCP connections](mcp-connections.md) for
+commands, keys, errors, bounds and the current stdio-only execution boundary.
+
 ## Atomic design
 
 ```text

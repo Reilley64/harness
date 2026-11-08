@@ -1,4 +1,5 @@
 use crate::create_file;
+use crate::create_mcp_call;
 use crate::create_process;
 use crate::read_code_matches;
 use crate::read_directory;
@@ -9,6 +10,7 @@ use crate::read_web_search;
 use crate::read_work_proposal;
 use crate::tool_io;
 use crate::update_file;
+use crate::update_mcp_configuration;
 
 pub fn read_tool_invocation()
 -> impl Fn(domain::Tool, String) -> Result<domain::ToolInvocation, tool_io::Error> + Send + Sync {
@@ -17,6 +19,8 @@ pub fn read_tool_invocation()
             return Err("Tool arguments exceed 64 KiB".into());
         }
         match tool {
+            domain::Tool::McpCall => create_mcp_call::decode(&arguments),
+            domain::Tool::McpConfiguration => update_mcp_configuration::decode(&arguments),
             domain::Tool::Read => read_file::decode(&arguments),
             domain::Tool::Bash => create_process::decode(&arguments),
             domain::Tool::Edit => update_file::decode(&arguments),

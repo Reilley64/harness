@@ -8,8 +8,8 @@ stable UUID, user/assistant role, text, status, and model/effort provenance. Mes
 roles are separate from agent roles such as griller or researcher.
 
 Messages are UTF-8 text with durable tool steps and accepted steering instructions.
-Ten automatic tools are supported, including versioned proposal capture. A separate
-approved-work CoS uses the same loop; child orchestration, attachments and a
+Native tools, proposal capture and shared trusted stdio MCP use the same tool loop.
+A separate approved-work CoS uses that loop; child orchestration, attachments and a
 conversation picker remain unavailable. See [approved work](approved-work.md). OAuth tokens stay in Rust and are not proactively
 injected into messages or ACP; explicit tool output may contain readable secrets.
 See [tool calls](tool-calls.md) for the execution and permissions contract.

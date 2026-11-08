@@ -14,6 +14,7 @@ pub mod read_work;
 pub mod update_agent;
 pub mod update_guidance;
 pub mod update_model_allowlist;
+pub mod update_mcp_configuration;
 pub mod update_model_selection;
 pub mod update_run;
 pub mod update_work;

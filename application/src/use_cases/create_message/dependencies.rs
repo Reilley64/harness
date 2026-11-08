@@ -33,6 +33,8 @@ pub struct Dependencies {
     pub(super) read_text_matches: ports::ReadTextMatches,
     pub(super) read_code_matches: ports::ReadCodeMatches,
     pub(super) read_web_search: ports::ReadWebSearch,
+    pub(super) update_mcp_configuration: ports::UpdateMcpConfiguration,
+    pub(super) create_mcp_call: ports::CreateMcpCall,
     pub(super) read_tools: ports::ReadTools,
     pub(super) read_tool_invocation: ports::ReadToolInvocation,
     pub(super) create_tool_output: ports::CreateToolOutput,

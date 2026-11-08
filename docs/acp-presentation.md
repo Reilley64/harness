@@ -104,6 +104,31 @@ includes actual instruction text/source/version/upstream, not a synthetic agent
 roster. Safe conversation metadata adds `selectedInstructions` and each run's
 nullable `instructions` snapshot ID; `task` reflects its captured phase.
 
+## MCP configuration extension
+
+Initialization advertises `_meta["harness/mcp"]: true`.
+`_harness/mcp` accepts an explicit `workspace` and a tagged `action`:
+`read`, `reload`, `save` (`expected_revision`, `definition`), `remove`
+(`expected_revision`, `name`), `registry` (`query`), `discover` (`name`),
+`connect` (`name`, exact definition `revision`) or `disconnect` (`name`).
+Definitions use the documented [MCP configuration schema](mcp-connections.md).
+Responses contain `revision`, `stale`, `error`, `servers` (nonsecret definition,
+source, revision, eligibility status), `tools` (names/descriptions/input schemas)
+and optional `registry_metadata`.
+
+Native command and agent configuration invocation share the public application
+use case/backend. The model-facing decoder rejects Connect/Disconnect; only the
+trusted native/local ACP client presents those interactions. ACP is a trusted
+same-user interface, not an authenticated permission boundary against arbitrary
+local clients. It never accepts actual environment/header secret values or
+provider tokens. MCP errors use `-32006` with safe contexts; invalid requests use
+`-32602`. Connection-owned tasks preserve request responsiveness; cancellation
+signals the shared operation without claiming to undo committed saves/effects.
+Native startup reads configuration for its bound workspace without launching
+servers. Standard ACP client-supplied `mcpServers` remain unused; Harness owns
+effective configuration and local activation rather than trusting a session
+parameter as executable consent. MCP HTTP execution remains unavailable.
+
 ## Provider catalog extension
 
 Request:
@@ -383,4 +408,6 @@ must not implement steering by cancelling and resending the original request.
 Budget exhaustion finishes with a tool-free summary, message status `limited`,
 and standard stop reason `max_turn_requests`. Standard `session/cancel` cancels
 without a follow-up. All enabled tools run
-automatically: there are no permission requests. See [tool calls](tool-calls.md).
+automatically after any required MCP connection trust: there are no per-call
+permission requests. See [tool calls](tool-calls.md) and
+[MCP connections](mcp-connections.md).

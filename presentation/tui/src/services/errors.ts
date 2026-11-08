@@ -8,6 +8,10 @@ const contexts = new Map([
   [-32003, "Could not load models"],
   [-32004, "Conversation request failed"],
   [-32005, "Could not save or restore the model selection"],
+  [
+    -32006,
+    "MCP operation failed. Check trust/references or reload conflicting edits. Registry is optional; use custom local configuration and server docs",
+  ],
 ]);
 
 export function errorMessage(error: unknown): string {
