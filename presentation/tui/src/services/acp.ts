@@ -688,6 +688,7 @@ export function connectAgent() {
     closing = true;
     if (
       replies.size ||
+      pendingReplies.size ||
       pendingSelections ||
       pendingPolicyWrites.size ||
       pendingWorkWrites.size

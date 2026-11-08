@@ -100,8 +100,9 @@ Unknown remains Unknown and cannot be reconfirmed. No inference is used to
 fabricate a handoff or decide whether an effect happened.
 
 An admitted confirmation may finish after its panel closes or shutdown begins;
-closing is not rollback. The service drains admitted writes. Acknowledgements
-reconcile only the same conversation at a non-older revision, never reopen a
+closing is not rollback. The service drains admitted writes even when no model
+reply or other write is active, within the existing bounded shutdown window.
+Acknowledgements reconcile only the same conversation at a non-older revision, never reopen a
 dismissed panel or switch a newer role/navigation target. A cancelled draft is
 Skipped and cannot later be confirmed.
 
