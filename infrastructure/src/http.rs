@@ -7,7 +7,7 @@ use std::pin::Pin;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
-async fn body(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, Error> {
+pub(crate) async fn body(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, Error> {
     if response
         .content_length()
         .is_some_and(|length| length > limit as u64)

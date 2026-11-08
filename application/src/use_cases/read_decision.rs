@@ -13,6 +13,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: String) -> Result<O
     let d = dependencies.into();
     let decision = d.read_decision.call(id).await.map_err(Error::caused_by)?;
     let mut blocked = None;
+    let mut diagnostics = Vec::new();
     if let Some(decision) = &decision {
         if decision.phase == domain::DecisionPhase::Configuration {
             blocked = decision.reason.clone();
@@ -20,9 +21,16 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: String) -> Result<O
             match decision_access::candidate(&d.read_models, &d.read_model_allowlist, &d.read_provider_connection, &d.create_model_step_factory, &selected.selection, decision.brief.context_tokens).await {
                 Ok(current) if current.connection_id == selected.connection_id && current.model.canonical_id == selected.model.canonical_id => {}
                 Ok(_) => blocked = Some("Selected connection or canonical revision changed; configure without replacement".into()),
-                Err(error) => blocked = Some(diagnostic(error.as_ref())),
+                Err(error) => {
+                    blocked = Some(diagnostic(error.as_ref()));
+                    diagnostics.push(Error::caused_by(error));
+                }
             }
         }
     }
-    Ok(Output { decision, blocked })
+    Ok(Output {
+        decision,
+        blocked,
+        diagnostics,
+    })
 }

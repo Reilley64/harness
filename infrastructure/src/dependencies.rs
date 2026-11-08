@@ -499,10 +499,7 @@ impl Dependencies {
                     work.clone(),
                     conversation.clone(),
                 );
-                ports::CreateNativeDecision::new(move |decision, cancellation| {
-                    let result = implementation(decision, cancellation);
-                    Box::pin(async move { Ok(result.await?) })
-                })
+                ports::CreateNativeDecision::new(implementation)
             })
             .create_assignment(|deps| deps.into())
             .create_work(|deps| deps.into())

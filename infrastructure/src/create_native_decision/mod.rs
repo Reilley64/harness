@@ -4,8 +4,6 @@ use crate::storage;
 use application::ports;
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 use tokio_util::sync::CancellationToken;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -27,7 +25,7 @@ struct Record {
 struct Response {
     model: String,
     provider: Option<String>,
-    answers: BTreeMap<String, AnswerResponse>,
+    answers: Option<serde_json::Value>,
     usage: UsageResponse,
 }
 
@@ -60,7 +58,7 @@ pub fn create_native_decision(
 ) -> impl Fn(
     domain::AssignmentDecision,
     CancellationToken,
-) -> ports::PortFuture<Result<domain::DecisionResponse, Error>>
+) -> ports::PortFuture<Result<domain::DecisionResponse, ports::CreateNativeDecisionError>>
 + Send
 + Sync
 + use<> {
@@ -76,7 +74,6 @@ pub fn create_native_decision(
         let read_work = read_work.clone();
         let read_conversation = read_conversation.clone();
         Box::pin(async move {
-            let report_received = AtomicBool::new(false);
             let operation = async {
                 let (decision, body) = tokio::task::spawn_blocking(move || {
                     let request = decision.request.as_ref().ok_or("Native request snapshot is missing")?;
@@ -170,60 +167,69 @@ pub fn create_native_decision(
                     )
                     .into());
                 }
-                let response: Response = http::json(response, 1_048_576).await?;
-                report_received.store(true, Ordering::SeqCst);
-                tokio::task::spawn_blocking(move || {
-                    if response.answers.len() != 1 {
-                        return Err::<_, Error>(
-                            "Native response must contain exactly the requested answer".into(),
-                        );
-                    }
-                    let answer = response
-                        .answers
-                        .into_iter()
-                        .find_map(|(key, answer)| (key == "selection").then_some(answer))
-                        .ok_or("Native selection answer is missing")?;
-                    let (choice, confidence, probabilities) = match answer {
-                        AnswerResponse::Choice {
-                            choice,
-                            confidence,
-                            probabilities,
-                        } => (
-                            Some(choice),
-                            confidence,
-                            probabilities.unwrap_or_default().into_iter().collect(),
-                        ),
-                        AnswerResponse::Refusal => (None, None, Vec::new()),
-                    };
-                    let response = domain::DecisionResponse {
-                        choice,
-                        confidence,
-                        probabilities,
-                        resolved_model: response.model,
-                        serving_provider: response.provider,
-                        input_tokens: response.usage.input_tokens,
-                        output_tokens: response.usage.output_tokens,
-                        cost: response.usage.cost,
-                    };
-                    response.validate_report()?;
-                    Ok(response)
-                })
-                .await?
+                http::body(response, 1_048_576).await
             };
             tokio::pin!(operation);
-            tokio::select! {
+            let bytes = tokio::select! {
                 biased;
-                _ = cancellation.cancelled() => {
-                    if report_received.load(Ordering::SeqCst) {
-                        operation.await
-                    } else {
-                        Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "Native decision stopped").into())
-                    }
-                },
                 result = &mut operation => result,
-            }
+                _ = cancellation.cancelled() => {
+                    Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "Native decision stopped").into())
+                },
+            }.map_err(ports::CreateNativeDecisionError::from)?;
+
+            tokio::task::spawn_blocking(move || decode(bytes))
+                .await
+                .map_err(|error| ports::CreateNativeDecisionError::from(Box::new(error) as Error))?
         })
     }
+}
+
+fn decode(bytes: Vec<u8>) -> Result<domain::DecisionResponse, ports::CreateNativeDecisionError> {
+    let response: Response = serde_json::from_slice(&bytes)
+        .map_err(|error| ports::CreateNativeDecisionError::from(Box::new(error) as Error))?;
+    let mut report = domain::DecisionResponse {
+        choice: None,
+        confidence: None,
+        probabilities: Vec::new(),
+        resolved_model: response.model,
+        serving_provider: response.provider,
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+        cost: response.usage.cost,
+    };
+    report
+        .validate_report()
+        .map_err(|error| ports::CreateNativeDecisionError::from(Error::from(error)))?;
+
+    let answer = (|| {
+        let answers: BTreeMap<String, AnswerResponse> = serde_json::from_value(
+            response
+                .answers
+                .ok_or("Native selection answer is missing")?,
+        )?;
+        if answers.len() != 1 {
+            return Err::<_, Error>(
+                "Native response must contain exactly the requested answer".into(),
+            );
+        }
+        answers
+            .into_iter()
+            .find_map(|(key, answer)| (key == "selection").then_some(answer))
+            .ok_or_else(|| Error::from("Native selection answer is missing"))
+    })()
+    .map_err(|error| ports::CreateNativeDecisionError::from(error).with_report(report.clone()))?;
+    if let AnswerResponse::Choice {
+        choice,
+        confidence,
+        probabilities,
+    } = answer
+    {
+        report.choice = Some(choice);
+        report.confidence = confidence;
+        report.probabilities = probabilities.unwrap_or_default().into_iter().collect();
+    }
+    Ok(report)
 }
 
 fn body(decision: &domain::AssignmentDecision) -> Result<serde_json::Value, Error> {

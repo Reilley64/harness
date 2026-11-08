@@ -6,6 +6,7 @@ use crate::decision_access;
 use crate::error_context::ErrorContext;
 use crate::error_context::ResultExt;
 use crate::error_context::diagnostic;
+use crate::model_access;
 use tokio_util::sync::CancellationToken;
 
 pub use dependencies::Dependencies;
@@ -188,11 +189,18 @@ pub async fn call(
                             blocked: None,
                             diagnostics: Vec::new(),
                         }),
-                        Err(error) => return Ok(Output {
-                            decision: control.ok_or_else(|| Error::caused_by("Stopped intent disappeared"))?,
-                            blocked: None,
-                            diagnostics: vec![Error::caused_by(error)],
-                        }),
+                        Err(mut error) => {
+                            let decision = if let Some(report) = error.reported_response.take() {
+                                checkpoint_report(&d, decision, report).await?
+                            } else {
+                                control.ok_or_else(|| Error::caused_by("Stopped intent disappeared"))?
+                            };
+                            return Ok(Output {
+                                decision,
+                                blocked: None,
+                                diagnostics: vec![Error::caused_by(error)],
+                            });
+                        }
                     }
                 }
             }
@@ -204,7 +212,10 @@ pub async fn call(
             decision = checkpoint_report(&d, decision, response).await?;
             true
         }
-        Err(error) => {
+        Err(mut error) => {
+            if let Some(report) = error.reported_response.take() {
+                decision = checkpoint_report(&d, decision, report).await?;
+            }
             let is_unsupported = unsupported(&error);
             diagnostics.push(Error::caused_by(ErrorContext::caused_by(
                 if is_unsupported {
@@ -260,8 +271,12 @@ pub async fn call(
         decision.reason = Some("Selected native Decider was disallowed by the user. Open /model settings; no replacement or fallback.".into());
         return save_with_diagnostics(&d, decision, diagnostics).await;
     }
-    let mut failure =
-        "Native request failed; usage is unknown. Exact eligible parent recovery only.".to_owned();
+    let mut failure = if decision.response.is_some() {
+        "Native answer failed; reported accounting retained. Exact eligible parent recovery only."
+    } else {
+        "Native request failed; usage is unknown. Exact eligible parent recovery only."
+    }
+    .to_owned();
     if received {
         let (restored, validation, candidate) = tokio::task::spawn_blocking(move || {
             let request = decision
@@ -304,6 +319,13 @@ pub async fn call(
                     decision.selected = Some(candidate);
                     decision.phase = domain::DecisionPhase::Selected;
                     decision.reason = Some("Validated native opaque choice under suitability-first, cost-conscious policy. No worker has been launched; confidence is not correctness probability.".into());
+                    return save_with_diagnostics(&d, decision, diagnostics).await;
+                }
+                Err(error) if model_access::is_disallowed(error.as_ref()) => {
+                    decision.phase = domain::DecisionPhase::Configuration;
+                    decision.selected = Some(candidate);
+                    decision.reason = Some("Selected worker was disallowed by the user. Open /model settings; no replacement.".into());
+                    diagnostics.push(Error::caused_by(error));
                     return save_with_diagnostics(&d, decision, diagnostics).await;
                 }
                 Err(error) => {

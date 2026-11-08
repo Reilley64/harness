@@ -9,6 +9,21 @@ use crate::ports::ReadProviderConnection;
 #[display("Model configuration required")]
 pub(crate) struct Error;
 
+#[ohno::error]
+#[display("Model identity is outside the positive allowlist")]
+struct Disallowed;
+
+pub(crate) fn is_disallowed(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if error.downcast_ref::<Disallowed>().is_some() {
+            return true;
+        }
+        current = error.source();
+    }
+    false
+}
+
 pub(crate) async fn read_model(
     catalog: &ReadModels,
     provider: &domain::ProviderId,
@@ -46,7 +61,7 @@ pub(crate) async fn read(
         .context("Allowlist configuration could not be read; open /model settings")
         .map_err(Error::caused_by)?;
     if !policy.permits(&model.provider_id, &model.id) {
-        return Err::<domain::ProviderConnection, _>(Box::<dyn std::error::Error + Send + Sync>::from("Model identity is outside the positive allowlist"))
+        return Err::<domain::ProviderConnection, _>(Disallowed::new())
             .context("Allowlist blocked: this provider/model is not permitted; edit the positive patterns in /model settings")
             .map_err(Error::caused_by);
     }

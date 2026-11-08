@@ -137,7 +137,7 @@ export function useNativeDecider(
     const current = sequence.current;
     try {
       const result = await agent.stopDecision(id);
-      if (mounted.current && sequence.current === current) setView(result);
+      if (sequence.current === current) receive(id, result);
     } catch (e) {
       if (mounted.current && sequence.current === current)
         setError(errorMessage(e));

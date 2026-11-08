@@ -51,6 +51,37 @@ impl AssignmentDecision {
         Ok(())
     }
 
+    pub fn retain_stop(&mut self, stopped: Self) -> Result<(), &'static str> {
+        self.validate()?;
+        stopped.validate()?;
+        if stopped.phase != DecisionPhase::Stopped
+            || !self.same_intent(&stopped)
+            || self.parent != stopped.parent
+            || self.parent_connection_id != stopped.parent_connection_id
+            || self.parent_revision != stopped.parent_revision
+            || stopped.revision > self.revision
+            || stopped
+                .request
+                .as_ref()
+                .is_some_and(|request| Some(request) != self.request.as_ref())
+        {
+            return Err("Explicit Stop differs from the unsettled intent");
+        }
+        let response = match (&self.response, stopped.response) {
+            (Some(existing), Some(report)) if existing != &report => {
+                return Err("Explicit Stop carries conflicting native accounting");
+            }
+            (Some(existing), _) => Some(existing.clone()),
+            (None, report) => report,
+        };
+
+        self.stop()?;
+        self.response = response;
+        self.finished_at = stopped.finished_at;
+        self.reason = stopped.reason;
+        self.validate()
+    }
+
     pub fn retain_stopped_report(&mut self, completed: Self) -> Result<bool, &'static str> {
         if self.phase != DecisionPhase::Stopped
             || !self.same_intent(&completed)

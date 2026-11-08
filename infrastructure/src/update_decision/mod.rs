@@ -86,12 +86,18 @@ pub fn update_decision(
                     if revision.is_none() {
                         return Ok((prior, None));
                     }
+                    if revision != Some(decision.revision) {
+                        return Err("Decision checkpoint differs from its expected revision".into());
+                    }
                     if prior.phase == domain::DecisionPhase::Stopped
                         && (decision.phase == domain::DecisionPhase::Stopped || decision.response.is_some())
                     {
                         if !prior.retain_stopped_report(decision)? {
                             return Ok((prior, None));
                         }
+                        decision = prior;
+                    } else if decision.phase == domain::DecisionPhase::Stopped {
+                        prior.retain_stop(decision)?;
                         decision = prior;
                     } else {
                         if Some(prior.revision) != revision {

@@ -72,8 +72,9 @@ unchanged. Griller/legacy conversations cannot prepare managed assignment intent
 In-flight UI ownership is keyed by intent and connection, not a panel-wide busy
 flag. Inspecting or selecting another prepared intent does not relabel it as the
 first pending request. A completion updates the same reopened inspector, while
-revision guards prevent an older read from replacing a newer result. Escape and
-actor navigation do not cancel outstanding requests.
+revision guards prevent older reads or delayed Stop acknowledgements from replacing
+a newer result, including late stopped accounting. Escape and actor navigation do
+not cancel outstanding requests.
 
 ## Policy, eligibility and validation
 
@@ -119,7 +120,9 @@ never lowers effort or uses a coded default. An ineligible parent produces a
 configuration block with no replacement. A user disallowing an already selected
 native model or returned worker instead produces configuration recovery, not
 parent replacement. Changing a settled worker's policy similarly preserves the
-record and exposes a current block. Ordinary worker failures do not invoke this
+record and exposes a current block. A denial at the final worker revalidation is
+classified from its typed policy cause, not mistaken for generic stale-choice
+failure and parent replacement. Ordinary worker failures do not invoke this
 selection path or authorize model switching.
 
 The native adapter uses its own Reqwest client with no request/read/connect
@@ -156,11 +159,18 @@ choice and confidence are null and probabilities empty. This is accounting, not
 a refusal or accepted selection. A competing Stop retains its outcome, finish
 time and lack of selected worker. The store atomically enriches that exact stopped
 request with a late report once; duplicates reuse it and conflicting reports fail.
-No inference, replacement or replay occurs to recover accounting. Cancellation
-after complete response decoding retains that bounded report-conversion result.
+An explicit Stop of the same still-unsettled immutable intent also incorporates
+intervening accounting-only checkpoints rather than losing to their revision bump;
+a settled selection cannot be replaced by Stop. No inference, replacement or replay
+occurs to recover accounting. Network/body capture remains cancellable. Once the
+bounded complete body is owned, blocking decoding/conversion is awaited outside
+the cancellation race, so even a completed decode awaiting its executor handoff
+cannot lose valid accounting. Invalid or missing selection-answer shapes retain
+independently validated usage/provenance through the typed error port; they do not
+become a valid choice or refusal. Invalid accounting itself remains unknown.
 
-Recovery outputs preserve internal original error chains until the presentation
-boundary. Persisted reasons and ACP project bounded safe categories rather than
+Recovery outputs, including successful blocked inspector/picker queries, preserve
+internal original error chains until the presentation boundary. Persisted reasons and ACP project bounded safe categories rather than
 raw transport bodies, credentials or internal error strings. A storage failure
 is an error requiring inspection, not a successful result with silently lost
 accounting.
