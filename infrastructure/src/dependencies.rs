@@ -19,6 +19,8 @@ use crate::read_model_allowlist;
 use crate::read_model_selection;
 use crate::read_paths;
 use crate::read_provider_connection;
+use crate::read_setup;
+use crate::read_setup_draft;
 use crate::read_text_matches;
 use crate::read_tool_invocation;
 use crate::read_tools;
@@ -31,6 +33,7 @@ use crate::update_decision;
 use crate::update_file;
 use crate::update_model_allowlist;
 use crate::update_model_selection;
+use crate::update_setup_draft;
 use crate::update_work;
 
 use std::time::Duration;
@@ -73,6 +76,9 @@ pub struct Dependencies {
     read_model_selection: ports::ReadModelSelection,
     update_model_selection: ports::UpdateModelSelection,
     create_agent: ports::CreateAgent,
+    read_setup_draft: ports::ReadSetupDraft,
+    update_setup_draft: ports::UpdateSetupDraft,
+    read_setup: ports::ReadSetup,
     read_agent: ports::ReadAgent,
     read_instructions: ports::ReadInstructions,
     create_conversation: ports::CreateConversation,
@@ -195,16 +201,40 @@ impl Dependencies {
                 let settings: &Settings = deps.as_ref();
                 let create =
                     create_agent::create_agent(&settings.app_data_path.join("conversations"));
-                ports::CreateAgent::new(move |model, effort, connection, workspace| {
-                    let result = create(model, effort, connection, workspace);
+                ports::CreateAgent::new(move |model, effort, connection, workspace, role| {
+                    let result = create(model, effort, connection, workspace, role);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_setup_draft(|_| {
+                let read = read_setup_draft::read_setup_draft();
+                ports::ReadSetupDraft::new(
+                    move |workspace, arguments, proposed_wiki, cancellation| {
+                        let result = read(workspace, arguments, proposed_wiki, cancellation);
+                        Box::pin(async move { Ok(result.await?) })
+                    },
+                )
+            })
+            .update_setup_draft(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let update = update_setup_draft::update_setup_draft(&settings.app_data_path);
+                ports::UpdateSetupDraft::new(move |draft, cancellation| {
+                    let result = update(draft, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_setup(|_| {
+                let read = read_setup::read_setup();
+                ports::ReadSetup::new(move |workspace, cancellation| {
+                    let result = read(workspace, cancellation);
                     Box::pin(async move { Ok(result.await?) })
                 })
             })
             .read_agent(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let read = read_agent::read_agent(&settings.app_data_path.join("conversations"));
-                ports::ReadAgent::new(move |workspace| {
-                    let result = read(workspace);
+                ports::ReadAgent::new(move |workspace, role| {
+                    let result = read(workspace, role);
                     Box::pin(async move { Ok(result.await?) })
                 })
             })

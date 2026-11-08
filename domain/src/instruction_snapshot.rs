@@ -16,7 +16,7 @@ impl InstructionSnapshot {
             || !self.id.bytes().all(|byte| byte.is_ascii_hexdigit())
             || !matches!(
                 self.phase.as_str(),
-                "grilling" | "specification" | "tickets" | "coordination"
+                "grilling" | "specification" | "tickets" | "coordination" | "setup"
             )
             || self.instructions.is_empty()
             || self.instructions.len() > 64
@@ -74,10 +74,10 @@ impl InstructionSnapshot {
         {
             return Err("Instruction snapshot exceeds 1 MiB");
         }
-        let role = if self.phase == "coordination" {
-            "role/chief-of-staff"
-        } else {
-            "role/griller"
+        let role = match self.phase.as_str() {
+            "coordination" => "role/chief-of-staff",
+            "setup" => "role/setup",
+            _ => "role/griller",
         };
         if !ids.contains(&role.to_owned())
             || !ids.contains(&"contract".to_owned())

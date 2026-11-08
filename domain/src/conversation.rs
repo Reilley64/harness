@@ -57,6 +57,11 @@ impl Conversation {
         &mut self,
         snapshot: InstructionSnapshot,
     ) -> Result<(), &'static str> {
+        if let Some(agent) = &self.agent
+            && (snapshot.phase == "setup") != (agent.role == AgentRole::Setup)
+        {
+            return Err("Instruction phase does not match the durable role");
+        }
         if self.resume_required
             || self
                 .messages
@@ -408,6 +413,74 @@ impl Conversation {
             after_step: reply.steps.len(),
         });
         Ok(true)
+    }
+
+    fn setup_eligible(&self) -> Result<(), &'static str> {
+        if self
+            .agent
+            .as_ref()
+            .is_none_or(|agent| agent.role != AgentRole::Setup)
+            || self.resume_required
+            || self
+                .messages
+                .iter()
+                .any(|message| message.status == MessageStatus::InProgress)
+        {
+            return Err(
+                "Setup changed or is active/interrupted; inspect the exact proposal again before confirmation",
+            );
+        }
+        Ok(())
+    }
+
+    pub fn setup_call(&self, proposal: &str) -> Result<ToolCall, &'static str> {
+        self.setup_eligible()?;
+
+        let call = self
+            .messages
+            .iter()
+            .flat_map(|message| &message.steps)
+            .flat_map(|step| &step.calls)
+            .find(|call| call.id == proposal)
+            .ok_or("Setup proposal is unavailable")?;
+        if call.status != ToolStatus::Draft {
+            return Err(
+                "Only an unexecuted draft can be confirmed; uncertain or completed effects are never replayed",
+            );
+        }
+        call.draft
+            .as_ref()
+            .ok_or("Exact Setup draft is missing")?
+            .validate()?;
+        Ok(call.clone())
+    }
+
+    pub fn update_setup_call(&mut self, updated: ToolCall) -> Result<(), &'static str> {
+        self.setup_eligible()?;
+        let call = self
+            .messages
+            .iter_mut()
+            .flat_map(|m| &mut m.steps)
+            .flat_map(|s| &mut s.calls)
+            .find(|c| c.id == updated.id)
+            .ok_or("Setup proposal is unavailable")?;
+        if call.call_id != updated.call_id
+            || call.name != updated.name
+            || call.arguments != updated.arguments
+            || call.text_offset != updated.text_offset
+        {
+            return Err("Setup proposal identity cannot change during execution");
+        }
+        if !matches!(call.status, ToolStatus::Draft | ToolStatus::Running)
+            || call.draft.is_none()
+            || call.draft != updated.draft
+            || !call.permits(updated.status)
+        {
+            return Err("Invalid Setup confirmation transition");
+        }
+
+        *call = updated;
+        Ok(())
     }
 
     pub fn history(&self) -> Vec<&Message> {

@@ -31,6 +31,7 @@ import { PresentationError } from "./errors.js";
 import { parseGuidance } from "./guidance.js";
 import { parseModelSelection, parseModels } from "./models.js";
 import { readableStream } from "./readable-stream.js";
+import { parseSetup } from "./setup.js";
 import { parseTool } from "./tools.js";
 import { parseUsageUpdate } from "./usage.js";
 import { parseWork } from "./work.js";
@@ -476,6 +477,7 @@ export function connectAgent() {
   }
 
   async function readAgent(
+    role?: "setup" | "griller",
     signal?: AbortSignal,
   ): Promise<Conversation | undefined> {
     if (closing) throw new PresentationError("The agent is closing.");
@@ -488,7 +490,7 @@ export function connectAgent() {
     if (closing) throw new PresentationError("The agent is closing.");
     const response = await connection.agent.request<{ conversation: unknown }>(
       "_harness/agent/read",
-      { cwd: workspace },
+      { cwd: workspace, role },
       { cancellationSignal, stopWaitingOnCancel: true },
     );
     return response.conversation == null
@@ -496,14 +498,53 @@ export function connectAgent() {
       : parseConversation(response.conversation);
   }
 
-  async function startAgent(selection: ModelSelection): Promise<Conversation> {
+  async function startAgent(
+    selection: ModelSelection,
+    role?: "setup" | "griller",
+  ): Promise<Conversation> {
     await initialize();
     await selectionWrites;
     const response = await connection.agent.request<{ conversation: unknown }>(
       "_harness/agent/start",
-      { cwd: workspace, selection: selectionMetadata(selection) },
+      { cwd: workspace, selection: selectionMetadata(selection), role },
     );
     return parseConversation(response.conversation);
+  }
+
+  async function readSetup(id?: string, signal?: AbortSignal) {
+    if (closing) throw new PresentationError("The agent is closing.");
+    signal?.throwIfAborted();
+    await initialize();
+    signal?.throwIfAborted();
+    const response = await connection.agent.request<unknown>(
+      "_harness/setup/read",
+      { cwd: workspace, sessionId: id ?? null },
+      { cancellationSignal: signal, stopWaitingOnCancel: true },
+    );
+    return parseSetup(response);
+  }
+
+  async function updateSetup(
+    id: string,
+    revision: number,
+    proposal: string,
+    confirm: boolean,
+  ): Promise<Conversation> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const pending = connection.agent
+      .request<{ conversation: unknown }>("_harness/setup/update", {
+        sessionId: id,
+        revision,
+        proposal,
+        confirm,
+      })
+      .then((response) => parseConversation(response.conversation));
+    pendingReplies.add(pending);
+    try {
+      return await pending;
+    } finally {
+      pendingReplies.delete(pending);
+    }
   }
 
   async function readGuidance(
@@ -711,6 +752,7 @@ export function connectAgent() {
     for (const controller of nativeControllers.values()) controller.abort();
     if (
       replies.size ||
+      pendingReplies.size ||
       pendingSelections ||
       pendingPolicyWrites.size ||
       pendingWorkWrites.size ||
@@ -767,6 +809,8 @@ export function connectAgent() {
     createProviderConnection,
     readModelSelection,
     updateModelSelection,
+    readSetup,
+    updateSetup,
     readAgent,
     startAgent,
     acknowledgeInterruption,

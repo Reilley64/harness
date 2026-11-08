@@ -4,6 +4,7 @@ use crate::ports;
 #[derive(Clone)]
 pub struct Dependencies {
     pub(super) create_agent: ports::CreateAgent,
+    pub(super) read_setup: ports::ReadSetup,
     pub(super) read_agent: ports::ReadAgent,
     pub(super) read_conversation: ports::ReadConversation,
     pub(super) update_conversation: ports::UpdateConversation,

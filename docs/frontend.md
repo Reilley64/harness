@@ -321,8 +321,10 @@ character-to-token guesses or fabricated model limits are used.
 
 The entry point accepts `--resume <conversation-id>` and loads it before rendering.
 Invalid/missing/nonexistent identifiers fail visibly. The saved model/effort seeds
-the picker without requiring the catalog. No arguments open the saved repository Griller, or an empty view when absent.
-When no repository Griller exists, startup restores the last model/effort through
+the picker without requiring the catalog. No arguments detect missing applicable Setup outputs and open the saved Setup
+actor when incomplete, otherwise the saved repository Griller; an absent actor
+renders an empty view without creating history.
+When that repository actor does not exist, startup restores the last model/effort through
 `_harness/model-selection/read`, without credentials, catalog access, or history.
 Explicit resume takes precedence and does not overwrite this default just by
 reading a conversation. A missing preference is normal; an invalid one produces
@@ -375,7 +377,7 @@ the sole selected node; Tab/arrows retain that selection. A single mouse click
 selects it; a same-node double-click within 400 ms opens it. Ink-measured hit bounds
 handle split SGR reports and invalidate pending double-clicks on geometry changes.
 
-Titles are exactly `harness - Griller` and `harness - Agent map`; an explicitly
+Titles are exactly `harness - Griller`, `harness - Setup` and `harness - Agent map`; an explicitly
 loaded unassociated pilot uses `harness - Conversation`. Only static context labels
 enter title escapes. Background updates cannot change selection/title. Title,
 mouse and raw/alternate-screen modes pair with cleanup. The transcript stays
@@ -426,6 +428,19 @@ retain ordinary selected-leaf Stop and explicit Resume; creator is not Stop
 ownership. See [approved work](approved-work.md) for authority, repeat clicks,
 publication conventions, missing guidance recovery and unavailable later execution.
 The current map describes the selected real agent, not a simulated full fleet.
+## Repository Setup
+
+Repository open selects the actual durable Setup actor when applicable output files
+are absent; complete repositories bypass it. `/setup` inspects presence and exact
+stored before/after proposals, with explicit per-proposal confirmation/cancellation.
+`/setup chat` and `/griller` navigate independent durable actors without inference.
+F3 opens the actual Griller from Setup/map through the hook-owned navigation
+lifecycle, preserving per-actor drafts and scroll. Inspector and approval target
+labels use lossless ASCII JSON strings; the underlying approved path is unchanged.
+The current-role map remains a leaf, not the later multi-agent map product. Draft
+inspection is cancellable; admitted writes drain without late navigation/title
+changes. See [repository Setup](repository-setup.md) for keys, scope, schema,
+bootstrap instruction handling and the trusted-client/OS-user boundary.
 
 ## TanStack AI
 

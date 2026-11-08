@@ -7,5 +7,5 @@ use crate::ports::PortFuture;
 pub struct ReadAgentError;
 
 port! {
-    pub ReadAgent(workspace: std::path::PathBuf,) -> PortFuture<Result<Option<String>, ReadAgentError>>;
+    pub ReadAgent(workspace: std::path::PathBuf, role: domain::AgentRole,) -> PortFuture<Result<Option<String>, ReadAgentError>>;
 }

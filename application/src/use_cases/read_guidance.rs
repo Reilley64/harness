@@ -46,6 +46,12 @@ pub async fn call(
                             .is_some_and(|c| c.assignment.is_some())
                         {
                             "coordination"
+                        } else if conversation
+                            .as_ref()
+                            .and_then(|c| c.agent.as_ref())
+                            .is_some_and(|a| a.role == domain::AgentRole::Setup)
+                        {
+                            "setup"
                         } else {
                             "grilling"
                         }
