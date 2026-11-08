@@ -169,11 +169,23 @@ cannot lose valid accounting. Invalid or missing selection-answer shapes retain
 independently validated usage/provenance through the typed error port; they do not
 become a valid choice or refusal. Invalid accounting itself remains unknown.
 
+Cancellation of the owned select request is checked again after post-response
+authority, allowlist, blocking validation and worker/parent eligibility awaits,
+before accepting a choice or recovery. An already-cancelled request settles through
+the same semantic Stop transition and atomic exact-intent arbitration, retaining
+received accounting without choice, confidence or replacement. Genuine storage
+errors still fail; cancellation is not inferred from an arbitrary save failure.
+
 Recovery outputs, including successful blocked inspector/picker queries, preserve
-internal original error chains until the presentation boundary. Persisted reasons and ACP project bounded safe categories rather than
-raw transport bodies, credentials or internal error strings. A storage failure
-is an error requiring inspection, not a successful result with silently lost
-accounting.
+internal original error chains until the presentation boundary. Worker-pool
+eligibility failures retain their original sources independently, including when
+other pairs remain eligible, the pool is empty, or a later operation fails. Error
+results also own these diagnostics until disposal. Enumeration allows at most
+4,096 internal eligibility diagnostics; reaching that bound returns explicit
+Unsupported without inference or a truncated pool. Persisted reasons and ACP
+project bounded safe categories rather than raw transport bodies, credentials or
+internal error strings. A storage failure is an error requiring inspection, not
+a successful result with silently lost accounting.
 
 ## Public interfaces and evidence boundary
 

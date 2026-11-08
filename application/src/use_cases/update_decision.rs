@@ -19,13 +19,42 @@ pub async fn call(
     stop: bool,
     cancellation: CancellationToken,
 ) -> Result<Output, Error> {
-    let d = dependencies.into();
+    let mut diagnostics = Vec::new();
+    match select(
+        dependencies.into(),
+        id,
+        stop,
+        &mut diagnostics,
+        cancellation,
+    )
+    .await
+    {
+        Ok(mut output) => {
+            diagnostics.append(&mut output.diagnostics);
+            output.diagnostics = diagnostics;
+            Ok(output)
+        }
+        Err(mut error) => {
+            diagnostics.append(&mut error.diagnostics);
+            error.diagnostics = diagnostics;
+            Err(error)
+        }
+    }
+}
+
+async fn select(
+    d: Dependencies,
+    id: String,
+    stop: bool,
+    diagnostics: &mut Vec<Error>,
+    cancellation: CancellationToken,
+) -> Result<Output, Error> {
     let mut decision = d
         .read_decision
         .call(id)
         .await
-        .map_err(Error::caused_by)?
-        .ok_or_else(|| Error::caused_by("Assignment intent was not found"))?;
+        .map_err(Error::with_cause)?
+        .ok_or_else(|| Error::with_cause("Assignment intent was not found"))?;
     if stop
         && matches!(
             decision.phase,
@@ -49,7 +78,7 @@ pub async fn call(
             Err(error) => blocked(decision, error),
         });
     }
-    authority(&d, &decision).await.map_err(Error::caused_by)?;
+    authority(&d, &decision).await.map_err(Error::with_cause)?;
     let id = match d
         .read_decider
         .call()
@@ -82,7 +111,7 @@ pub async fn call(
     };
 
     let mut candidates = Vec::new();
-    for model in d.read_models.call().await.map_err(Error::caused_by)? {
+    for model in d.read_models.call().await.map_err(Error::with_cause)? {
         if model.validate_worker().is_err() {
             continue;
         }
@@ -97,7 +126,7 @@ pub async fn call(
                 model_id: model.id.clone(),
                 effort,
             };
-            if let Ok(candidate) = decision_access::candidate(
+            match decision_access::candidate(
                 &d.read_models,
                 &d.read_model_allowlist,
                 &d.read_provider_connection,
@@ -107,7 +136,15 @@ pub async fn call(
             )
             .await
             {
-                candidates.push(candidate);
+                Ok(candidate) => candidates.push(candidate),
+                Err(error) => {
+                    diagnostics.push(Error::with_cause(error));
+                    if diagnostics.len() == 4096 {
+                        decision.phase = domain::DecisionPhase::Unsupported;
+                        decision.reason = Some("Unsupported worker eligibility diagnostics exceed the bounded internal capacity. No pool truncation or inference.".into());
+                        return save(&d, decision).await;
+                    }
+                }
             }
         }
     }
@@ -126,7 +163,7 @@ pub async fn call(
     }
     let captured_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(Error::caused_by)?
+        .map_err(Error::with_cause)?
         .as_secs();
     decision.request = Some(domain::DecisionRequest {
         model,
@@ -138,7 +175,7 @@ pub async fn call(
     decision.phase = domain::DecisionPhase::Pending;
     let revision = decision.revision;
     if cancellation.is_cancelled() {
-        return Err(Error::caused_by("Stopped before native admission"));
+        return Err(Error::with_cause("Stopped before native admission"));
     }
     let (prior_intent, checkpoint) = snapshot(decision).await?;
     decision = match d.update_decision.call(checkpoint, Some(revision)).await {
@@ -148,7 +185,7 @@ pub async fn call(
                 .read_decision
                 .call(prior_intent.id.clone())
                 .await
-                .map_err(Error::caused_by)?;
+                .map_err(Error::with_cause)?;
             if let Some(existing) = existing
                 && existing.same_intent(&prior_intent)
                 && existing.phase != domain::DecisionPhase::Prepared
@@ -162,10 +199,10 @@ pub async fn call(
                     },
                     Err(error) => blocked(existing, error),
                 };
-                output.diagnostics.push(Error::caused_by(error));
+                output.diagnostics.push(Error::with_cause(error));
                 return Ok(output);
             }
-            return Err(Error::caused_by(error));
+            return Err(Error::with_cause(error));
         }
     };
 
@@ -180,7 +217,7 @@ pub async fn call(
             biased;
             result = &mut native => break result,
             _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                let control = d.read_decision.call(decision.id.clone()).await.map_err(Error::caused_by)?;
+                let control = d.read_decision.call(decision.id.clone()).await.map_err(Error::with_cause)?;
                 if control.as_ref().is_some_and(|v| v.phase == domain::DecisionPhase::Stopped) {
                     native_cancellation.cancel();
                     match native.await {
@@ -190,15 +227,17 @@ pub async fn call(
                             diagnostics: Vec::new(),
                         }),
                         Err(mut error) => {
-                            let decision = if let Some(report) = error.reported_response.take() {
+                            let report = error.reported_response.take();
+                            diagnostics.push(Error::with_cause(error));
+                            let decision = if let Some(report) = report {
                                 checkpoint_report(&d, decision, *report).await?
                             } else {
-                                control.ok_or_else(|| Error::caused_by("Stopped intent disappeared"))?
+                                control.ok_or_else(|| Error::with_cause("Stopped intent disappeared"))?
                             };
                             return Ok(Output {
                                 decision,
                                 blocked: None,
-                                diagnostics: vec![Error::caused_by(error)],
+                                diagnostics: Vec::new(),
                             });
                         }
                     }
@@ -206,29 +245,25 @@ pub async fn call(
             }
         }
     };
-    let mut diagnostics = Vec::new();
+    let mut unsupported_input = false;
     let received = match response {
         Ok(response) => {
             decision = checkpoint_report(&d, decision, response).await?;
             true
         }
         Err(mut error) => {
-            if let Some(report) = error.reported_response.take() {
-                decision = checkpoint_report(&d, decision, *report).await?;
-            }
-            let is_unsupported = unsupported(&error);
-            diagnostics.push(Error::caused_by(ErrorContext::caused_by(
-                if is_unsupported {
+            let report = error.reported_response.take();
+            unsupported_input = unsupported(&error);
+            diagnostics.push(Error::with_cause(ErrorContext::caused_by(
+                if unsupported_input {
                     "Unsupported complete native input"
                 } else {
                     "Native request failed; exact-parent recovery only"
                 },
                 error,
             )));
-            if is_unsupported {
-                decision.phase = domain::DecisionPhase::Unsupported;
-                decision.reason = Some("Unsupported complete native input exceeds the conservative byte envelope. No truncation, fallback or inference; hierarchical selection is not implemented.".into());
-                return save_with_diagnostics(&d, decision, diagnostics).await;
+            if let Some(report) = report {
+                decision = checkpoint_report(&d, decision, *report).await?;
             }
             false
         }
@@ -237,39 +272,49 @@ pub async fn call(
         return Ok(Output {
             decision,
             blocked: None,
-            diagnostics,
+            diagnostics: Vec::new(),
         });
     }
     if cancellation.is_cancelled() {
-        decision = stop_snapshot(decision).await?;
-        decision.reason = Some(
-            "Explicit Stop; native usage is unknown unless reported. No fallback or child launch."
-                .into(),
-        );
-        return save_with_diagnostics(&d, decision, diagnostics).await;
+        return stop_received(&d, decision).await;
     }
-    if let Err(error) = authority(&d, &decision).await {
+    if unsupported_input {
+        decision.phase = domain::DecisionPhase::Unsupported;
+        decision.reason = Some("Unsupported complete native input exceeds the conservative byte envelope. No truncation, fallback or inference; hierarchical selection is not implemented.".into());
+        return save(&d, decision).await;
+    }
+    let authority = authority(&d, &decision).await;
+    if cancellation.is_cancelled() {
+        if let Err(error) = authority {
+            diagnostics.push(Error::with_cause(error));
+        }
+        return stop_received(&d, decision).await;
+    }
+    if let Err(error) = authority {
         decision.phase = domain::DecisionPhase::Configuration;
         decision.reason = Some("Approved assignment requires inspection; no replacement".into());
-        diagnostics.push(Error::caused_by(ErrorContext::caused_by(
+        diagnostics.push(Error::with_cause(ErrorContext::caused_by(
             "Approved assignment requires inspection",
             error,
         )));
-        return save_with_diagnostics(&d, decision, diagnostics).await;
+        return save(&d, decision).await;
     }
-    let request = decision
-        .request
-        .as_ref()
-        .ok_or_else(|| Error::caused_by("Native request snapshot missing"))?;
     let current_policy = d
         .read_model_allowlist
         .call()
         .await
-        .map_err(Error::caused_by)?;
+        .map_err(Error::with_cause)?;
+    if cancellation.is_cancelled() {
+        return stop_received(&d, decision).await;
+    }
+    let request = decision
+        .request
+        .as_ref()
+        .ok_or_else(|| Error::with_cause("Native request snapshot missing"))?;
     if !current_policy.permits(&request.model.provider_id, &request.model.id) {
         decision.phase = domain::DecisionPhase::Configuration;
         decision.reason = Some("Selected native Decider was disallowed by the user. Open /model settings; no replacement or fallback.".into());
-        return save_with_diagnostics(&d, decision, diagnostics).await;
+        return save(&d, decision).await;
     }
     let mut failure = if decision.response.is_some() {
         "Native answer failed; reported accounting retained. Exact eligible parent recovery only."
@@ -282,11 +327,11 @@ pub async fn call(
             let request = decision
                 .request
                 .as_ref()
-                .ok_or_else(|| Error::caused_by("Native request snapshot missing"))?;
+                .ok_or_else(|| Error::with_cause("Native request snapshot missing"))?;
             let response = decision
                 .response
                 .as_ref()
-                .ok_or_else(|| Error::caused_by("Native response missing"))?;
+                .ok_or_else(|| Error::with_cause("Native response missing"))?;
             let validation = request.validate_response(response);
             let candidate = response
                 .choice
@@ -296,11 +341,17 @@ pub async fn call(
             Ok::<_, Error>((decision, validation, candidate))
         })
         .await
-        .map_err(Error::caused_by)??;
+        .map_err(Error::with_cause)??;
         decision = restored;
+        if cancellation.is_cancelled() {
+            if let Err(error) = validation {
+                diagnostics.push(Error::with_cause(error));
+            }
+            return stop_received(&d, decision).await;
+        }
         if let Err(error) = validation {
             failure = error.into();
-            diagnostics.push(Error::caused_by(ErrorContext::caused_by(
+            diagnostics.push(Error::with_cause(ErrorContext::caused_by(
                 "Native response validation failed",
                 error,
             )));
@@ -312,25 +363,32 @@ pub async fn call(
                 decision.phase = domain::DecisionPhase::Configuration;
                 decision.selected = Some(candidate);
                 decision.reason = Some("Selected worker was disallowed by the user. Open /model settings; no replacement.".into());
-                return save_with_diagnostics(&d, decision, diagnostics).await;
+                return save(&d, decision).await;
             }
-            match current(&d, &decision, &candidate).await {
+            let eligibility = current(&d, &decision, &candidate).await;
+            if cancellation.is_cancelled() {
+                if let Err(error) = eligibility {
+                    diagnostics.push(Error::with_cause(error));
+                }
+                return stop_received(&d, decision).await;
+            }
+            match eligibility {
                 Ok(()) => {
                     decision.selected = Some(candidate);
                     decision.phase = domain::DecisionPhase::Selected;
                     decision.reason = Some("Validated native opaque choice under suitability-first, cost-conscious policy. No worker has been launched; confidence is not correctness probability.".into());
-                    return save_with_diagnostics(&d, decision, diagnostics).await;
+                    return save(&d, decision).await;
                 }
                 Err(error) if model_access::is_disallowed(error.as_ref()) => {
                     decision.phase = domain::DecisionPhase::Configuration;
                     decision.selected = Some(candidate);
                     decision.reason = Some("Selected worker was disallowed by the user. Open /model settings; no replacement.".into());
-                    diagnostics.push(Error::caused_by(error));
-                    return save_with_diagnostics(&d, decision, diagnostics).await;
+                    diagnostics.push(Error::with_cause(error));
+                    return save(&d, decision).await;
                 }
                 Err(error) => {
                     failure = "Native choice became stale or incompatible before acceptance".into();
-                    diagnostics.push(Error::caused_by(ErrorContext::caused_by(
+                    diagnostics.push(Error::with_cause(ErrorContext::caused_by(
                         "Native choice became stale or incompatible before acceptance",
                         error,
                     )));
@@ -341,7 +399,7 @@ pub async fn call(
         }
     }
 
-    match decision_access::candidate(
+    let parent = decision_access::candidate(
         &d.read_models,
         &d.read_model_allowlist,
         &d.read_provider_connection,
@@ -349,8 +407,14 @@ pub async fn call(
         &decision.parent,
         decision.brief.context_tokens,
     )
-    .await
-    {
+    .await;
+    if cancellation.is_cancelled() {
+        if let Err(error) = parent {
+            diagnostics.push(Error::with_cause(error));
+        }
+        return stop_received(&d, decision).await;
+    }
+    match parent {
         Ok(candidate) if candidate.connection_id == decision.parent_connection_id => {
             decision.selected = Some(candidate);
             decision.phase = domain::DecisionPhase::Fallback;
@@ -363,7 +427,7 @@ pub async fn call(
                 Err(error) => error,
                 Ok(_) => "Exact parent connection snapshot changed".into(),
             };
-            diagnostics.push(Error::caused_by(ErrorContext::caused_by(
+            diagnostics.push(Error::with_cause(ErrorContext::caused_by(
                 "Exact parent snapshot is ineligible; configure /auth or /model",
                 cause,
             )));
@@ -373,7 +437,7 @@ pub async fn call(
             ));
         }
     }
-    save_with_diagnostics(&d, decision, diagnostics).await
+    save(&d, decision).await
 }
 
 fn unsupported(error: &(dyn std::error::Error + 'static)) -> bool {
@@ -455,11 +519,11 @@ async fn stop_snapshot(
     mut decision: domain::AssignmentDecision,
 ) -> Result<domain::AssignmentDecision, Error> {
     tokio::task::spawn_blocking(move || {
-        decision.stop().map_err(Error::caused_by)?;
+        decision.stop().map_err(Error::with_cause)?;
         Ok(decision)
     })
     .await
-    .map_err(Error::caused_by)?
+    .map_err(Error::with_cause)?
 }
 
 async fn snapshot(
@@ -467,7 +531,7 @@ async fn snapshot(
 ) -> Result<(domain::AssignmentDecision, domain::AssignmentDecision), Error> {
     tokio::task::spawn_blocking(move || (decision.clone(), decision))
         .await
-        .map_err(Error::caused_by)
+        .map_err(Error::with_cause)
 }
 
 async fn checkpoint_report(
@@ -477,36 +541,40 @@ async fn checkpoint_report(
 ) -> Result<domain::AssignmentDecision, Error> {
     let (decision, response) = tokio::task::spawn_blocking(move || {
         let mut decision = decision;
-        decision.response = Some(response.clone().into_report().map_err(Error::caused_by)?);
+        decision.response = Some(response.clone().into_report().map_err(Error::with_cause)?);
         Ok::<_, Error>((decision, response))
     })
     .await
-    .map_err(Error::caused_by)??;
+    .map_err(Error::with_cause)??;
     let revision = decision.revision;
     let mut saved = d
         .update_decision
         .call(decision, Some(revision))
         .await
-        .map_err(Error::caused_by)?;
+        .map_err(Error::with_cause)?;
     if saved.phase != domain::DecisionPhase::Stopped {
         saved.response = Some(response);
     }
     Ok(saved)
 }
 
-async fn save(d: &Dependencies, decision: domain::AssignmentDecision) -> Result<Output, Error> {
-    save_with_diagnostics(d, decision, Vec::new()).await
+async fn stop_received(
+    d: &Dependencies,
+    decision: domain::AssignmentDecision,
+) -> Result<Output, Error> {
+    let mut decision = stop_snapshot(decision).await?;
+    decision.reason = Some(
+        "Explicit Stop; native usage is unknown unless reported. No fallback or child launch."
+            .into(),
+    );
+    save(d, decision).await
 }
 
-async fn save_with_diagnostics(
-    d: &Dependencies,
-    mut decision: domain::AssignmentDecision,
-    diagnostics: Vec<Error>,
-) -> Result<Output, Error> {
+async fn save(d: &Dependencies, mut decision: domain::AssignmentDecision) -> Result<Output, Error> {
     decision.finished_at = Some(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_err(Error::caused_by)?
+            .map_err(Error::with_cause)?
             .as_secs(),
     );
     let revision = decision.revision;
@@ -514,14 +582,14 @@ async fn save_with_diagnostics(
         .update_decision
         .call(decision, Some(revision))
         .await
-        .map_err(Error::caused_by)?;
+        .map_err(Error::with_cause)?;
 
     let blocked = (decision.phase == domain::DecisionPhase::Configuration)
         .then(|| decision.reason.clone().unwrap_or_default());
     Ok(Output {
         decision,
         blocked,
-        diagnostics,
+        diagnostics: Vec::new(),
     })
 }
 
@@ -532,6 +600,6 @@ fn blocked(
     Output {
         blocked: Some(diagnostic(error.as_ref())),
         decision,
-        diagnostics: vec![Error::caused_by(error)],
+        diagnostics: vec![Error::with_cause(error)],
     }
 }
