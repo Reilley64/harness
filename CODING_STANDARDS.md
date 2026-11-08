@@ -80,15 +80,8 @@ these semantic groups.
 - Treat module interfaces as the test surface. Verify behavior with temporary
   external probes; keep implementation helpers private. Add no permanent tests
   or test-only dependencies.
-- Validate relevant changes with:
-
-  ```sh
-  mise install
-  mise run build
-  mise run test
-  mise run check
-  git diff --check
-  ```
+- Follow the [root verification policy](AGENTS.md#verification) for local versus
+  CI scope. See [docs/ci.md](docs/ci.md) for available tasks and coverage limits.
 
 The repository pins nightly Rust in `mise.toml` because rustfmt's
 `imports_granularity` setting requires nightly. The formatting and Clippy

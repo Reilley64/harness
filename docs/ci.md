@@ -4,6 +4,10 @@ GitHub automation follows [.github/AGENTS.md](../.github/AGENTS.md).
 
 ## Shared local and CI tasks
 
+The [root verification policy](../AGENTS.md#verification) assigns whole-project
+builds, tests and full check suites to CI. The commands below describe available
+tasks, not a checklist to run in every local checkout.
+
 Install tools with `mise install`. `mise.toml` owns every project tool pin,
 including Rust's nightly version, minimal profile, and Clippy/rustfmt components.
 Use Mise tasks or `mise exec -- cargo …` so ad hoc Cargo commands use the pinned
