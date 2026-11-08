@@ -15,5 +15,7 @@ Follow [the repository coding standards](../../CODING_STANDARDS.md).
   not grant access, fetch content, or expand tools, MCP, or permissions.
 
 Before changing capabilities, prompt ingestion, notifications, replay, or metadata,
-read [ACP presentation](../../docs/acp-presentation.md). When changing usage
+read [ACP presentation](../../docs/acp-presentation.md). For native selection,
+prepared CoS intents or cancellation, also read [native Decider](../../docs/native-decider.md).
+When changing usage
 projection, also read [conversations](../../docs/conversations.md).

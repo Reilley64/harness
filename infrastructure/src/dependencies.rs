@@ -3,12 +3,15 @@ use crate::create_conversation;
 use crate::create_coordinator;
 use crate::create_file;
 use crate::create_model_step_factory;
+use crate::create_native_decision;
 use crate::create_process;
 use crate::create_tool_output;
 use crate::lock_conversation;
 use crate::read_agent;
 use crate::read_code_matches;
 use crate::read_conversation;
+use crate::read_decider;
+use crate::read_decision;
 use crate::read_directory;
 use crate::read_file;
 use crate::read_instructions;
@@ -25,6 +28,8 @@ use crate::read_web_search;
 use crate::read_work;
 use crate::read_work_proposal;
 use crate::update_conversation;
+use crate::update_decider;
+use crate::update_decision;
 use crate::update_file;
 use crate::update_model_allowlist;
 use crate::update_model_selection;
@@ -43,6 +48,12 @@ use crate::settings::Settings;
 #[fundle::bundle]
 pub struct Dependencies {
     settings: Settings,
+    create_assignment: application::use_cases::create_assignment::Dependencies,
+    read_decision: ports::ReadDecision,
+    update_decision: ports::UpdateDecision,
+    create_native_decision: ports::CreateNativeDecision,
+    read_decider: ports::ReadDecider,
+    update_decider: ports::UpdateDecider,
     create_work: application::use_cases::create_work::Dependencies,
     read_work: ports::ReadWork,
     update_work: ports::UpdateWork,
@@ -104,6 +115,44 @@ impl Dependencies {
                             })
                         },
                     ))
+                })
+            })
+            .read_decision(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation =
+                    read_decision::read_decision(&settings.app_data_path.join("decisions"));
+                ports::ReadDecision::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_decision(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation =
+                    update_decision::update_decision(&settings.app_data_path.join("decisions"));
+                ports::UpdateDecision::new(move |decision, revision| {
+                    let result = implementation(decision, revision);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_decider(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_decider::read_decider(
+                    &settings.app_data_path.join("preferences/decider.json"),
+                );
+                ports::ReadDecider::new(move || {
+                    let result = implementation();
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_decider(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = update_decider::update_decider(
+                    &settings.app_data_path.join("preferences/decider.json"),
+                );
+                ports::UpdateDecider::new(move |model_id| {
+                    let result = implementation(model_id);
+                    Box::pin(async move { Ok(result.await?) })
                 })
             })
             .read_work(|deps| {
@@ -435,6 +484,24 @@ impl Dependencies {
                     Box::pin(async move { Ok(future.await?) })
                 })
             })
+            .create_native_decision(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let models: &ports::ReadModels = deps.as_ref();
+                let policy: &ports::ReadModelAllowlist = deps.as_ref();
+                let work: &ports::ReadWork = deps.as_ref();
+                let conversation: &ports::ReadConversation = deps.as_ref();
+                let implementation = create_native_decision::create_native_decision(
+                    &settings.decider,
+                    &settings.authentication.openrouter.issuer,
+                    &settings.app_data_path.join("auth/openrouter.json"),
+                    models.clone(),
+                    policy.clone(),
+                    work.clone(),
+                    conversation.clone(),
+                );
+                ports::CreateNativeDecision::new(implementation)
+            })
+            .create_assignment(|deps| deps.into())
             .create_work(|deps| deps.into())
             .build()
     }

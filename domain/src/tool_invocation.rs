@@ -1,3 +1,4 @@
+use crate::AssignmentBrief;
 use crate::CreateFileArguments;
 use crate::CreateProcessArguments;
 use crate::PublishWorkArguments;
@@ -21,4 +22,5 @@ pub enum ToolInvocation {
     ReadCodeMatches(ReadCodeMatchesArguments),
     ReadWebSearch(ReadWebSearchArguments),
     PublishWork(PublishWorkArguments),
+    PrepareAssignment(AssignmentBrief),
 }

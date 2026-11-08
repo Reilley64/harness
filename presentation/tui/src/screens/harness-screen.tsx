@@ -1,5 +1,5 @@
 import { Box, useApp, useInput, useWindowSize } from "ink";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { commands } from "../commands.js";
 import { TerminalText } from "../components/atoms/terminal-text.js";
 import { MessageLine } from "../components/molecules/message-line.js";
@@ -10,6 +10,7 @@ import { AgentMap } from "../components/organisms/agent-map.js";
 import { ApprovedWorkPanel } from "../components/organisms/approved-work-panel.js";
 import { GuidancePanel } from "../components/organisms/guidance-panel.js";
 import { ModelPicker } from "../components/organisms/model-picker.js";
+import { NativeDeciderPanel } from "../components/organisms/native-decider-panel.js";
 import { ProviderConnectionStatus } from "../components/organisms/provider-connection-status.js";
 import { ProviderPicker } from "../components/organisms/provider-picker.js";
 import { SetupPanel } from "../components/organisms/setup-panel.js";
@@ -24,6 +25,7 @@ import { useCreateProviderConnection } from "../hooks/use-create-provider-connec
 import { useGitBranch } from "../hooks/use-git-branch.js";
 import { useGuidance } from "../hooks/use-guidance.js";
 import { useModelPicker } from "../hooks/use-model-picker.js";
+import { useNativeDecider } from "../hooks/use-native-decider.js";
 import { usePromptDraft } from "../hooks/use-prompt-draft.js";
 import { useProviderPicker } from "../hooks/use-provider-picker.js";
 import { useSetup } from "../hooks/use-setup.js";
@@ -64,6 +66,7 @@ export function HarnessScreen({
   });
   const guidance = useGuidance(agent, chat.conversation);
   const approved = useApprovedWork(agent, chat.conversation);
+  const native = useNativeDecider(agent, chat.conversation?.id);
   const setup = useSetup(
     agent,
     chat.conversation,
@@ -83,6 +86,14 @@ export function HarnessScreen({
   const draft = usePromptDraft(chat.conversation?.id ?? "initial");
   const transcript = useTranscriptViewport(chat.conversation?.id ?? "initial");
   const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (native.mode === "inspector" && native.view?.blocked) {
+      setNotice(native.view.blocked);
+      native.close();
+      void models.open();
+    }
+  }, [native, models]);
+
   const [map, setMap] = useState(false);
   const [stopConfirmation, setStopConfirmation] = useState(false);
   const modal =
@@ -91,6 +102,7 @@ export function HarnessScreen({
     connection.busy ||
     guidance.open ||
     approved.open ||
+    native.mode !== null ||
     setup.open;
   useContextNavigation(
     !modal && !stopConfirmation,
@@ -110,15 +122,17 @@ export function HarnessScreen({
     },
   );
   useContextTitle(
-    map
-      ? "harness - Agent map"
-      : chat.conversation && !chat.conversation.agent
-        ? "harness - Conversation"
-        : role === "chief_of_staff"
-          ? "harness - Chief of Staff"
-          : role === "setup"
-            ? "harness - Setup"
-            : "harness - Griller",
+    native.mode
+      ? "harness - Decider"
+      : map
+        ? "harness - Agent map"
+        : chat.conversation && !chat.conversation.agent
+          ? "harness - Conversation"
+          : role === "chief_of_staff"
+            ? "harness - Chief of Staff"
+            : role === "setup"
+              ? "harness - Setup"
+              : "harness - Griller",
   );
 
   useInput((input, key) => {
@@ -130,6 +144,7 @@ export function HarnessScreen({
     if (
       key.ctrl &&
       input === "r" &&
+      !native.mode &&
       !guidance.open &&
       !approved.open &&
       !setup.open &&
@@ -139,6 +154,10 @@ export function HarnessScreen({
     ) {
       guidance.close();
       draft.recover();
+      return;
+    }
+    if (native.mode) {
+      if (key.escape) native.close();
       return;
     }
     if (approved.open) {
@@ -229,6 +248,7 @@ export function HarnessScreen({
     id?: string,
     role: "setup" | "griller" = "griller",
   ) {
+    native.close();
     guidance.close();
     approved.close();
     setup.close();
@@ -268,6 +288,14 @@ export function HarnessScreen({
     } else if (command === "/map") {
       draft.change("");
       setMap(true);
+    } else if (command === "/decider" || command.startsWith("/decision ")) {
+      draft.change("");
+      guidance.close();
+      approved.close();
+      setMap(false);
+      void native.inspect(
+        command === "/decider" ? undefined : command.slice(10),
+      );
     } else if (command.startsWith("/work ")) {
       draft.change("");
       setMap(false);
@@ -372,6 +400,7 @@ export function HarnessScreen({
         !map &&
         !guidance.open &&
         !approved.open &&
+        !native.mode &&
         !setup.open
       }
       selectedModel={
@@ -413,6 +442,28 @@ export function HarnessScreen({
         <TerminalText>
           {`Stop ${role === "chief_of_staff" ? "Chief of Staff" : role === "setup" ? "Setup" : "Griller"}'s active leaf run? No descendants. Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
         </TerminalText>
+      )}
+      {native.mode && (
+        <NativeDeciderPanel
+          key={native.mode + (native.view?.decision?.id ?? "")}
+          mode={native.mode}
+          settings={native.settings}
+          view={native.view}
+          loading={native.loading}
+          saving={native.saving}
+          pending={native.pending}
+          error={native.error}
+          columns={columns}
+          rows={rows}
+          choose={(id) => void native.choose(id)}
+          select={() => void native.select()}
+          stop={() => void native.stop()}
+          configure={() => {
+            native.close();
+            void models.open();
+          }}
+          discuss={openConversation}
+        />
       )}
       {approved.open && (
         <ApprovedWorkPanel
@@ -478,6 +529,7 @@ export function HarnessScreen({
           stopConfirmation ||
           guidance.open ||
           approved.open ||
+          native.mode ||
           setup.open
             ? "none"
             : "flex"

@@ -1,6 +1,7 @@
 use crate::ports;
 use crate::ports::ReadModelAllowlist;
 use crate::ports::ReadProviderConnection;
+use crate::use_cases::create_assignment;
 use crate::use_cases::create_work;
 
 use crate::ports::CreateModelStepFactory;
@@ -15,6 +16,7 @@ use crate::ports::UpdateModelSelection;
 pub struct Dependencies {
     pub(super) read_work: ports::ReadWork,
     pub(super) create_work: create_work::Dependencies,
+    pub(super) create_assignment: create_assignment::Dependencies,
     pub(super) read_model_allowlist: ReadModelAllowlist,
     pub(super) read_provider_connection: ReadProviderConnection,
     pub(super) read_conversation: ReadConversation,

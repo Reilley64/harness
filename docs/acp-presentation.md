@@ -100,6 +100,13 @@ schemas, native approval, role metadata, persistence/admission and recovery. The
 approval method is never an advertised model tool; ordinary chat/status cannot
 authorize it. A delivered CoS uses the ordinary session/prompt/Resume/tool paths.
 
+## Native Decider extension
+
+`harness/nativeDecider: true` advertises the separate native-release preferences,
+CoS assignment decision queries/select/Stop operations described in
+[native Decider](native-decider.md). No child dispatch is advertised. Selection
+requests have no application or SDK deadline and remain explicitly stoppable.
+
 ## Guidance extension
 
 `harness/guidance: true` advertises read/adopt operations through real application

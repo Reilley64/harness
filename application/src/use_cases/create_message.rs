@@ -6,6 +6,7 @@ mod error;
 mod output;
 
 use crate::model_access;
+use crate::use_cases::create_assignment;
 use crate::use_cases::create_work;
 use crate::work_access;
 pub use dependencies::Dependencies;
@@ -570,6 +571,14 @@ async fn run(
                     .filter_map(|c| c.draft.as_ref())
                     .rfind(|d| d.path == "docs/agents/wiki.md")
                     .map(|d| d.after.clone());
+                let parent_model = domain::ModelSelection {
+                    provider_id: conversation.model.provider_id.clone(),
+                    model_id: conversation.model.id.clone(),
+                    effort: conversation.effort,
+                };
+                let provider_connection_id = conversation.provider_connection_id.clone();
+                let parent_revision = conversation.revision;
+
                 let future = async {
                     if setup {
                         match invocation {
@@ -592,6 +601,9 @@ async fn run(
                         &sender_id,
                         sender_agent.as_ref(),
                         assignment.as_ref(),
+                        parent_model,
+                        provider_connection_id,
+                        parent_revision,
                         invocation,
                         cancellation.clone(),
                     )
@@ -650,12 +662,19 @@ async fn execute(
     sender_id: &str,
     sender_agent: Option<&domain::Agent>,
     assignment: Option<&domain::WorkAssignment>,
+    parent: domain::ModelSelection,
+    parent_connection_id: String,
+    parent_revision: u64,
     invocation: domain::ToolInvocation,
     cancellation: CancellationToken,
 ) -> domain::ToolResult {
     let result: Result<domain::ToolResult, Box<dyn std::error::Error + Send + Sync>> = async {
         work_access::read(&dependencies.read_work,sender_id,assignment).await?;
         Ok(match invocation {
+            domain::ToolInvocation::PrepareAssignment(brief) => {
+                let output = create_assignment::call(dependencies.create_assignment.clone(), sender_id, sender_agent, assignment, parent, parent_connection_id, parent_revision, brief, cancellation).await?;
+                domain::ToolResult::success(format!("Assignment intent {} prepared with the exact actual-parent model AND thinking snapshot. Inspect /decision {}. No worker launched; dispatch/workspaces/review/merge remain unavailable.", output.decision.id, output.decision.id))
+            }
             domain::ToolInvocation::PublishWork(arguments) => {
                 if cancellation.is_cancelled() { return Ok(domain::ToolResult::cancelled()); }
                 let result=create_work::call(dependencies.create_work.clone(),sender_id,sender_agent,workspace,arguments.work_id,arguments.intent,arguments.path,arguments.revision,cancellation).await?;

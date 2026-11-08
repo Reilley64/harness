@@ -25,7 +25,9 @@ checkpoint coordinator, storage and Stop/Resume path. No inference or conversati
 creation occurs just from opening the repository. Choose a model/authentication,
 then send a message to start the detected actor. The accepted approved-work
 handoff still creates a separate CoS through its own authority gate; Setup never
-substitutes for that approval. Child execution and Native Decider remain unavailable.
+substitutes for that approval. [Native Decider selection and inspection](native-decider.md)
+is available for approved CoS assignment intents; it does not launch a child.
+Child execution remains unavailable.
 
 Setup captures its setup-role/procedure closure. Bootstrap may lack a root or
 have both roots: capture existing roots without silently choosing an owner, then

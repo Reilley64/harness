@@ -8,6 +8,7 @@ use crate::read_text_matches;
 use crate::read_web_search;
 use crate::read_work_proposal;
 use crate::tool_io;
+use crate::update_decision;
 use crate::update_file;
 
 pub fn read_tool_invocation()
@@ -27,6 +28,7 @@ pub fn read_tool_invocation()
             domain::Tool::AstSearch => read_code_matches::decode(&arguments),
             domain::Tool::WebSearch => read_web_search::decode(&arguments),
             domain::Tool::PublishWork => read_work_proposal::decode(&arguments),
+            domain::Tool::PrepareAssignment => update_decision::decode(&arguments),
         }
     }
 }

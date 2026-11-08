@@ -16,6 +16,20 @@ pub struct Model {
 }
 
 impl Model {
+    pub fn validate_decider(&self) -> Result<(), &'static str> {
+        if self.provider_id.0 != "openrouter"
+            || !self.capabilities.contains(&ModelCapability::Decisions)
+            || !self.efforts.is_empty()
+            || self.id.to_ascii_lowercase().contains("router")
+            || self.context_window.is_none_or(|limit| limit == 0)
+        {
+            return Err(
+                "Capability blocked: select a native Decisions release or alias, not a worker or hosted router",
+            );
+        }
+        self.validate_effort(None)
+    }
+
     pub fn validate_worker(&self) -> Result<(), &'static str> {
         if !self.capabilities.contains(&ModelCapability::Chat) {
             return Err("This identity lacks the chat capability required for a worker");
