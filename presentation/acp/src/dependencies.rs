@@ -9,12 +9,14 @@ use application::use_cases::read_model_allowlist;
 use application::use_cases::read_model_selection;
 use application::use_cases::read_models;
 use application::use_cases::read_providers;
+use application::use_cases::read_setup;
 use application::use_cases::read_work;
 use application::use_cases::update_agent;
 use application::use_cases::update_guidance;
 use application::use_cases::update_mcp_configuration;
 use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
+use application::use_cases::update_setup;
 use application::use_cases::update_work;
 
 #[fundle::bundle]
@@ -28,6 +30,8 @@ pub struct Dependencies {
     pub authentication: create_provider_connection::Dependencies,
     pub models: read_models::Dependencies,
     pub create_agent: create_agent::Dependencies,
+    pub read_setup: read_setup::Dependencies,
+    pub update_setup: update_setup::Dependencies,
     pub read_agent: read_agent::Dependencies,
     pub read_guidance: read_guidance::Dependencies,
     pub update_guidance: update_guidance::Dependencies,

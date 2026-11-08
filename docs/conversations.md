@@ -16,8 +16,10 @@ See [tool calls](tool-calls.md) for the execution and permissions contract.
 
 ## Workflow
 
-1. Startup reads this repository's Griller when one exists, without inference.
-   Otherwise it renders an empty view and creates no conversation file.
+1. Startup uses the [repository Setup presence detector](repository-setup.md) to
+   select Setup for missing outputs, otherwise Griller, and reads its saved
+   conversation without inference. An absent actor renders an empty view and
+   creates no conversation file.
 2. The user signs in with `/auth` and chooses a model with `/model`.
 3. On the first idea, Ink requests `_harness/agent/start`, backed by
    `create_agent`. It validates model/provider/effort, resolves the saved connection,
@@ -131,7 +133,8 @@ Version three adds an optional Griller identity, linked runs and an interruption
 gate. Version four adds immutable instruction snapshots, a selected reference and
 each run's actual snapshot reference; absent historical instructions remain
 unknown. Version five adds required per-message/run provider provenance. Version six
-adds exact approved assignment/CoS metadata without dropping version-five fields. Optional
+adds exact approved assignment/CoS metadata and Setup roles/tool drafts without
+dropping version-five fields or inventing historical human consent. Optional
 step-level resolved identity/serving provider, generation-time catalog canonical
 ownership and catalog canonical/capability snapshots are retained in independently
 owned records. The additive `capabilities` array contains `chat` and/or `decisions`;
@@ -141,7 +144,8 @@ provider provenance, instruction snapshots and version-six assignment authority.
 Versions one through five remain readable without rewriting; their single stored
 provider is the only
 justified legacy message/run provider when those fields are absent. Mutation
-writes version six. See [role guidance](role-guidance.md).
+writes version six. See [role guidance](role-guidance.md) and
+[repository Setup](repository-setup.md).
 Each run records its own stable identity, agent identity,
 model/effort snapshot and lifecycle status. Reading/updating validates associations
 and chronological reply/status consistency, including complete run coverage for
@@ -220,7 +224,7 @@ cache-write warnings contain no raw errors, URLs, paths, or response content.
 The frontend parses exactly one ID, and Rust loads it through standard ACP
 `session/load`. Bad/missing arguments, absent files, unsupported versions, and
 corrupt records are visible startup errors, never a silent fresh fallback. No
-argument opens this repository's saved Griller if present; it never picks an
+argument opens the detected repository Setup/Griller if present; it never picks an
 arbitrary legacy conversation.
 
 The `--resume` startup option loads history, provider-connection reference, model,

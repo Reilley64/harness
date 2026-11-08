@@ -247,7 +247,11 @@ export function useConversation(
   return {
     conversation,
     cancelOpen,
-    open: async (id?: string) => {
+    open: async (
+      id?: string,
+      role: "setup" | "griller" = "griller",
+      selection: ModelSelection | null = null,
+    ) => {
       if (active.current)
         throw new PresentationError(
           "Stop or finish the current run before opening another conversation.",
@@ -263,13 +267,20 @@ export function useConversation(
         !controller.signal.aborted &&
         !active.current;
       try {
-        const target = id ?? (await agent.readAgent(controller.signal))?.id;
+        const existing = id
+          ? null
+          : await agent.readAgent(role, controller.signal);
         if (!owns()) return null;
-        if (!target)
+        const target = id ?? existing?.id;
+        const next = target
+          ? await agent.loadConversation(target, controller.signal)
+          : selection
+            ? await agent.startAgent(selection, role)
+            : null;
+        if (!next)
           throw new PresentationError(
-            "No saved repository Griller is available.",
+            "Choose a model before starting this role.",
           );
-        const next = await agent.loadConversation(target, controller.signal);
         if (!owns()) return null;
         current.current = next;
         setConversation(next);
@@ -360,6 +371,16 @@ export function useConversation(
         setError(null);
       }
       return updated;
+    },
+    reconcile: (updated: Conversation) => {
+      if (
+        current.current?.id !== updated.id ||
+        updated.revision < current.current.revision
+      )
+        return;
+      current.current = updated;
+      setConversation(updated);
+      setUsage(updated.usage ?? null);
     },
     cancel,
   };

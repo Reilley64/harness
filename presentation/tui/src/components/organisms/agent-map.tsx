@@ -33,7 +33,9 @@ export function AgentMap({
           {agent
             ? agent.role === "chief_of_staff"
               ? "› Chief of Staff"
-              : "› Griller"
+              : agent.role === "setup"
+                ? "› Setup"
+                : "› Griller"
             : conversation
               ? "Unassociated pilot history"
               : "No repository Griller yet"}

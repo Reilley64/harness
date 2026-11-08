@@ -7,5 +7,5 @@ use crate::ports::PortFuture;
 pub struct CreateAgentError;
 
 port! {
-    pub CreateAgent(model: domain::Model, effort: Option<domain::ModelEffort>, connection: domain::ProviderConnection, workspace: std::path::PathBuf,) -> PortFuture<Result<String, CreateAgentError>>;
+    pub CreateAgent(model: domain::Model, effort: Option<domain::ModelEffort>, connection: domain::ProviderConnection, workspace: std::path::PathBuf, role: domain::AgentRole,) -> PortFuture<Result<String, CreateAgentError>>;
 }

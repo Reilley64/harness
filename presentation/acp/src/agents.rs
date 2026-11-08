@@ -8,6 +8,8 @@ use agent_client_protocol::v1::schema::PromptResponse;
 #[request(method="_harness/agent/read",response=Response)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ReadRequest {
+    #[serde(default)]
+    pub role: Option<String>,
     pub cwd: std::path::PathBuf,
 }
 #[derive(
@@ -16,6 +18,8 @@ pub(crate) struct ReadRequest {
 #[request(method="_harness/agent/start",response=Response)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct StartRequest {
+    #[serde(default)]
+    pub role: Option<String>,
     pub cwd: std::path::PathBuf,
     pub selection: Meta,
 }
