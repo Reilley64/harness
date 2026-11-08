@@ -180,7 +180,9 @@ Recovery outputs, including successful blocked inspector/picker queries, preserv
 internal original error chains until the presentation boundary. Worker-pool
 eligibility failures retain their original sources independently, including when
 other pairs remain eligible, the pool is empty, or a later operation fails. Error
-results also own these diagnostics until disposal. Enumeration allows at most
+results also own these diagnostics until disposal. Failed Pending-claim recovery
+preserves both the original write cause and a subsequent read cause; neither
+failure becomes successful admission. Enumeration allows at most
 4,096 internal eligibility diagnostics; reaching that bound returns explicit
 Unsupported without inference or a truncated pool. Persisted reasons and ACP
 project bounded safe categories rather than raw transport bodies, credentials or

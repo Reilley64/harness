@@ -181,11 +181,13 @@ async fn select(
     decision = match d.update_decision.call(checkpoint, Some(revision)).await {
         Ok(saved) => saved,
         Err(error) => {
-            let existing = d
-                .read_decision
-                .call(prior_intent.id.clone())
-                .await
-                .map_err(Error::with_cause)?;
+            let existing = match d.read_decision.call(prior_intent.id.clone()).await {
+                Ok(existing) => existing,
+                Err(read_error) => {
+                    diagnostics.push(Error::with_cause(error));
+                    return Err(Error::with_cause(read_error));
+                }
+            };
             if let Some(existing) = existing
                 && existing.same_intent(&prior_intent)
                 && existing.phase != domain::DecisionPhase::Prepared
