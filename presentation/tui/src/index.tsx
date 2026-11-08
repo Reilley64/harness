@@ -16,6 +16,7 @@ try {
     const conversation = resumeId
       ? await agent.loadConversation(resumeId)
       : await agent.readAgent();
+    const initialSetup = await agent.readSetup(conversation?.id);
     let initialSelection: ModelSelection | null = null;
     let initialModelError: string | null = null;
     if (!conversation) {
@@ -34,6 +35,7 @@ try {
           initialConversation={conversation}
           initialSelection={initialSelection}
           initialModelError={initialModelError}
+          initialSetup={initialSetup}
         />,
         {
           alternateScreen: true,

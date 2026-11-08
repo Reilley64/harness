@@ -76,7 +76,11 @@ committed or disclosed, revoke/rotate it; deleting the current file is insuffici
 Git ignore rules cover common local environment files, key material and default
 in-repository runtime-storage paths, but cannot protect every custom location.
 
-Tools remain automatic, unsandboxed and run with OS-user permissions. File reads,
+Ordinary tools remain automatic, unsandboxed and run with OS-user permissions.
+The [Setup output workflow](repository-setup.md) stages supported file writes as
+preserved-content drafts; only a trusted local ACP/native confirmation can apply
+that exact proposal. This is not a sandbox for trusted bash or future MCP tools,
+nor consent for machine-wide installs, external services or authentication. File reads,
 bash commands and web searches can expose secrets or personal information through
 outputs or queries; those outputs may be saved locally and sent to the configured
 model provider. There is no reliable universal redaction or confidentiality

@@ -9,11 +9,24 @@ pub use output::Output;
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     workspace: std::path::PathBuf,
+    role: Option<domain::AgentRole>,
 ) -> Result<Output, Error> {
     let dependencies = dependencies.into();
+    let role = match role {
+        Some(role) => role,
+        None => dependencies
+            .read_setup
+            .call(
+                workspace.clone(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .map_err(Error::caused_by)?
+            .role(),
+    };
     let Some(id) = dependencies
         .read_agent
-        .call(workspace)
+        .call(workspace, role.clone())
         .await
         .map_err(Error::caused_by)?
     else {
@@ -32,9 +45,11 @@ pub async fn call(
     if conversation
         .agent
         .as_ref()
-        .is_none_or(|agent| agent.role != domain::AgentRole::Griller)
+        .is_none_or(|agent| agent.role != role)
     {
-        return Err(Error::caused_by("Repository association is not a Griller"));
+        return Err(Error::caused_by(
+            "Repository association does not match the requested role",
+        ));
     }
     if conversation.recover() {
         conversation = dependencies

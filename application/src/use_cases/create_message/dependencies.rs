@@ -24,6 +24,7 @@ pub struct Dependencies {
     pub(super) read_models: ReadModels,
     pub(super) create_model_step_factory: CreateModelStepFactory,
     pub(super) update_model_selection: UpdateModelSelection,
+    pub(super) read_setup_draft: ports::ReadSetupDraft,
     pub(super) read_file: ports::ReadFile,
     pub(super) create_process: ports::CreateProcess,
     pub(super) update_file: ports::UpdateFile,

@@ -10,16 +10,16 @@ resolves the embedded bundle, explicit configuration and repository documents.
 adopts an inspected candidate under the conversation lock and checked revision.
 Domain values remain Serde-free. Each conversation adapter owns its own records.
 
-Griller and the approved-work Chief of Staff execute through the shared loop.
-Setup, Research, Implementer, Reviewer, review-axis and Retro assets remain
-bundled for later assignment owners;
+Griller, [Setup](repository-setup.md) and the approved-work Chief of Staff execute
+through the shared loop. Research, Implementer, Reviewer, review-axis and Retro
+assets remain bundled for later assignment owners;
 inspection is not an agent roster, dispatch API or creation relationship. Native
 Jev Decider has a separate typed-decision contract, not a conversational/tool role.
 All conversational roles use shared configured tools. Guidance cannot grant scope,
 settle work, reset allowances, authorize writes/merge or resolve Unknown effects.
 Bash/MCP are OS-user trusted; source worktrees do not isolate services or secrets.
 
-Setup detection/generation/consent/wiki, child execution/joins/steering,
+Child execution/joins/steering,
 completion/continuation, compaction and provider fallback are not implemented by
 this module. Missing glossary/ADR files are not unconditional Setup triggers.
 
@@ -142,7 +142,7 @@ again. Adoption changes future runs only; prior run references/text remain intac
 The durable selected reference and immutable retained snapshots record adoption;
 this is not a separate event/audit service.
 
-Versions 1–5 still load, including existing v4 instruction snapshots. Unassociated pilot conversations keep their historical
+Versions 1–5 still load, including existing v4 instruction snapshots and v5 provider provenance. Unassociated pilot conversations keep their historical
 behavior without a fabricated role provenance. Historical Griller runs with no
 snapshot remain explicitly unknown. An interrupted such run cannot Resume through
 a newly invented snapshot: inspect history/effects, explicitly acknowledge the

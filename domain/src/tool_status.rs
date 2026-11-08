@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolStatus {
+    Draft,
     Requested,
     Running,
     Succeeded,
@@ -14,6 +15,7 @@ pub enum ToolStatus {
 impl ToolStatus {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Draft => "draft",
             Self::Requested => "requested",
             Self::Running => "running",
             Self::Succeeded => "succeeded",
@@ -27,6 +29,7 @@ impl ToolStatus {
     }
     pub fn parse(value: &str) -> Option<Self> {
         [
+            Self::Draft,
             Self::Requested,
             Self::Running,
             Self::Succeeded,

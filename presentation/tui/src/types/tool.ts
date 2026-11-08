@@ -1,4 +1,5 @@
 export const toolStatuses = [
+  "draft",
   "requested",
   "running",
   "succeeded",
