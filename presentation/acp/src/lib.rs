@@ -4,6 +4,7 @@ mod conversations;
 mod decisions;
 mod dependencies;
 mod guidance;
+mod mcp;
 mod projection;
 mod prompt;
 mod setup;
@@ -51,6 +52,7 @@ use application::use_cases::read_model_allowlist;
 use application::use_cases::read_model_selection;
 use application::use_cases::read_models;
 use application::use_cases::read_providers;
+use application::use_cases::update_mcp_configuration;
 use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
 
@@ -66,6 +68,7 @@ use crate::providers::ProvidersResponse;
 
 pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
     let Dependencies {
+        mcp,
         providers,
         read_decision,
         update_decision,
@@ -115,6 +118,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         .on_receive_request(
             async |_: InitializeRequest, responder, _connection| {
                 let metadata: serde_json::Map<String, serde_json::Value> = [
+                    ("harness/mcp".into(), serde_json::json!(true)),
                     ("harness/providerCatalog".into(), serde_json::json!(true)),
                     ("harness/modelCatalog".into(), serde_json::json!(true)),
                     ("harness/modelSelection".into(), serde_json::json!(true)),
@@ -236,6 +240,26 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     match application::use_cases::update_work::call(d,request.id,request.revision,request.version,request.intent,selection,request.session_revision).await {
                         Ok(o)=>responder.respond(work::Response {work:Some(work::summary(&o.work)),conversation_id:Some(o.conversation_id)}),
                         Err(e)=>responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: mcp::Request, responder, connection| {
+                let dependencies = mcp.clone();
+                connection.spawn(async move {
+                    let cancellation = tokio_util::sync::CancellationToken::new();
+                    let operation = update_mcp_configuration::call(dependencies, request.workspace, request.operation.into(), cancellation.clone());
+                    tokio::pin!(operation);
+                    let request_cancellation = responder.cancellation();
+                    let result = tokio::select! {
+                        result = &mut operation => result,
+                        _ = request_cancellation.cancelled() => { cancellation.cancel(); operation.await }
+                    };
+                    match result {
+                        Ok(output) => responder.respond(mcp::Response::from(output.configuration)),
+                        Err(error) => responder.respond_with_error(Error::new(-32006, "MCP operation failed; check configuration, trust and provisioned references. Reload to reconcile conflicting edits; custom/manual setup remains available.").data(application::error_context::diagnostic(&error))),
                     }
                 })
             },

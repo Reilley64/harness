@@ -19,22 +19,28 @@ second model loop.
 | `web_search` | `ReadWebSearch` | `read_web_search` |
 | `publish_work` | `PublishWork` | `read_work_proposal` + application `create_work` |
 | `prepare_assignment` | `PrepareAssignment` | application `create_assignment` + `update_decision` |
+| `mcp_configuration` | `McpConfiguration` | `update_mcp_configuration` |
+| `mcp_call` | `McpCall` | `create_mcp_call` |
 
-`domain::Tool` identifies the fixed tool set; `ToolInvocation` carries typed
+`domain::Tool` identifies the fixed dispatch set (dynamic MCP identities are typed invocation fields); `ToolInvocation` carries typed
 arguments. Each adapter owns its strict camelCase `Arguments` representation and
 JSON schema. Unknown fields, malformed JSON, disabled tools, and unavailable tools
 produce invalid-call results without executing anything.
 
 Tools are enabled by default. `TOOLS__ENABLED=false` disables advertisement and
 execution for text-only operation. AST search is advertised only when
-`ast-grep --version` reports exactly `ast-grep 0.51.0`. There are no plugins, MCP servers, managed child dispatch, browser automation,
-PTYs, persistent shells or managed background jobs. Trusted exact-version
+`ast-grep --version` reports exactly `ast-grep 0.51.0`. Trusted configured stdio
+MCP servers use the same durable tool loop; see [MCP connections](mcp-connections.md)
+for native configuration, protected trust, discovery and shared cleanup. HTTP
+execution is not yet available. There are no plugins, managed child dispatch,
+browser automation, PTYs, persistent shells or managed background jobs. Trusted exact-version
 [approved handoff](approved-work.md) can create a separate conversational CoS;
 model tools cannot grant human approval.
 
 ## Permissions and workspace
 
-All enabled tools run automatically, without approvals or permission cards, with
+Enabled native tools and already-trusted MCP invocations run automatically,
+without per-call approvals or permission cards, with
 the OS user's permissions. The workspace is a working directory, not a sandbox.
 Absolute paths and readable files outside it are accessible, including credentials.
 Harness does not proactively inject OAuth tokens into tool arguments, prompts,

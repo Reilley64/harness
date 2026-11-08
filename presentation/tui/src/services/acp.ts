@@ -12,6 +12,7 @@ import {
 import type { Conversation } from "../types/conversation.js";
 import type { Deciders, DecisionResponse } from "../types/decision.js";
 import type { Guidance, GuidanceQuery } from "../types/guidance.js";
+import type { McpOperation } from "../types/mcp.js";
 import type { Model, ModelSelection } from "../types/model.js";
 import type { Provider } from "../types/provider.js";
 import type {
@@ -29,6 +30,7 @@ import { parseConversation, selectionMetadata } from "./conversations.js";
 import { parseDeciders, parseDecision } from "./decisions.js";
 import { PresentationError } from "./errors.js";
 import { parseGuidance } from "./guidance.js";
+import { parseMcp } from "./mcp.js";
 import { parseModelSelection, parseModels } from "./models.js";
 import { readableStream } from "./readable-stream.js";
 import { parseSetup } from "./setup.js";
@@ -180,6 +182,26 @@ export function connectAgent() {
         return response;
       });
     return initialization;
+  }
+
+  async function updateMcp(
+    operation: McpOperation,
+    workspace: string,
+    signal: AbortSignal,
+  ) {
+    const initialized = await initialize();
+    signal.throwIfAborted();
+    if (initialized._meta?.["harness/mcp"] !== true)
+      throw new PresentationError(
+        "MCP configuration is not available from this agent.",
+      );
+    return parseMcp(
+      await connection.agent.request<unknown>(
+        "_harness/mcp",
+        { workspace, ...operation },
+        { cancellationSignal: signal, stopWaitingOnCancel: true },
+      ),
+    );
   }
 
   async function listProviders(signal: AbortSignal): Promise<Provider[]> {
@@ -796,6 +818,7 @@ export function connectAgent() {
 
   return {
     initialize,
+    updateMcp,
     listProviders,
     listModels,
     modelAllowlist,

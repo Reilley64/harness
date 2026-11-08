@@ -18,6 +18,7 @@ export const commands: readonly string[] = [
   "/stop",
   "/resume",
   "/resume inspect",
+  "/mcp",
   "/quit",
   "/exit",
 ];
