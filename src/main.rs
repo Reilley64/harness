@@ -22,7 +22,9 @@ async fn run() -> Result<(), AppError> {
     let presentation = presentation_acp::Dependencies::builder()
         .mcp(|_| (&dependencies).into())
         .providers(|_| (&dependencies).into())
-        .create_dispatch(|_| (&dependencies).into())
+        .create_dispatch(|_| {
+            application::use_cases::create_dispatch::Dependencies::new((&dependencies).into())
+        })
         .read_children(|_| (&dependencies).into())
         .update_children(|_| (&dependencies).into())
         .read_decision(|_| (&dependencies).into())
