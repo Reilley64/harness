@@ -181,6 +181,8 @@ impl From<domain::Conversation> for Record {
                 id: agent.id.0,
                 role: if agent.role == domain::AgentRole::ChiefOfStaff {
                     "chief_of_staff"
+                } else if agent.role == domain::AgentRole::Setup {
+                    "setup"
                 } else {
                     "griller"
                 }
@@ -414,6 +416,23 @@ impl TryFrom<Record> for domain::Conversation {
         if messages.len() % 2 != 0 {
             return Err("Incomplete conversation record".into());
         }
+        for call in messages
+            .iter()
+            .flat_map(|m| &m.steps)
+            .flat_map(|s| &s.calls)
+        {
+            if let Some(draft) = &call.draft {
+                if dto.version < 6
+                    || dto.agent.as_ref().is_none_or(|a| a.role != "setup")
+                    || call.name != "write"
+                    || dto.workspace.as_ref() != Some(&draft.workspace)
+                {
+                    return Err("Setup draft has no valid role/workspace provenance".into());
+                }
+            } else if call.status == domain::ToolStatus::Draft {
+                return Err("Draft tool status requires its exact proposal".into());
+            }
+        }
         let agent = dto
             .agent
             .map(|agent| {
@@ -421,6 +440,7 @@ impl TryFrom<Record> for domain::Conversation {
                 let role = match agent.role.as_str() {
                     "griller" => domain::AgentRole::Griller,
                     "chief_of_staff" if dto.version >= 6 => domain::AgentRole::ChiefOfStaff,
+                    "setup" if dto.version >= 6 => domain::AgentRole::Setup,
                     _ => return Err(StorageError::from("Unsupported agent role")),
                 };
                 Ok(domain::Agent {
@@ -668,6 +688,8 @@ struct SteeringRecord {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CallRecord {
+    #[serde(default)]
+    draft: Option<DraftRecord>,
     id: String,
     call_id: String,
     name: String,
@@ -678,6 +700,42 @@ struct CallRecord {
     truncated: bool,
     elapsed_ms: u64,
     text_offset: usize,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DraftRecord {
+    workspace: std::path::PathBuf,
+    path: String,
+    before: Option<String>,
+    after: String,
+    roots: Vec<(String, Option<String>)>,
+}
+
+impl TryFrom<DraftRecord> for domain::SetupDraft {
+    type Error = StorageError;
+    fn try_from(record: DraftRecord) -> Result<Self, Self::Error> {
+        let draft = Self {
+            workspace: record.workspace,
+            path: record.path,
+            before: record.before,
+            after: record.after,
+            roots: record.roots,
+        };
+        draft.validate()?;
+        Ok(draft)
+    }
+}
+
+impl From<domain::SetupDraft> for DraftRecord {
+    fn from(draft: domain::SetupDraft) -> Self {
+        Self {
+            workspace: draft.workspace,
+            path: draft.path,
+            before: draft.before,
+            after: draft.after,
+            roots: draft.roots,
+        }
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -712,6 +770,7 @@ impl From<domain::ModelStep> for StepRecord {
                 .calls
                 .into_iter()
                 .map(|c| CallRecord {
+                    draft: c.draft.map(|draft| (*draft).into()),
                     id: c.id,
                     call_id: c.call_id,
                     name: c.name,
@@ -782,6 +841,7 @@ impl TryFrom<StepRecord> for domain::ModelStep {
                 return Err("Invalid tool call record".into());
             }
             calls.push(domain::ToolCall {
+                draft: c.draft.map(TryInto::try_into).transpose()?.map(Box::new),
                 id: c.id,
                 call_id: c.call_id,
                 name: c.name,

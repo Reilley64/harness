@@ -128,7 +128,7 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
         "selectedInstructions": conversation.selected_instructions,
         "assignment": conversation.assignment.as_ref().map(|a| serde_json::json!({"workId":a.work_id,"intent":a.intent,"version":a.proposal.version,"creatorId":a.creator_id,"approvedAt":a.approved_at,"document":a.proposal.document})),
         "agent": conversation.agent.as_ref().map(|agent| serde_json::json!({
-            "id": agent.id.0, "role": if agent.role == domain::AgentRole::ChiefOfStaff { "chief_of_staff" } else { "griller" }, "creatorId": conversation.assignment.as_ref().map(|a|&a.creator_id),
+            "id": agent.id.0, "role": match agent.role { domain::AgentRole::ChiefOfStaff => "chief_of_staff", domain::AgentRole::Setup => "setup", _ => "griller" }, "creatorId": conversation.assignment.as_ref().map(|a|&a.creator_id),
         })),
         "runs": conversation.runs.iter().map(|run| serde_json::json!({
             "id": run.id, "agentId": run.agent_id.0, "replyId": run.reply_id,

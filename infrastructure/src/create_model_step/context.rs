@@ -37,7 +37,7 @@ fn input(
     if conversation.agent.as_ref().is_some_and(|agent| {
         matches!(
             agent.role,
-            domain::AgentRole::Griller | domain::AgentRole::ChiefOfStaff
+            domain::AgentRole::Griller | domain::AgentRole::ChiefOfStaff | domain::AgentRole::Setup
         )
     }) {
         let snapshot = conversation.run_instructions()?;
@@ -190,6 +190,7 @@ pub(super) fn step(
                 .filter(|s| s.len() <= 256)
                 .ok_or("Invalid tool name")?;
             calls.push(domain::ToolCall {
+                draft: None,
                 id: uuid::Uuid::new_v4().to_string(),
                 call_id: id.into(),
                 name: name.into(),

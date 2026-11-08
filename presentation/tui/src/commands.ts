@@ -4,6 +4,8 @@ export const commands: readonly string[] = [
   "/map",
   "/work",
   "/open",
+  "/setup",
+  "/setup chat",
   "/griller",
   "/guidance",
   "/guidance adopt",

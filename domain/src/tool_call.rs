@@ -1,9 +1,11 @@
+use crate::SetupDraft;
 use crate::Tool;
 use crate::ToolResult;
 use crate::ToolStatus;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolCall {
+    pub draft: Option<Box<SetupDraft>>,
     pub id: String,
     pub call_id: String,
     pub name: String,
@@ -42,6 +44,7 @@ impl ToolCall {
                 status,
                 ToolStatus::Running | ToolStatus::Invalid | ToolStatus::Skipped
             ),
+            ToolStatus::Draft => matches!(status, ToolStatus::Running | ToolStatus::Skipped),
             ToolStatus::Running => status.terminal(),
             _ => false,
         }

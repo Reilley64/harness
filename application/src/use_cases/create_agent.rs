@@ -12,11 +12,24 @@ pub async fn call(
     dependencies: impl Into<Dependencies>,
     selection: domain::ModelSelection,
     workspace: std::path::PathBuf,
+    role: Option<domain::AgentRole>,
 ) -> Result<Output, Error> {
     let dependencies = dependencies.into();
+    let role = match role {
+        Some(role) => role,
+        None => dependencies
+            .read_setup
+            .call(
+                workspace.clone(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .map_err(Error::caused_by)?
+            .role(),
+    };
     let existing = dependencies
         .read_agent
-        .call(workspace.clone())
+        .call(workspace.clone(), role.clone())
         .await
         .map_err(Error::caused_by)?;
     let id = if let Some(id) = existing {
@@ -40,7 +53,7 @@ pub async fn call(
         .map_err(Error::caused_by)?;
         dependencies
             .create_agent
-            .call(model, selection.effort, connection, workspace)
+            .call(model, selection.effort, connection, workspace, role.clone())
             .await
             .map_err(Error::caused_by)?
     };
@@ -57,9 +70,11 @@ pub async fn call(
     if conversation
         .agent
         .as_ref()
-        .is_none_or(|agent| agent.role != domain::AgentRole::Griller)
+        .is_none_or(|agent| agent.role != role)
     {
-        return Err(Error::caused_by("Repository association is not a Griller"));
+        return Err(Error::caused_by(
+            "Repository association does not match the requested role",
+        ));
     }
     if conversation.recover() {
         conversation = dependencies

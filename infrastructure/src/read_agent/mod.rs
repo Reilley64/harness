@@ -5,13 +5,15 @@ use std::path::Path;
 
 pub fn read_agent(
     directory: &Path,
-) -> impl Fn(std::path::PathBuf) -> PortFuture<Result<Option<String>, StorageError>> + Send + Sync + use<>
-{
+) -> impl Fn(std::path::PathBuf, domain::AgentRole) -> PortFuture<Result<Option<String>, StorageError>>
++ Send
++ Sync
++ use<> {
     let directory = directory.to_owned();
-    move |workspace| {
+    move |workspace, role| {
         let directory = directory.clone();
         Box::pin(async move {
-            let (_, id) = repository::identity(&workspace).await?;
+            let (_, id) = repository::agent_identity(&workspace, role).await?;
             match tokio::fs::symlink_metadata(directory.join(format!("{id}.json"))).await {
                 Ok(_) => Ok(Some(id)),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
