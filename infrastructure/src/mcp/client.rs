@@ -334,10 +334,10 @@ impl Client {
             return Ok((Vec::new(), Some(domain::ToolResult::failed("MCP server rejected the tool request. No success was confirmed; verify operation/access and follow documented CLI procedures or ask for configuration. Discovery/read does not establish write authority or an exclusive claim.".into()))));
         }
         if result.is_err() {
-            if let Err(recovery) = self.transport.close().await {
-                if let Err(original) = result {
-                    result = Err(RecoveryFailure { original, recovery }.into());
-                }
+            if let Err(recovery) = self.transport.close().await
+                && let Err(original) = result
+            {
+                result = Err(RecoveryFailure { original, recovery }.into());
             }
             if sent {
                 self.cause = result.err();

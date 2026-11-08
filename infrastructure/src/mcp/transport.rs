@@ -6,8 +6,8 @@ use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 pub(super) enum Transport {
-    Stdio(stdio::Transport),
-    Http(http::Transport),
+    Stdio(Box<stdio::Transport>),
+    Http(Box<http::Transport>),
 }
 
 impl Transport {
@@ -30,7 +30,7 @@ impl Transport {
                     cancellation,
                 )
                 .await?;
-                Ok((Self::Stdio(transport), secrets))
+                Ok((Self::Stdio(Box::new(transport)), secrets))
             }
             domain::McpTransport::Http {
                 url,
@@ -40,7 +40,7 @@ impl Transport {
                 let (mut transport, mut secrets) =
                     http::Transport::start(auth_path, url, headers, oauth.as_ref())?;
                 secrets.extend(transport.prepare(cancellation).await?);
-                Ok((Self::Http(transport), secrets))
+                Ok((Self::Http(Box::new(transport)), secrets))
             }
             domain::McpTransport::Disabled => Err("MCP server is disabled".into()),
         }

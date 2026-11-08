@@ -161,15 +161,14 @@ impl Transport {
             let mut value =
                 HeaderValue::from_str(&secret).context("Invalid MCP provisioned header")?;
             value.set_sensitive(true);
-            if name == "authorization" {
-                if let Some((scheme, credential)) = secret.split_once(' ') {
-                    let credential = credential.trim();
-                    if (scheme.eq_ignore_ascii_case("Bearer")
-                        || scheme.eq_ignore_ascii_case("Basic"))
-                        && !credential.is_empty()
-                    {
-                        secrets.push(credential.to_owned());
-                    }
+            if name == "authorization"
+                && let Some((scheme, credential)) = secret.split_once(' ')
+            {
+                let credential = credential.trim();
+                if (scheme.eq_ignore_ascii_case("Bearer") || scheme.eq_ignore_ascii_case("Basic"))
+                    && !credential.is_empty()
+                {
+                    secrets.push(credential.to_owned());
                 }
             }
             if headers.insert(name, value).is_some() {

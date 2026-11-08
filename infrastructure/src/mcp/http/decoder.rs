@@ -97,12 +97,12 @@ impl Decoder {
                 }
                 self.data.extend_from_slice(data.as_bytes());
                 self.data.push(b'\n');
-            } else if let Some(event) = line.strip_prefix("event:") {
-                if !matches!(event.trim(), "message" | "") {
-                    return Err(
-                        "Unsupported MCP SSE event; legacy endpoint events are not followed".into(),
-                    );
-                }
+            } else if let Some(event) = line.strip_prefix("event:")
+                && !matches!(event.trim(), "message" | "")
+            {
+                return Err(
+                    "Unsupported MCP SSE event; legacy endpoint events are not followed".into(),
+                );
             }
         }
     }

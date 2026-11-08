@@ -102,10 +102,10 @@ pub(super) fn challenge_scope(headers: &HeaderMap) -> Result<Option<String>, Err
                 .to_str()
                 .context("Invalid MCP authentication challenge header")?,
         )?;
-        if let Some(value) = parameters.remove("scope") {
-            if !valid_scope(&value) || scope.replace(value).is_some() {
-                return Err(failure("Invalid or ambiguous MCP scope challenge"));
-            }
+        if let Some(value) = parameters.remove("scope")
+            && (!valid_scope(&value) || scope.replace(value).is_some())
+        {
+            return Err(failure("Invalid or ambiguous MCP scope challenge"));
         }
     }
     Ok(scope)
@@ -343,18 +343,18 @@ async fn token(
                         metadata.scope.clone()
                     }
                 });
-            if let Some(required) = &metadata.scope {
-                if !required.split_ascii_whitespace().all(|required| {
+            if let Some(required) = &metadata.scope
+                && !required.split_ascii_whitespace().all(|required| {
                     scope.as_ref().is_some_and(|granted| {
                         granted
                             .split_ascii_whitespace()
                             .any(|granted| granted == required)
                     })
-                }) {
-                    return Err(failure(
-                        "MCP OAuth did not grant the required resource scopes",
-                    ));
-                }
+                })
+            {
+                return Err(failure(
+                    "MCP OAuth did not grant the required resource scopes",
+                ));
             }
             let identity_token = response
                 .get("id_token")
@@ -427,12 +427,12 @@ async fn token(
     } else {
         None
     };
-    if let Some(previous) = previous {
-        if previous.account != account {
-            return Err(failure(
-                "MCP authorization account changed; disconnect and explicitly review a new connection before replacing its identity",
-            ));
-        }
+    if let Some(previous) = previous
+        && previous.account != account
+    {
+        return Err(failure(
+            "MCP authorization account changed; disconnect and explicitly review a new connection before replacing its identity",
+        ));
     }
 
     grant.account = account;
@@ -675,12 +675,13 @@ pub(super) async fn invalidate(
 ) -> Result<(), Error> {
     let _lock = store::lock(path, &CancellationToken::new()).await?;
     let mut record = store::load(path).await?;
-    if let Some(grant) = &mut record.grant {
-        if grant.generation == generation && grant.access == access {
-            grant.unusable = true;
-            grant.required_scope = required_scope;
-            store::save(path, record).await?;
-        }
+    if let Some(grant) = &mut record.grant
+        && grant.generation == generation
+        && grant.access == access
+    {
+        grant.unusable = true;
+        grant.required_scope = required_scope;
+        store::save(path, record).await?;
     }
     Ok(())
 }
