@@ -27,11 +27,18 @@ export function useMcp(
   const [confirmation, setConfirmation] = useState<McpServer | null>(null);
   const [page, setPage] = useState(0);
   const [metadataVisible, setMetadataVisible] = useState(false);
+  const diagnostic = error ?? configuration?.error ?? null;
   const detail =
     confirmation?.definition ??
     (metadataVisible ? configuration?.registry_metadata : null);
+  const content =
+    authorizationVisible && authorizationUrl
+      ? authorizationUrl
+      : !confirmation && !metadataVisible && diagnostic
+        ? diagnostic
+        : JSON.stringify(detail, null, 2);
   const ascii =
-    JSON.stringify(detail, null, 2)?.replace(
+    content?.replace(
       /[^\x20-\x7e\n]/g,
       (character) =>
         `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
@@ -62,6 +69,7 @@ export function useMcp(
       setError(null);
       setAuthorizationUrl(null);
       setAuthorizationVisible(false);
+      setPage(0);
 
       try {
         const result = await agent.updateMcp(
@@ -166,7 +174,13 @@ export function useMcp(
       return;
     }
     if (busy && authorizationUrl) {
-      if (input === "l") setAuthorizationVisible((visible) => !visible);
+      if (input === "l") {
+        setAuthorizationVisible((visible) => !visible);
+        setPage(0);
+      }
+      if (authorizationVisible && key.rightArrow)
+        setPage(Math.min(pageCount - 1, page + 1));
+      if (authorizationVisible && key.leftArrow) setPage(Math.max(0, page - 1));
       if (input === "o") {
         const controller = pending.current;
         void openAuthorizationUrl(authorizationUrl).catch((error) => {
@@ -195,6 +209,9 @@ export function useMcp(
       return;
     }
 
+    if (diagnostic && key.rightArrow)
+      setPage(Math.min(pageCount - 1, page + 1));
+    if (diagnostic && key.leftArrow) setPage(Math.max(0, page - 1));
     const servers = configuration?.servers ?? [];
     if (key.upArrow || key.downArrow)
       setSelected(
@@ -223,6 +240,7 @@ export function useMcp(
     busy,
     authorizationUrl,
     authorizationVisible,
+    diagnostic,
     error,
     selected,
     confirmation,

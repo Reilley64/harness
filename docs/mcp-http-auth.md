@@ -80,8 +80,12 @@ uses a new ephemeral port. A busy port is an actionable configuration failure.
 
 Saving, registry discovery, reading and loading snapshots never log in. From the
 exact-definition native Connect approval, the backend discovers metadata and
-presents an operation-correlated protected browser link. The TUI keeps it hidden:
-`o` opens it, `l` reveals/hides it, and Escape cancels the attempt. Link notifications
+presents an operation-correlated protected browser link. A dedicated TUI pane keeps
+it hidden: `o` opens it, `l` reveals/hides it, and Escape cancels the attempt.
+Revealed links are paged with left/right arrows and reset on resize; protected
+controls remain visible at small supported dimensions. Safe operation/configuration
+diagnostics are likewise paged rather than clipped behind ordinary metadata.
+Link notifications
 bind the operation ID, workspace and definition revision. Replacement, dismissal
 and cancellation invalidate the old presentation operation.
 

@@ -10,6 +10,29 @@ export function McpPanel({
   rows: number;
 }) {
   const { configuration, selected, confirmation, metadataVisible } = state;
+  if (state.authorizationUrl)
+    return (
+      <Box flexDirection="column">
+        <TerminalText bold>MCP OAuth · protected link</TerminalText>
+        <TerminalText>o open · l reveal/hide · Esc cancel</TerminalText>
+        {state.authorizationVisible ? (
+          <>
+            {state.detailLines.map((line) => (
+              <TerminalText key={line.id}>{line.text}</TerminalText>
+            ))}
+            <TerminalText>{`←→ page ${state.page + 1}/${state.pageCount}`}</TerminalText>
+          </>
+        ) : (
+          <TerminalText>Link hidden.</TerminalText>
+        )}
+        <TerminalText
+          color={state.error ? "red" : "yellow"}
+          wrap="truncate-end"
+        >
+          {state.error ?? "Cancel is not rollback."}
+        </TerminalText>
+      </Box>
+    );
   if (confirmation || metadataVisible)
     return (
       <Box flexDirection="column">
@@ -42,7 +65,29 @@ export function McpPanel({
       </Box>
     );
 
-  const server = confirmation ?? configuration?.servers[selected];
+  const server = configuration?.servers[selected];
+  if (state.diagnostic)
+    return (
+      <Box flexDirection="column">
+        <TerminalText bold>
+          {state.busy ? "MCP · working" : "MCP · diagnostic"}
+        </TerminalText>
+        {server && (
+          <TerminalText wrap="truncate-end">{`${server.definition.name} · ${server.status}`}</TerminalText>
+        )}
+        {state.detailLines.map((line) => (
+          <TerminalText key={line.id} color="yellow">
+            {line.text}
+          </TerminalText>
+        ))}
+        <TerminalText>{`←→ page ${state.page + 1}/${state.pageCount}`}</TerminalText>
+        <TerminalText>
+          {state.busy
+            ? "Working · Esc cancel"
+            : "c review · r reload · Esc close"}
+        </TerminalText>
+      </Box>
+    );
   const count = Math.max(1, Math.min(6, rows - 18));
   const start = Math.max(0, selected - count + 1);
 
@@ -98,11 +143,6 @@ export function McpPanel({
       {state.busy && (
         <TerminalText>
           Working… Esc cancels the wait; completed saves are not rolled back.
-        </TerminalText>
-      )}
-      {state.authorizationUrl && (
-        <TerminalText color="yellow">
-          {`MCP OAuth · o opens the protected sign-in link · l reveals/hides it · Esc cancels.${state.authorizationVisible ? ` ${state.authorizationUrl}` : " Link hidden."}`}
         </TerminalText>
       )}
       {state.error && <TerminalText color="red">{state.error}</TerminalText>}
