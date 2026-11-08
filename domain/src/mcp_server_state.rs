@@ -3,7 +3,6 @@ pub enum McpServerState {
     Disabled,
     Untrusted,
     Trusted,
-    HttpExecutionUnavailable,
 }
 
 impl McpServerState {
@@ -12,7 +11,6 @@ impl McpServerState {
             Self::Disabled => "disabled",
             Self::Untrusted => "untrusted",
             Self::Trusted => "trusted",
-            Self::HttpExecutionUnavailable => "http_execution_unavailable",
         }
     }
 }

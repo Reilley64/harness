@@ -1,5 +1,7 @@
+import { usePaste } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../services/acp.js";
+import { openAuthorizationUrl } from "../services/authorization.js";
 import { errorMessage } from "../services/errors.js";
 import { parseMcpDefinition } from "../services/mcp.js";
 import type {
@@ -15,20 +17,30 @@ export function useMcp(
   rows: number,
 ) {
   const [visible, setVisible] = useState(false);
+  usePaste(() => undefined, { isActive: visible });
   const [configuration, setConfiguration] = useState<McpConfiguration | null>(
     null,
   );
   const [busy, setBusy] = useState(false);
+  const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
+  const [authorizationVisible, setAuthorizationVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const [confirmation, setConfirmation] = useState<McpServer | null>(null);
   const [page, setPage] = useState(0);
   const [metadataVisible, setMetadataVisible] = useState(false);
+  const diagnostic = error ?? configuration?.error ?? null;
   const detail =
     confirmation?.definition ??
     (metadataVisible ? configuration?.registry_metadata : null);
+  const content =
+    authorizationVisible && authorizationUrl
+      ? authorizationUrl
+      : !confirmation && !metadataVisible && diagnostic
+        ? diagnostic
+        : JSON.stringify(detail, null, 2);
   const ascii =
-    JSON.stringify(detail, null, 2)?.replace(
+    content?.replace(
       /[^\x20-\x7e\n]/g,
       (character) =>
         `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
@@ -57,20 +69,30 @@ export function useMcp(
       pending.current = controller;
       setBusy(true);
       setError(null);
+      setAuthorizationUrl(null);
+      setAuthorizationVisible(false);
+      setPage(0);
 
       try {
         const result = await agent.updateMcp(
           operation,
           workspace,
           controller.signal,
+          (url) => {
+            if (pending.current === controller && !controller.signal.aborted)
+              setAuthorizationUrl(url);
+          },
         );
-        if (!controller.signal.aborted) setConfiguration(result);
+        if (pending.current === controller && !controller.signal.aborted)
+          setConfiguration(result);
       } catch (error) {
         if (!controller.signal.aborted) setError(errorMessage(error));
       } finally {
         if (pending.current === controller) {
           pending.current = null;
           setBusy(false);
+          setAuthorizationUrl(null);
+          setAuthorizationVisible(false);
         }
       }
     },
@@ -96,6 +118,8 @@ export function useMcp(
     pending.current?.abort();
     pending.current = null;
     setBusy(false);
+    setAuthorizationUrl(null);
+    setAuthorizationVisible(false);
     setVisible(false);
   }
 
@@ -145,10 +169,44 @@ export function useMcp(
       leftArrow?: boolean;
       rightArrow?: boolean;
       return?: boolean;
+      ctrl?: boolean;
+      meta?: boolean;
+      eventType?: "press" | "repeat" | "release";
     },
   ) {
+    if (key.eventType === "release") return;
     if (key.escape) {
       close();
+      return;
+    }
+    if (columns < 50 || rows < 18 || key.ctrl || key.meta) return;
+    if (
+      key.eventType === "repeat" &&
+      !key.leftArrow &&
+      !key.rightArrow &&
+      !key.upArrow &&
+      !key.downArrow
+    )
+      return;
+    if (busy && authorizationUrl) {
+      if (input === "l") {
+        setAuthorizationVisible((visible) => !visible);
+        setPage(0);
+      }
+      if (authorizationVisible && key.rightArrow)
+        setPage(Math.min(pageCount - 1, page + 1));
+      if (authorizationVisible && key.leftArrow) setPage(Math.max(0, page - 1));
+      if (input === "o") {
+        const controller = pending.current;
+        void openAuthorizationUrl(authorizationUrl).catch((error) => {
+          if (
+            controller &&
+            pending.current === controller &&
+            !controller.signal.aborted
+          )
+            setError(errorMessage(error));
+        });
+      }
       return;
     }
     if (busy) return;
@@ -166,6 +224,9 @@ export function useMcp(
       return;
     }
 
+    if (diagnostic && key.rightArrow)
+      setPage(Math.min(pageCount - 1, page + 1));
+    if (diagnostic && key.leftArrow) setPage(Math.max(0, page - 1));
     const servers = configuration?.servers ?? [];
     if (key.upArrow || key.downArrow)
       setSelected(
@@ -192,6 +253,9 @@ export function useMcp(
     visible,
     configuration,
     busy,
+    authorizationUrl,
+    authorizationVisible,
+    diagnostic,
     error,
     selected,
     confirmation,

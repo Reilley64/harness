@@ -45,6 +45,7 @@ use agent_client_protocol::v1::schema::PromptRequest;
 use agent_client_protocol::v1::schema::SessionNotification;
 use application::error_context::ResultExt;
 use application::ports::PresentAuthorization;
+use application::ports::PresentMcpAuthorization;
 use application::use_cases::create_conversation;
 use application::use_cases::create_provider_connection;
 use application::use_cases::read_conversation;
@@ -248,9 +249,23 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         .on_receive_request(
             async move |request: mcp::Request, responder, connection| {
                 let dependencies = mcp.clone();
+                let authorization_connection = connection.clone();
                 connection.spawn(async move {
                     let cancellation = tokio_util::sync::CancellationToken::new();
-                    let operation = update_mcp_configuration::call(dependencies, request.workspace, request.operation.into(), cancellation.clone());
+                    let present = match (&request.operation, request.authentication_id) {
+                        (mcp::Operation::Connect { revision, .. }, Some(id)) if !id.is_empty() && id.len() <= 128 => {
+                            let revision = revision.clone();
+                            let workspace = request.workspace.clone();
+                            Some(PresentMcpAuthorization::new(move |authorization_url| {
+                                authorization_connection.send_notification(mcp::AuthorizationChallenge {
+                                    authentication_id: id.clone(), workspace: workspace.clone(), revision: revision.clone(), authorization_url,
+                                }).map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
+                                Ok(())
+                            }))
+                        }
+                        _ => None,
+                    };
+                    let operation = update_mcp_configuration::call(dependencies, request.workspace, request.operation.into(), present, cancellation.clone());
                     tokio::pin!(operation);
                     let request_cancellation = responder.cancellation();
                     let result = tokio::select! {
@@ -258,7 +273,10 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                         _ = request_cancellation.cancelled() => { cancellation.cancel(); operation.await }
                     };
                     match result {
-                        Ok(output) => responder.respond(mcp::Response::from(output.configuration)),
+                        Ok(output) => match tokio::task::spawn_blocking(move || mcp::Response::from(output.configuration)).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(Error::new(-32006, "MCP response projection failed; reload to reconcile completed changes").data(application::error_context::diagnostic(&error))),
+                        },
                         Err(error) => responder.respond_with_error(Error::new(-32006, "MCP operation failed; check configuration, trust and provisioned references. Reload to reconcile conflicting edits; custom/manual setup remains available.").data(application::error_context::diagnostic(&error))),
                     }
                 })

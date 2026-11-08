@@ -159,9 +159,13 @@ pub use create_tool_output::CreateToolOutputError;
 use futures::future::BoxFuture;
 
 pub type PortFuture<T> = BoxFuture<'static, T>;
+mod present_mcp_authorization;
+pub use present_mcp_authorization::PresentMcpAuthorization;
 mod update_mcp_configuration;
+pub use update_mcp_configuration::Response as McpConfigurationResponse;
 pub use update_mcp_configuration::UpdateMcpConfiguration;
 pub use update_mcp_configuration::UpdateMcpConfigurationError;
 mod create_mcp_call;
 pub use create_mcp_call::CreateMcpCall;
 pub use create_mcp_call::CreateMcpCallError;
+pub use create_mcp_call::Response as McpCallResponse;

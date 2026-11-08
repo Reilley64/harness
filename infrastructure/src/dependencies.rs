@@ -102,7 +102,10 @@ impl Dependencies {
     pub fn build(settings: Settings) -> Self {
         Self::builder()
             .settings(|_| settings.clone())
-            .mcp_connections(|_| Connections::new())
+            .mcp_connections(|deps| {
+                let settings: &Settings = deps.as_ref();
+                Connections::new(&settings.app_data_path)
+            })
             .update_mcp_configuration(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let connections: &Connections = deps.as_ref();
@@ -111,10 +114,18 @@ impl Dependencies {
                     &settings.mcp.registry_url,
                     connections,
                 );
-                ports::UpdateMcpConfiguration::new(move |workspace, action, cancellation| {
-                    let future = update(workspace, action, cancellation);
-                    Box::pin(async move { Ok(future.await?) })
-                })
+                ports::UpdateMcpConfiguration::new(
+                    move |workspace, action, present_authorization, cancellation| {
+                        let future = update(workspace, action, present_authorization, cancellation);
+                        Box::pin(async move {
+                            let response = future.await?;
+                            Ok(ports::McpConfigurationResponse {
+                                configuration: response.configuration,
+                                diagnostics: response.diagnostics,
+                            })
+                        })
+                    },
+                )
             })
             .create_mcp_call(|deps| {
                 let connections: &Connections = deps.as_ref();
@@ -122,7 +133,13 @@ impl Dependencies {
                 let create = create_mcp_call::create_mcp_call(connections, configuration.clone());
                 ports::CreateMcpCall::new(move |workspace, arguments, cancellation| {
                     let future = create(workspace, arguments, cancellation);
-                    Box::pin(async move { Ok(future.await?) })
+                    Box::pin(async move {
+                        let output = future.await?;
+                        Ok(ports::McpCallResponse {
+                            result: output.result,
+                            cause: output.cause,
+                        })
+                    })
                 })
             })
             .create_provider_connection_factory(|deps| {

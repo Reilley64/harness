@@ -1,4 +1,4 @@
-# Shared MCP configuration and stdio tools
+# Shared MCP configuration and tools
 
 Harness owns MCP configuration independently of model-provider connections. The
 native `/mcp` command and the `mcp_configuration` agent tool use the same public
@@ -7,10 +7,11 @@ connection runtime. Configuration does not require a conversation, catalog,
 provider credentials or inference. All consumers of one backend runtime share
 these tools; there is no role-based permission matrix.
 
-This implementation executes **stdio only**. Custom HTTP definitions can be
-saved, validated and reviewed, but their status is `http_execution_unavailable`.
-Connect does not fabricate an HTTP connection or browser authentication. The
-Streamable HTTP/OAuth adapter is separate work.
+Stdio and Streamable HTTP use one protocol client, typed invocation path and
+bounded result projection. HTTP selects MCP protocol **2025-06-18**, not legacy
+HTTP+SSE or universal/latest conformance. The result contract remains the bundled
+2025-06-18 schema. See [HTTP and OAuth](mcp-http-auth.md) for supported prerequisites,
+authorization identity, refresh, recovery and current qualification limits.
 
 ## Native workflow
 
@@ -40,7 +41,9 @@ process launch, so a saved trust decision need not imply successful discovery.
 Read/reload to reconcile a completed commit whose discovery or response was lost.
 Conversation state and the editable command draft are not submitted as chat by these controls.
 
-Connect records local trust and initializes/discovers a stdio server. Subsequent
+Connect records local trust and initializes/discovers the configured server.
+Configured OAuth first requires successful explicit browser authorization; saving
+trust is neither successful authentication nor permission to send a tool mutation. Subsequent
 `trusted` status describes consent/eligibility, **not a health or liveness
 claim**; discovery/execution reports current failures. Closing the panel does not
 disconnect tools used by other conversations. A failed executable/runtime or
@@ -95,9 +98,9 @@ A custom HTTP definition is independent of registry publication:
 
 HTTP URLs require HTTPS (loopback HTTP is allowed), and cannot embed credentials,
 a query or fragment. Headers contain provisioned references, not literal values.
-This schema does not yet configure browser OAuth. Saving an HTTP reference does not resolve credentials or send a request to its
-endpoint. Connect fails as unavailable and records no HTTP activation consent;
-the dependent adapter must obtain its own explicit native Connect/login.
+Saving an HTTP reference does not resolve credentials, contact its endpoint or
+grant trust. Configured generic OAuth additionally requires explicit native Connect;
+see [HTTP and OAuth](mcp-http-auth.md) for the nonsecret `oauth` configuration.
 
 Names are stable, case-sensitive, 1–64 ASCII alphanumeric/underscore/dash/dot
 characters. Repository entries replace an entire app entry of the same name,
@@ -120,7 +123,10 @@ advisory locks cannot eliminate a noncooperating editor's final rename race.
 Startup (native workspace initialization or first backend configuration access)
 and explicit reload validate both files without rewriting them. Invalid input
 shows its app/repository source and retains the last validated snapshot, including
-a private persisted snapshot across restart. With no previous valid snapshot the
+a private persisted snapshot across restart. Configuration outputs privately own
+the original validation/storage diagnostics, including failed saved-snapshot
+recovery; ACP and model-facing summaries publish only safe contexts, not those
+causes. A later successful reload clears the stale diagnostics. With no previous valid snapshot the
 effective set is empty and visibly stale. Fix the original file and reload.
 Read/status does not launch a server. New backends do not start tools merely by
 loading a persisted snapshot; an explicit trusted tool/discovery request is needed.
@@ -130,7 +136,7 @@ loading a persisted snapshot; an explicit trusted tool/discovery request is need
 Trust is user-local, never accepted from a repository file, registry metadata or
 agent configuration-tool arguments. It is stored privately under
 `<app_data_path>/mcp/trust.json`, separate from provider auth. Consent binds the
-canonical workspace, source and exact definition revision (including command,
+canonical UTF-8 workspace, source and exact definition revision (including command,
 arguments, endpoint and environment/header references). A new/materially changed
 definition requires another native Connect. Approval replaces the prior decision
 for that stable workspace/name; reverting after approving a different definition
@@ -279,7 +285,9 @@ Running before effects and stored results before continuation. Native PTY checks
 cover review/cancel, custom save, unavailable registry, reload, resize and terminal
 cleanup; they are not a human terminal-emulator visual signoff. No permanent tests,
 test-only dependencies or production test hooks are added. Live servers, actual
-tracker writes/claims, HTTP/OAuth and later factory roles remain separate evidence.
+tracker writes/claims and later factory roles remain separate evidence. HTTP and OAuth
+observations are retained separately: historical stdio observations below are not
+HTTP/OAuth behavioral acceptance.
 
 The cycle-2 rework retains original historical probe claims separately from fresh
 focused checks. Public configuration/typed-call probes cover pre-cancelled and

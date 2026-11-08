@@ -14,8 +14,28 @@ Connect has a paged exact-definition review and explicit confirmation; Escape
 cancels review without activation. Custom saves, manual files and explicit reload
 share the backend/schema with the agent configuration tool. The command draft
 and conversation stay intact while the panel is open. Provisioned references,
-not secrets, enter configuration. See [MCP connections](mcp-connections.md) for
-commands, keys, errors, bounds and the current stdio-only execution boundary.
+not secrets, enter configuration. Stdio and Streamable HTTP use the same backend
+configuration and tool pipeline. See [MCP connections](mcp-connections.md) for
+commands, keys, errors and bounds, and [HTTP and OAuth](mcp-http-auth.md) for the
+supported transport/client profiles and private credential lifecycle.
+
+For OAuth Connect, the service sends a fresh `authentication_id` and matches
+`_harness/mcp/authorization` notifications against that ID, workspace and exact
+definition revision. The hook also fences presentation against its active,
+uncancelled operation. Authorization links stay in a protected native pane,
+hidden by default: `o` explicitly opens the link, `l` reveals/hides it, and
+Left/Right pages a revealed link. Resize resets paging. Escape cancels the pending
+attempt and invalidates its presentation, without claiming to undo a committed
+save or credential update. Closing the panel does not revoke shared tool access.
+Protected actions require at least 50 columns × 18 rows; below that size they are
+blocked while Escape remains available. MCP modals consume bracketed paste
+without activating shortcuts.
+
+Cancellation keeps the underlying MCP response wait so admitted backend commits
+can finish; pending MCP requests join the bounded 60-second shutdown drain.
+Response loss requires read/reload reconciliation, not silent login or replay.
+External clients should follow the exact
+[ACP MCP challenge and cancellation contract](acp-presentation.md#mcp-oauth-challenge-correlation).
 
 ## Atomic design
 

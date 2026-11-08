@@ -1,5 +1,6 @@
 mod arguments;
 mod record;
+mod reload_failure;
 
 pub use arguments::decode;
 pub use arguments::definition;
@@ -10,8 +11,10 @@ use crate::tool_io::Error;
 use application::error_context::ResultExt;
 use application::error_context::diagnostic;
 use application::ports::PortFuture;
+use application::ports::PresentMcpAuthorization;
 use record::FileRecord;
 use record::Record;
+use reload_failure::ReloadFailure;
 use serde_json::Value;
 use sha2::Digest;
 use sha2::Sha256;
@@ -34,11 +37,17 @@ struct Snapshot {
     files: SnapshotRecord,
 }
 
+pub struct Response {
+    pub configuration: domain::McpConfiguration,
+    pub diagnostics: Vec<Arc<dyn std::error::Error + Send + Sync>>,
+}
+
 struct State {
     root: PathBuf,
     registry_url: String,
     connections: Connections,
-    snapshots: BTreeMap<PathBuf, Snapshot>,
+    snapshots: BTreeMap<PathBuf, Arc<Snapshot>>,
+    diagnostics: BTreeMap<PathBuf, Vec<Arc<dyn std::error::Error + Send + Sync>>>,
 }
 
 pub fn update_mcp_configuration(
@@ -48,8 +57,9 @@ pub fn update_mcp_configuration(
 ) -> impl Fn(
     PathBuf,
     domain::McpConfigurationAction,
+    Option<PresentMcpAuthorization>,
     CancellationToken,
-) -> PortFuture<Result<domain::McpConfiguration, Error>>
+) -> PortFuture<Result<Response, Error>>
 + Send
 + Sync
 + use<> {
@@ -58,13 +68,17 @@ pub fn update_mcp_configuration(
         registry_url: registry_url.to_owned(),
         connections: connections.clone(),
         snapshots: BTreeMap::new(),
+        diagnostics: BTreeMap::new(),
     }));
 
-    move |workspace, action, cancellation| {
+    move |workspace, action, present_authorization, cancellation| {
         let state = state.clone();
         Box::pin(async move {
             ensure_active(&cancellation)?;
             let workspace = tokio::fs::canonicalize(workspace).await?;
+            if workspace.to_str().is_none() {
+                return Err("MCP workspace identity is not UTF-8").context("MCP workspaces require an unambiguous UTF-8 path; choose a supported workspace before configuring trust").map_err(Into::into);
+            }
             let mut state = tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => return Err("MCP configuration cancelled before admission".into()),
@@ -109,9 +123,10 @@ pub fn update_mcp_configuration(
                     }
                     if matches!(
                         server.definition.transport,
-                        domain::McpTransport::Http { .. }
-                    ) {
-                        return Err("Streamable HTTP execution/login is unavailable; definition saved only and no activation consent recorded".into());
+                        domain::McpTransport::Http { oauth: Some(_), .. }
+                    ) && present_authorization.is_none()
+                    {
+                        return Err("MCP OAuth requires explicit native Connect with protected authorization presentation".into());
                     }
                     ensure_active(&cancellation)?;
                     let _lock = storage::lock(&state.root.join("trust.json")).await.context("MCP trust lock is unavailable; check local permissions or a concurrent update")?;
@@ -127,6 +142,10 @@ pub fn update_mcp_configuration(
                     ensure_active(&cancellation)?;
 
                     storage::replace(&state.root.join("trust.json"), &bytes).await?;
+                    state
+                        .connections
+                        .disconnect(&workspace, &server.revision)
+                        .await;
                 }
                 domain::McpConfigurationAction::Disconnect { name } => {
                     let server = state.server(&workspace, name)?;
@@ -142,6 +161,7 @@ pub fn update_mcp_configuration(
                         .connections
                         .disconnect(&workspace, &server.revision)
                         .await;
+                    state.connections.revoke(&server).await?;
                 }
                 _ => {}
             }
@@ -149,6 +169,25 @@ pub fn update_mcp_configuration(
             let mut configuration = state.configuration(&workspace).await?;
             let connections = state.connections.clone();
             let registry_url = state.registry_url.clone();
+            let diagnostics = state
+                .diagnostics
+                .get(&workspace)
+                .cloned()
+                .unwrap_or_default();
+            let permit = if let domain::McpConfigurationAction::Connect { name, .. } = &action {
+                let server = configuration
+                    .servers
+                    .iter()
+                    .find(|server| server.definition.name == *name)
+                    .ok_or("MCP server not configured")?;
+                Some(
+                    connections
+                        .admit_connect(&workspace, server, cancellation.clone())
+                        .await?,
+                )
+            } else {
+                None
+            };
             drop(state);
             match &action {
                 domain::McpConfigurationAction::Discover { name }
@@ -158,15 +197,18 @@ pub fn update_mcp_configuration(
                         .iter()
                         .find(|server| server.definition.name == *name)
                         .ok_or("MCP server not configured")?;
-                    if !matches!(
-                        server.definition.transport,
-                        domain::McpTransport::Http { .. }
-                    ) {
-                        configuration.tools =
-                            connections.tools(&workspace, server, cancellation).await?;
-                    } else if matches!(action, domain::McpConfigurationAction::Discover { .. }) {
-                        return Err("Streamable HTTP execution is unavailable; saved definition is not a connected server".into());
+                    if matches!(action, domain::McpConfigurationAction::Connect { .. }) {
+                        connections
+                            .authenticate(
+                                permit.ok_or("Missing MCP Connect admission")?,
+                                server,
+                                present_authorization.as_ref(),
+                                cancellation.clone(),
+                            )
+                            .await?;
                     }
+                    configuration.tools =
+                        connections.tools(&workspace, server, cancellation).await?;
                 }
                 domain::McpConfigurationAction::Registry { query } => {
                     configuration.registry_metadata =
@@ -175,7 +217,10 @@ pub fn update_mcp_configuration(
                 _ => {}
             }
 
-            Ok(configuration)
+            Ok(Response {
+                configuration,
+                diagnostics,
+            })
         })
     }
 }
@@ -243,6 +288,9 @@ impl State {
     }
 
     fn snapshot(workspace: &Path, files: SnapshotRecord) -> Result<Snapshot, Error> {
+        if files.app.len() > 262144 || files.repository.len() > 262144 {
+            return Err("MCP snapshot files exceed the 256 KiB configuration bound".into());
+        }
         let app = parse(&files.app)
             .context("App MCP file has invalid schema or duplicate server names")?;
         let repository = parse(&files.repository)
@@ -307,52 +355,80 @@ impl State {
 
         match candidate {
             Ok(snapshot) => {
-                let bytes = serde_json::to_vec(&snapshot.files)?;
+                let snapshot = Arc::new(snapshot);
+                let encoding = Arc::clone(&snapshot);
+                let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, Error> {
+                    Ok(serde_json::to_vec(&encoding.files)?)
+                })
+                .await??;
                 ensure_active(cancellation)?;
 
                 storage::replace(&path, &bytes).await?;
                 self.snapshots.insert(workspace.to_owned(), snapshot);
+                self.diagnostics.remove(workspace);
             }
             Err(error) => {
+                let message = diagnostic(error.as_ref());
+                let mut diagnostics: Vec<Arc<dyn std::error::Error + Send + Sync>> =
+                    vec![Arc::from(error)];
                 if !self.snapshots.contains_key(workspace) {
-                    let saved = storage::read_private(&path, 2_097_152).await.ok();
-                    let files = tokio::task::spawn_blocking(move || {
-                        saved
-                            .and_then(|bytes| serde_json::from_slice::<SnapshotRecord>(&bytes).ok())
-                    })
-                    .await?;
-                    let fallback = match files {
-                        Some(files) => Self::validated(workspace, files).await.ok(),
-                        None => None,
+                    let fallback = match Self::saved(workspace, &path).await {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            diagnostics.push(Arc::from(error));
+                            None
+                        }
                     };
                     let snapshot = match fallback {
                         Some(snapshot) => snapshot,
-                        None => {
-                            Self::validated(
-                                workspace,
-                                SnapshotRecord {
-                                    app: "{\"version\":1,\"servers\":[]}".into(),
-                                    repository: "{\"version\":1,\"servers\":[]}".into(),
-                                },
-                            )
-                            .await?
-                        }
+                        None => match Self::validated(
+                            workspace,
+                            SnapshotRecord {
+                                app: "{\"version\":1,\"servers\":[]}".into(),
+                                repository: "{\"version\":1,\"servers\":[]}".into(),
+                            },
+                        )
+                        .await
+                        {
+                            Ok(snapshot) => snapshot,
+                            Err(cause) => return Err(ReloadFailure { cause, diagnostics }.into()),
+                        },
                     };
-                    self.snapshots.insert(workspace.to_owned(), snapshot);
+                    self.snapshots
+                        .insert(workspace.to_owned(), Arc::new(snapshot));
                 }
-
                 let snapshot = self
                     .snapshots
-                    .get_mut(workspace)
+                    .remove(workspace)
                     .ok_or("Missing MCP snapshot")?;
-                snapshot.configuration.stale = true;
-                snapshot.configuration.error = Some(format!(
-                    "{}. File preserved; using last validated snapshot. Fix the file and reload.",
-                    diagnostic(error.as_ref())
-                ));
+                let snapshot = tokio::task::spawn_blocking(move || {
+                    let mut snapshot = Arc::unwrap_or_clone(snapshot);
+                    snapshot.configuration.stale = true;
+                    snapshot.configuration.error = Some(format!("{message}. File preserved; using last validated snapshot. Fix the file and reload."));
+                    Arc::new(snapshot)
+                }).await?;
+                self.snapshots.insert(workspace.to_owned(), snapshot);
+                self.diagnostics.insert(workspace.to_owned(), diagnostics);
             }
         }
         Ok(())
+    }
+
+    async fn saved(workspace: &Path, path: &Path) -> Result<Option<Snapshot>, Error> {
+        match tokio::fs::symlink_metadata(path).await {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+            Ok(_) => {}
+        }
+        let bytes = storage::read_private(path, 2_097_152)
+            .await
+            .context("Saved MCP snapshot is inaccessible; preserve it and check private storage")?;
+        let files = tokio::task::spawn_blocking(move || -> Result<SnapshotRecord, Error> {
+            Ok(serde_json::from_slice(&bytes)
+                .context("Saved MCP snapshot is corrupt or incompatible")?)
+        })
+        .await??;
+        Ok(Some(Self::validated(workspace, files).await?))
     }
 
     fn server(&self, workspace: &Path, name: &str) -> Result<domain::McpServerStatus, Error> {
@@ -384,12 +460,13 @@ impl State {
     }
 
     async fn configuration(&self, workspace: &Path) -> Result<domain::McpConfiguration, Error> {
-        let mut configuration = self
-            .snapshots
-            .get(workspace)
-            .ok_or("Missing MCP snapshot")?
-            .configuration
-            .clone();
+        let snapshot = Arc::clone(
+            self.snapshots
+                .get(workspace)
+                .ok_or("Missing MCP snapshot")?,
+        );
+        let mut configuration =
+            tokio::task::spawn_blocking(move || snapshot.configuration.clone()).await?;
         let trust = self.trust().await?;
         for server in &mut configuration.servers {
             server.status = server.definition.state(

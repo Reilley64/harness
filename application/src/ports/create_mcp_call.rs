@@ -7,4 +7,10 @@ use tokio_util::sync::CancellationToken;
 #[from(Box<dyn std::error::Error + Send + Sync>)]
 #[display("MCP execution failed")]
 pub struct CreateMcpCallError;
-port! { pub CreateMcpCall(workspace: PathBuf, arguments: domain::McpCallArguments, cancellation: CancellationToken,) -> PortFuture<Result<domain::ToolResult, CreateMcpCallError>>; }
+#[derive(Debug)]
+pub struct Response {
+    pub result: domain::ToolResult,
+    pub cause: Option<Box<dyn std::error::Error + Send + Sync>>,
+}
+
+port! { pub CreateMcpCall(workspace: PathBuf, arguments: domain::McpCallArguments, cancellation: CancellationToken,) -> PortFuture<Result<Response, CreateMcpCallError>>; }

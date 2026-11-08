@@ -2,6 +2,7 @@ mod dependencies;
 mod error;
 mod output;
 
+use crate::ports::PresentMcpAuthorization;
 pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
@@ -12,14 +13,18 @@ pub async fn call(
     dependencies: impl Into<Dependencies>,
     workspace: PathBuf,
     action: domain::McpConfigurationAction,
+    present_authorization: Option<PresentMcpAuthorization>,
     cancellation: CancellationToken,
 ) -> Result<Output, Error> {
-    let configuration = dependencies
+    let response = dependencies
         .into()
         .update_mcp_configuration
-        .call(workspace, action, cancellation)
+        .call(workspace, action, present_authorization, cancellation)
         .await
         .map_err(Error::caused_by)?;
 
-    Ok(Output { configuration })
+    Ok(Output {
+        configuration: response.configuration,
+        diagnostics: response.diagnostics,
+    })
 }

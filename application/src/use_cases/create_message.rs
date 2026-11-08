@@ -189,7 +189,10 @@ async fn coordinate(
         .call(conversation.model.provider_id.clone())
         .map_err(Error::caused_by)?;
     if cancellation.is_cancelled() {
-        return Ok(Output { conversation });
+        return Ok(Output {
+            conversation,
+            tool_errors: Vec::new(),
+        });
     }
     let selected_model =
         domain::SelectedModel::new(conversation.model.clone(), conversation.effort)
@@ -200,7 +203,10 @@ async fn coordinate(
         .await
         .map_err(Error::caused_by)?;
     if cancellation.is_cancelled() {
-        return Ok(Output { conversation });
+        return Ok(Output {
+            conversation,
+            tool_errors: Vec::new(),
+        });
     }
     if let Some(content) = content {
         conversation
@@ -245,6 +251,7 @@ async fn coordinate(
         visible.call(event)
     });
     let turn_cancellation = cancellation.child_token();
+    let mut tool_errors = Vec::new();
     let result = {
         let result = run(
             &dependencies,
@@ -253,10 +260,11 @@ async fn coordinate(
             &buffer,
             &present,
             &mut steering,
+            &mut tool_errors,
             &turn_cancellation,
         );
         tokio::pin!(result);
-        tokio::select! {outcome=&mut result=>outcome,_=tokio::time::sleep(std::time::Duration::from_secs(1200))=>{turn_cancellation.cancel();let _=result.await;Err(Error::caused_by("Turn exceeded 20 minutes"))}}
+        tokio::select! {outcome=&mut result=>outcome,_=tokio::time::sleep(std::time::Duration::from_secs(1200))=>{turn_cancellation.cancel();let stopped=result.await;Err(match stopped { Ok(_) => Error::caused_by("Turn exceeded 20 minutes"), Err(original) => error::retain(Error::caused_by("Turn exceeded 20 minutes"), vec![Box::new(original)]) })}}
     };
     let status = if cancellation.is_cancelled() {
         domain::MessageStatus::Cancelled
@@ -266,14 +274,29 @@ async fn coordinate(
             Err(_) => domain::MessageStatus::Failed,
         }
     };
-    conversation
-        .finish_reply(buffer.lock().clone(), status)
-        .map_err(Error::caused_by)?;
-    checkpoint(&dependencies, &mut conversation).await?;
-    if status != domain::MessageStatus::Cancelled {
-        result?;
+    let finalization = async {
+        conversation
+            .finish_reply(buffer.lock().clone(), status)
+            .map_err(Error::caused_by)?;
+        checkpoint(&dependencies, &mut conversation).await
     }
-    Ok(Output { conversation })
+    .await;
+    if let Err(error) = finalization {
+        if let Err(original) = result {
+            tool_errors.push(Box::new(original));
+        }
+        return Err(error::retain(error, tool_errors));
+    }
+    if let Err(error) = result {
+        if status != domain::MessageStatus::Cancelled {
+            return Err(error::retain(error, tool_errors));
+        }
+        tool_errors.push(Box::new(error));
+    }
+    Ok(Output {
+        conversation,
+        tool_errors,
+    })
 }
 
 async fn checkpoint(
@@ -337,6 +360,7 @@ async fn run(
     buffer: &Arc<Mutex<String>>,
     present: &PresentTurnEvent,
     steering: &mut tokio::sync::mpsc::Receiver<SteeringRequest>,
+    tool_errors: &mut Vec<Box<dyn std::error::Error + Send + Sync>>,
     cancellation: &CancellationToken,
 ) -> Result<domain::MessageStatus, Error> {
     let reply = conversation.active_reply().map_err(Error::caused_by)?;
@@ -606,6 +630,7 @@ async fn run(
                         provider_connection_id,
                         parent_revision,
                         invocation,
+                        tool_errors,
                         cancellation.clone(),
                     )
                     .await
@@ -677,7 +702,7 @@ fn mcp_summary(configuration: domain::McpConfiguration) -> String {
         ));
         match server.definition.transport {
             domain::McpTransport::Stdio { command, args } => output.push_str(&format!("Transport: stdio | command: {command:?} | args: {args:?}\n")),
-            domain::McpTransport::Http { url, headers } => output.push_str(&format!("Transport: HTTP (execution unavailable) | URL: {url:?} | header references: {headers:?}\n")),
+            domain::McpTransport::Http { url, headers, oauth } => output.push_str(&format!("Transport: Streamable HTTP | URL: {url:?} | header references: {headers:?} | OAuth configuration: {oauth:?}\n")),
             domain::McpTransport::Disabled => output.push_str("Transport: disabled override\n"),
         }
         output.push_str(&format!(
@@ -697,7 +722,7 @@ fn mcp_summary(configuration: domain::McpConfiguration) -> String {
         ));
     }
 
-    output.push_str("New/materially changed definitions require human /mcp Connect. Use provisioned secret references only. HTTP execution is unavailable. Discovery/read does not prove writes or exclusive tracker claim. Follow documented configured CLI procedures or ask for access; reconcile uncertain effects before retrying.");
+    output.push_str("New/materially changed definitions require human /mcp Connect. Use provisioned secret references only. HTTP OAuth login requires explicit native Connect; saving configuration does not authorize login. Discovery/read does not prove writes or exclusive tracker claim. Follow documented configured CLI procedures or ask for access; reconcile uncertain effects before retrying.");
 
     output
 }
@@ -712,6 +737,7 @@ async fn execute(
     parent_connection_id: String,
     parent_revision: u64,
     invocation: domain::ToolInvocation,
+    tool_errors: &mut Vec<Box<dyn std::error::Error + Send + Sync>>,
     cancellation: CancellationToken,
 ) -> domain::ToolResult {
     let result: Result<domain::ToolResult, Box<dyn std::error::Error + Send + Sync>> = async {
@@ -727,25 +753,26 @@ async fn execute(
                 domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Child dispatch, review and merge are unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
             }
             domain::ToolInvocation::McpCall(arguments) => {
-                dependencies
-                    .create_mcp_call
-                    .call(workspace, arguments, cancellation)
-                    .await?
+                let response = dependencies.create_mcp_call.call(workspace, arguments, cancellation).await?;
+                if let Some(cause) = response.cause { tool_errors.push(cause); }
+                response.result
             }
             domain::ToolInvocation::McpConfiguration(action) => {
-                let snapshot = update_mcp_configuration::call(
+                let response = update_mcp_configuration::call(
                     update_mcp_configuration::Dependencies {
                         update_mcp_configuration: dependencies.update_mcp_configuration.clone(),
                     },
                     workspace,
                     action,
+                    None,
                     cancellation,
                 )
-                .await?
-                .configuration;
+                .await?;
+                for cause in response.diagnostics { tool_errors.push(Box::new(cause)); }
+                let snapshot = response.configuration;
                 domain::ToolResult {
                     status: domain::ToolStatus::Succeeded,
-                    output: mcp_summary(snapshot),
+                    output: tokio::task::spawn_blocking(move || mcp_summary(snapshot)).await?,
                     artifact: None,
                     truncated: false,
                 }
@@ -808,6 +835,8 @@ async fn execute(
     }
     .await;
     result.unwrap_or_else(|error| {
-        domain::ToolResult::failed(error_context::diagnostic(error.as_ref()))
+        let diagnostic = error_context::diagnostic(error.as_ref());
+        tool_errors.push(error);
+        domain::ToolResult::failed(diagnostic)
     })
 }

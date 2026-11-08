@@ -10,6 +10,29 @@ export function McpPanel({
   rows: number;
 }) {
   const { configuration, selected, confirmation, metadataVisible } = state;
+  if (state.authorizationUrl)
+    return (
+      <Box flexDirection="column">
+        <TerminalText bold>MCP OAuth · protected link</TerminalText>
+        <TerminalText>o open · l reveal/hide · Esc cancel</TerminalText>
+        {state.authorizationVisible ? (
+          <>
+            {state.detailLines.map((line) => (
+              <TerminalText key={line.id}>{line.text}</TerminalText>
+            ))}
+            <TerminalText>{`←→ page ${state.page + 1}/${state.pageCount}`}</TerminalText>
+          </>
+        ) : (
+          <TerminalText>Link hidden.</TerminalText>
+        )}
+        <TerminalText
+          color={state.error ? "red" : "yellow"}
+          wrap="truncate-end"
+        >
+          {state.error ?? "Cancel is not rollback."}
+        </TerminalText>
+      </Box>
+    );
   if (confirmation || metadataVisible)
     return (
       <Box flexDirection="column">
@@ -42,7 +65,29 @@ export function McpPanel({
       </Box>
     );
 
-  const server = confirmation ?? configuration?.servers[selected];
+  const server = configuration?.servers[selected];
+  if (state.diagnostic)
+    return (
+      <Box flexDirection="column">
+        <TerminalText bold>
+          {state.busy ? "MCP · working" : "MCP · diagnostic"}
+        </TerminalText>
+        {server && (
+          <TerminalText wrap="truncate-end">{`${server.definition.name} · ${server.status}`}</TerminalText>
+        )}
+        {state.detailLines.map((line) => (
+          <TerminalText key={line.id} color="yellow">
+            {line.text}
+          </TerminalText>
+        ))}
+        <TerminalText>{`←→ page ${state.page + 1}/${state.pageCount}`}</TerminalText>
+        <TerminalText>
+          {state.busy
+            ? "Working · Esc cancel"
+            : "c review · r reload · Esc close"}
+        </TerminalText>
+      </Box>
+    );
   const count = Math.max(1, Math.min(6, rows - 18));
   const start = Math.max(0, selected - count + 1);
 
@@ -111,8 +156,8 @@ export function McpPanel({
         <TerminalText wrap="truncate-end">{`Registry metadata (untrusted, never auto-installed): ${JSON.stringify(configuration.registry_metadata)}`}</TerminalText>
       )}
       <TerminalText>
-        HTTP definitions can be saved; execution/login is unavailable in this
-        slice.
+        Streamable HTTP uses provisioned references or configured generic OAuth.
+        Only explicit native Connect can start browser authorization.
       </TerminalText>
     </Box>
   );
