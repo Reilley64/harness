@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../services/acp.js";
+import { openAuthorizationUrl } from "../services/authorization.js";
 import { errorMessage } from "../services/errors.js";
 import { parseMcpDefinition } from "../services/mcp.js";
 import type {
@@ -19,6 +20,8 @@ export function useMcp(
     null,
   );
   const [busy, setBusy] = useState(false);
+  const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
+  const [authorizationVisible, setAuthorizationVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const [confirmation, setConfirmation] = useState<McpServer | null>(null);
@@ -57,20 +60,29 @@ export function useMcp(
       pending.current = controller;
       setBusy(true);
       setError(null);
+      setAuthorizationUrl(null);
+      setAuthorizationVisible(false);
 
       try {
         const result = await agent.updateMcp(
           operation,
           workspace,
           controller.signal,
+          (url) => {
+            if (pending.current === controller && !controller.signal.aborted)
+              setAuthorizationUrl(url);
+          },
         );
-        if (!controller.signal.aborted) setConfiguration(result);
+        if (pending.current === controller && !controller.signal.aborted)
+          setConfiguration(result);
       } catch (error) {
         if (!controller.signal.aborted) setError(errorMessage(error));
       } finally {
         if (pending.current === controller) {
           pending.current = null;
           setBusy(false);
+          setAuthorizationUrl(null);
+          setAuthorizationVisible(false);
         }
       }
     },
@@ -96,6 +108,8 @@ export function useMcp(
     pending.current?.abort();
     pending.current = null;
     setBusy(false);
+    setAuthorizationUrl(null);
+    setAuthorizationVisible(false);
     setVisible(false);
   }
 
@@ -151,6 +165,21 @@ export function useMcp(
       close();
       return;
     }
+    if (busy && authorizationUrl) {
+      if (input === "l") setAuthorizationVisible((visible) => !visible);
+      if (input === "o") {
+        const controller = pending.current;
+        void openAuthorizationUrl(authorizationUrl).catch((error) => {
+          if (
+            controller &&
+            pending.current === controller &&
+            !controller.signal.aborted
+          )
+            setError(errorMessage(error));
+        });
+      }
+      return;
+    }
     if (busy) return;
     if (confirmation || metadataVisible) {
       if (key.rightArrow) setPage(Math.min(pageCount - 1, page + 1));
@@ -192,6 +221,8 @@ export function useMcp(
     visible,
     configuration,
     busy,
+    authorizationUrl,
+    authorizationVisible,
     error,
     selected,
     confirmation,

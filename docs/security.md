@@ -11,8 +11,11 @@ Optional MCP registry search sends its query to the configured registry. Trusted
 stdio MCP processes receive configured tool arguments and only their explicitly
 provisioned environment references; their results can enter provider context.
 See [MCP connections](mcp-connections.md) for exact trust, reference, redaction and
-shared lifetime boundaries. Custom HTTP definitions are saved only; this slice
-does not contact their endpoints or implement browser OAuth.
+shared lifetime boundaries. Streamable HTTP uses resource-bound provisioned references or separately stored
+MCP OAuth grants. Only exact-definition native Connect starts browser authorization;
+configuration saves, registry hints and panel loading never grant login authority.
+See [MCP HTTP and OAuth](mcp-http-auth.md) for supported client prerequisites and
+the separate qualification boundary.
 OAuth authorization, token exchange and identity verification contact the issuer.
 OpenRouter PKCE mints a separate API key without paid inference. That key is stored
 only in its private backend record and is never loaded from OpenAI credentials.

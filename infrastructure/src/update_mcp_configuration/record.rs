@@ -1,3 +1,4 @@
+use crate::mcp::validate_http;
 use crate::tool_io::Error;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -49,6 +50,8 @@ pub(super) enum TransportRecord {
         url: String,
         #[serde(default)]
         headers: BTreeMap<String, String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        oauth: Option<Oauth>,
     },
 }
 
@@ -99,7 +102,11 @@ impl TryFrom<Record> for domain::McpDefinition {
                 }
                 domain::McpTransport::Stdio { command, args }
             }
-            Some(TransportRecord::Http { url, headers }) => {
+            Some(TransportRecord::Http {
+                url,
+                headers,
+                oauth,
+            }) => {
                 let parsed = reqwest::Url::parse(&url)?;
                 if parsed.scheme() != "https"
                     && !(parsed.scheme() == "http"
@@ -114,7 +121,13 @@ impl TryFrom<Record> for domain::McpDefinition {
                 {
                     return Err("MCP HTTP endpoints require HTTPS (or loopback), no URL credentials/query, and provisioned header references".into());
                 }
-                domain::McpTransport::Http { url, headers }
+                let oauth = oauth.map(domain::McpOauth::from);
+                validate_http(&url, &headers, oauth.as_ref())?;
+                domain::McpTransport::Http {
+                    url,
+                    headers,
+                    oauth,
+                }
             }
             None if !record.enabled => domain::McpTransport::Disabled,
             None => return Err("Enabled MCP server requires a transport".into()),
@@ -139,10 +152,93 @@ impl From<domain::McpDefinition> for Record {
                 domain::McpTransport::Stdio { command, args } => {
                     Some(TransportRecord::Stdio { command, args })
                 }
-                domain::McpTransport::Http { url, headers } => {
-                    Some(TransportRecord::Http { url, headers })
-                }
+                domain::McpTransport::Http {
+                    url,
+                    headers,
+                    oauth,
+                } => Some(TransportRecord::Http {
+                    url,
+                    headers,
+                    oauth: oauth.map(Into::into),
+                }),
                 domain::McpTransport::Disabled => None,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Oauth {
+    issuer: String,
+    client: OauthClient,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum OauthClient {
+    Dynamic,
+    Registered {
+        client_id: String,
+        redirect_uri: String,
+        #[serde(default)]
+        secret_reference: Option<String>,
+    },
+    MetadataDocument {
+        client_id: String,
+        redirect_uri: String,
+    },
+}
+
+impl From<Oauth> for domain::McpOauth {
+    fn from(value: Oauth) -> Self {
+        Self {
+            issuer: value.issuer,
+            client: match value.client {
+                OauthClient::Dynamic => domain::McpOauthClient::Dynamic,
+                OauthClient::Registered {
+                    client_id,
+                    redirect_uri,
+                    secret_reference,
+                } => domain::McpOauthClient::Registered {
+                    client_id,
+                    redirect_uri,
+                    secret_reference,
+                },
+                OauthClient::MetadataDocument {
+                    client_id,
+                    redirect_uri,
+                } => domain::McpOauthClient::MetadataDocument {
+                    client_id,
+                    redirect_uri,
+                },
+            },
+        }
+    }
+}
+
+impl From<domain::McpOauth> for Oauth {
+    fn from(value: domain::McpOauth) -> Self {
+        Self {
+            issuer: value.issuer,
+            client: match value.client {
+                domain::McpOauthClient::Dynamic => OauthClient::Dynamic,
+                domain::McpOauthClient::Registered {
+                    client_id,
+                    redirect_uri,
+                    secret_reference,
+                } => OauthClient::Registered {
+                    client_id,
+                    redirect_uri,
+                    secret_reference,
+                },
+                domain::McpOauthClient::MetadataDocument {
+                    client_id,
+                    redirect_uri,
+                } => OauthClient::MetadataDocument {
+                    client_id,
+                    redirect_uri,
+                },
             },
         }
     }

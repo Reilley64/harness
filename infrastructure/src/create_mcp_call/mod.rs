@@ -32,14 +32,15 @@ pub fn definition() -> serde_json::Value {
     serde_json::json!({"type":"function","name":"mcp_call","strict":false,"description":"Invoke an advertised tool from shared trusted MCP configuration. First use mcp_configuration read and discover to obtain the effective server revision, tool name and JSON input schema. Supply the exact revision. No automatic retry: uncertain effects require reconciliation. Provider credentials are never reused. Discovery does not prove write access or exclusive claim; follow configured CLI/docs when unavailable.","parameters":{"type":"object","properties":{"server":{"type":"string"},"tool":{"type":"string"},"revision":{"type":"string"},"arguments":{"type":"object"}},"required":["server","tool","revision","arguments"],"additionalProperties":false}})
 }
 
+pub struct Response {
+    pub result: domain::ToolResult,
+    pub cause: Option<Error>,
+}
+
 pub fn create_mcp_call(
     connections: &Connections,
     configuration: UpdateMcpConfiguration,
-) -> impl Fn(
-    PathBuf,
-    domain::McpCallArguments,
-    CancellationToken,
-) -> PortFuture<Result<domain::ToolResult, Error>>
+) -> impl Fn(PathBuf, domain::McpCallArguments, CancellationToken) -> PortFuture<Result<Response, Error>>
 + Send
 + Sync
 + use<> {
@@ -54,9 +55,11 @@ pub fn create_mcp_call(
                 .call(
                     workspace.clone(),
                     domain::McpConfigurationAction::Read,
+                    None,
                     cancellation.clone(),
                 )
-                .await?;
+                .await?
+                .configuration;
 
             let server = snapshot
                 .servers
@@ -67,9 +70,10 @@ pub fn create_mcp_call(
                 return Err("MCP definition changed; discover and review the current revision before execution".into());
             }
 
-            connections
+            let (result, cause) = connections
                 .call(&workspace, server, arguments, cancellation)
-                .await
+                .await?;
+            Ok(Response { result, cause })
         })
     }
 }

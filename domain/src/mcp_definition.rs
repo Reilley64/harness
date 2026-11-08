@@ -14,8 +14,6 @@ impl McpDefinition {
     pub fn state(&self, trusted: bool) -> McpServerState {
         if !self.enabled {
             McpServerState::Disabled
-        } else if matches!(self.transport, McpTransport::Http { .. }) {
-            McpServerState::HttpExecutionUnavailable
         } else if trusted {
             McpServerState::Trusted
         } else {

@@ -100,6 +100,11 @@ export function McpPanel({
           Working… Esc cancels the wait; completed saves are not rolled back.
         </TerminalText>
       )}
+      {state.authorizationUrl && (
+        <TerminalText color="yellow">
+          {`MCP OAuth · o opens the protected sign-in link · l reveals/hides it · Esc cancels.${state.authorizationVisible ? ` ${state.authorizationUrl}` : " Link hidden."}`}
+        </TerminalText>
+      )}
       {state.error && <TerminalText color="red">{state.error}</TerminalText>}
       {configuration?.tools.slice(0, 3).map((tool) => (
         <TerminalText
@@ -111,8 +116,8 @@ export function McpPanel({
         <TerminalText wrap="truncate-end">{`Registry metadata (untrusted, never auto-installed): ${JSON.stringify(configuration.registry_metadata)}`}</TerminalText>
       )}
       <TerminalText>
-        HTTP definitions can be saved; execution/login is unavailable in this
-        slice.
+        Streamable HTTP uses provisioned references or configured generic OAuth.
+        Only explicit native Connect can start browser authorization.
       </TerminalText>
     </Box>
   );

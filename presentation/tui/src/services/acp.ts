@@ -12,7 +12,7 @@ import {
 import type { Conversation } from "../types/conversation.js";
 import type { Deciders, DecisionResponse } from "../types/decision.js";
 import type { Guidance, GuidanceQuery } from "../types/guidance.js";
-import type { McpOperation } from "../types/mcp.js";
+import type { McpConfiguration, McpOperation } from "../types/mcp.js";
 import type { Model, ModelSelection } from "../types/model.js";
 import type { Provider } from "../types/provider.js";
 import type {
@@ -25,6 +25,7 @@ import type { ApprovedWork, WorkResponse } from "../types/work.js";
 import {
   parseAuthorizationChallenge,
   parseProviderConnection,
+  validAuthorizationUrl,
 } from "./authorization.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
 import { parseDeciders, parseDecision } from "./decisions.js";
@@ -91,6 +92,14 @@ export function connectAgent() {
     string,
     { providerId: string; present: (challenge: AuthorizationChallenge) => void }
   >();
+  const mcpChallenges = new Map<
+    string,
+    {
+      workspace: string;
+      revision: string;
+      present: (url: string) => void;
+    }
+  >();
   const replies = new Map<
     string,
     {
@@ -109,6 +118,8 @@ export function connectAgent() {
   const pendingPolicyWrites = new Set<Promise<string[]>>();
   const pendingWorkWrites = new Set<Promise<WorkResponse>>();
   const pendingNative = new Set<Promise<unknown>>();
+  const pendingMcp = new Set<Promise<McpConfiguration>>();
+  const mcpControllers = new Set<AbortController>();
   const nativeControllers = new Map<string, AbortController>();
   const connection = client({ name: "harness-tui" })
     .onNotification(methods.client.session.update, ({ params }) => {
@@ -127,6 +138,39 @@ export function connectAgent() {
           replies.get(params.sessionId)?.tool?.(parseTool(value));
       }
     })
+    .onNotification(
+      "_harness/mcp/authorization",
+      (value: unknown) => {
+        if (
+          typeof value !== "object" ||
+          value === null ||
+          !("authentication_id" in value) ||
+          typeof value.authentication_id !== "string" ||
+          !("workspace" in value) ||
+          typeof value.workspace !== "string" ||
+          !("revision" in value) ||
+          typeof value.revision !== "string" ||
+          !("authorization_url" in value) ||
+          typeof value.authorization_url !== "string"
+        )
+          throw new PresentationError("Invalid MCP authorization challenge.");
+        return {
+          id: value.authentication_id,
+          workspace: value.workspace,
+          revision: value.revision,
+          url: validAuthorizationUrl(value.authorization_url),
+        };
+      },
+      ({ params }) => {
+        const pending = mcpChallenges.get(params.id);
+        if (
+          pending &&
+          pending.workspace === params.workspace &&
+          pending.revision === params.revision
+        )
+          pending.present(params.url);
+      },
+    )
     .onNotification("_harness/usage", parseUsageUpdate, ({ params }) => {
       replies.get(params.sessionId)?.usage?.(params.usage);
     })
@@ -184,24 +228,50 @@ export function connectAgent() {
     return initialization;
   }
 
-  async function updateMcp(
+  function updateMcp(
     operation: McpOperation,
     workspace: string,
     signal: AbortSignal,
-  ) {
-    const initialized = await initialize();
-    signal.throwIfAborted();
-    if (initialized._meta?.["harness/mcp"] !== true)
-      throw new PresentationError(
-        "MCP configuration is not available from this agent.",
-      );
-    return parseMcp(
-      await connection.agent.request<unknown>(
-        "_harness/mcp",
-        { workspace, ...operation },
-        { cancellationSignal: signal, stopWaitingOnCancel: true },
-      ),
-    );
+    present?: (url: string) => void,
+  ): Promise<McpConfiguration> {
+    if (closing)
+      return Promise.reject(new PresentationError("The agent is closing."));
+    const controller = new AbortController();
+    const cancellationSignal = AbortSignal.any([signal, controller.signal]);
+    mcpControllers.add(controller);
+    const pending = (async () => {
+      cancellationSignal.throwIfAborted();
+      const initialized = await initialize();
+      cancellationSignal.throwIfAborted();
+      if (initialized._meta?.["harness/mcp"] !== true)
+        throw new PresentationError(
+          "MCP configuration is not available from this agent.",
+        );
+
+      const authenticationId = randomUUID();
+      if (operation.action === "connect" && present)
+        mcpChallenges.set(authenticationId, {
+          workspace,
+          revision: operation.revision,
+          present,
+        });
+      try {
+        return parseMcp(
+          await connection.agent.request<unknown>(
+            "_harness/mcp",
+            { workspace, authentication_id: authenticationId, ...operation },
+            { cancellationSignal, stopWaitingOnCancel: false },
+          ),
+        );
+      } finally {
+        mcpChallenges.delete(authenticationId);
+      }
+    })();
+    pendingMcp.add(pending);
+    return pending.finally(() => {
+      mcpControllers.delete(controller);
+      pendingMcp.delete(pending);
+    });
   }
 
   async function listProviders(signal: AbortSignal): Promise<Provider[]> {
@@ -772,13 +842,15 @@ export function connectAgent() {
     if (closing) return;
     closing = true;
     for (const controller of nativeControllers.values()) controller.abort();
+    for (const controller of mcpControllers) controller.abort();
     if (
       replies.size ||
       pendingReplies.size ||
       pendingSelections ||
       pendingPolicyWrites.size ||
       pendingWorkWrites.size ||
-      pendingNative.size
+      pendingNative.size ||
+      pendingMcp.size
     ) {
       await Promise.allSettled([...replies.keys()].map(cancelReply));
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -790,6 +862,7 @@ export function connectAgent() {
             ...pendingPolicyWrites,
             ...pendingWorkWrites,
             ...pendingNative,
+            ...pendingMcp,
           ]),
           new Promise<void>((resolve) => {
             timer = setTimeout(resolve, 60000);

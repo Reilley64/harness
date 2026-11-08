@@ -1,3 +1,5 @@
+use crate::McpOauth;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpTransport {
     Disabled,
@@ -8,5 +10,6 @@ pub enum McpTransport {
     Http {
         url: String,
         headers: std::collections::BTreeMap<String, String>,
+        oauth: Option<McpOauth>,
     },
 }

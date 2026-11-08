@@ -29,10 +29,10 @@ produce invalid-call results without executing anything.
 
 Tools are enabled by default. `TOOLS__ENABLED=false` disables advertisement and
 execution for text-only operation. AST search is advertised only when
-`ast-grep --version` reports exactly `ast-grep 0.51.0`. Trusted configured stdio
+`ast-grep --version` reports exactly `ast-grep 0.51.0`. Trusted configured stdio and Streamable HTTP
 MCP servers use the same durable tool loop; see [MCP connections](mcp-connections.md)
-for native configuration, protected trust, discovery and shared cleanup. HTTP
-execution is not yet available. There are no plugins, managed child dispatch,
+for native configuration, protected trust, discovery and shared cleanup, and
+[HTTP/OAuth](mcp-http-auth.md) for supported authentication and qualification limits. There are no plugins, managed child dispatch,
 browser automation, PTYs, persistent shells or managed background jobs. Trusted exact-version
 [approved handoff](approved-work.md) can create a separate conversational CoS;
 model tools cannot grant human approval.
@@ -67,7 +67,11 @@ their next mutation.
    Execute sequentially, persist its terminal result, then publish its ACP update.
 5. Pair every recorded provider call with its honest result before further
    inference. Invalid calls and ordinary failures are results the model can handle.
-   Unknown cleanup/outcomes stop the turn.
+   Unknown cleanup/outcomes stop the turn. MCP adapters return the safe typed result
+   separately from an owned original error. The application output retains those
+   causes (including projection omission after a known outcome); finalization
+   failures retain both their own error and prior tool causes. They are never
+   serialized into conversation/tool snapshots or printed through ACP.
 6. Persist final or partial assistant text and the terminal message status.
 
 The adapter retains provider output items, call IDs, and opaque reasoning for

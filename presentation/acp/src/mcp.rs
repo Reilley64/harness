@@ -7,8 +7,21 @@ use std::path::PathBuf;
 #[request(method = "_harness/mcp", response = Response)]
 pub(crate) struct Request {
     pub workspace: PathBuf,
+    #[serde(default)]
+    pub authentication_id: Option<String>,
     #[serde(flatten)]
     pub operation: Operation,
+}
+
+#[derive(
+    Debug, Clone, agent_client_protocol::JsonRpcNotification, serde::Serialize, serde::Deserialize,
+)]
+#[notification(method = "_harness/mcp/authorization")]
+pub(crate) struct AuthorizationChallenge {
+    pub authentication_id: String,
+    pub workspace: PathBuf,
+    pub revision: String,
+    pub authorization_url: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -67,6 +80,8 @@ enum Transport {
         url: String,
         #[serde(default)]
         headers: BTreeMap<String, String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        oauth: Option<Oauth>,
     },
 }
 
@@ -80,9 +95,15 @@ impl From<Definition> for domain::McpDefinition {
                 Some(Transport::Stdio { command, args }) => {
                     domain::McpTransport::Stdio { command, args }
                 }
-                Some(Transport::Http { url, headers }) => {
-                    domain::McpTransport::Http { url, headers }
-                }
+                Some(Transport::Http {
+                    url,
+                    headers,
+                    oauth,
+                }) => domain::McpTransport::Http {
+                    url,
+                    headers,
+                    oauth: oauth.map(Into::into),
+                },
                 None => domain::McpTransport::Disabled,
             },
         }
@@ -99,9 +120,15 @@ impl From<domain::McpDefinition> for Definition {
                 domain::McpTransport::Stdio { command, args } => {
                     Some(Transport::Stdio { command, args })
                 }
-                domain::McpTransport::Http { url, headers } => {
-                    Some(Transport::Http { url, headers })
-                }
+                domain::McpTransport::Http {
+                    url,
+                    headers,
+                    oauth,
+                } => Some(Transport::Http {
+                    url,
+                    headers,
+                    oauth: oauth.map(Into::into),
+                }),
                 domain::McpTransport::Disabled => None,
             },
         }
@@ -190,6 +217,83 @@ impl From<domain::McpConfiguration> for Response {
             registry_metadata: configuration
                 .registry_metadata
                 .and_then(|text| serde_json::from_str(&text).ok()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Oauth {
+    issuer: String,
+    client: OauthClient,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum OauthClient {
+    Dynamic,
+    Registered {
+        client_id: String,
+        redirect_uri: String,
+        #[serde(default)]
+        secret_reference: Option<String>,
+    },
+    MetadataDocument {
+        client_id: String,
+        redirect_uri: String,
+    },
+}
+
+impl From<Oauth> for domain::McpOauth {
+    fn from(value: Oauth) -> Self {
+        Self {
+            issuer: value.issuer,
+            client: match value.client {
+                OauthClient::Dynamic => domain::McpOauthClient::Dynamic,
+                OauthClient::Registered {
+                    client_id,
+                    redirect_uri,
+                    secret_reference,
+                } => domain::McpOauthClient::Registered {
+                    client_id,
+                    redirect_uri,
+                    secret_reference,
+                },
+                OauthClient::MetadataDocument {
+                    client_id,
+                    redirect_uri,
+                } => domain::McpOauthClient::MetadataDocument {
+                    client_id,
+                    redirect_uri,
+                },
+            },
+        }
+    }
+}
+
+impl From<domain::McpOauth> for Oauth {
+    fn from(value: domain::McpOauth) -> Self {
+        Self {
+            issuer: value.issuer,
+            client: match value.client {
+                domain::McpOauthClient::Dynamic => OauthClient::Dynamic,
+                domain::McpOauthClient::Registered {
+                    client_id,
+                    redirect_uri,
+                    secret_reference,
+                } => OauthClient::Registered {
+                    client_id,
+                    redirect_uri,
+                    secret_reference,
+                },
+                domain::McpOauthClient::MetadataDocument {
+                    client_id,
+                    redirect_uri,
+                } => OauthClient::MetadataDocument {
+                    client_id,
+                    redirect_uri,
+                },
+            },
         }
     }
 }

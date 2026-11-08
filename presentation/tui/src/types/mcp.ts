@@ -3,7 +3,27 @@ export type McpDefinition = {
   enabled?: boolean;
   transport?:
     | { type: "stdio"; command: string; args?: string[] }
-    | { type: "http"; url: string; headers?: Record<string, string> };
+    | {
+        type: "http";
+        url: string;
+        headers?: Record<string, string>;
+        oauth?: {
+          issuer: string;
+          client:
+            | { type: "dynamic" }
+            | {
+                type: "registered";
+                client_id: string;
+                redirect_uri: string;
+                secret_reference?: string;
+              }
+            | {
+                type: "metadata_document";
+                client_id: string;
+                redirect_uri: string;
+              };
+        };
+      };
   environment?: Record<string, string>;
 };
 
