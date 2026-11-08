@@ -1,0 +1,271 @@
+{
+  "$ref": "#/definitions/CallToolResult",
+  "definitions": {
+    "CallToolResult": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "content": {
+          "items": {
+            "$ref": "#/definitions/ContentBlock"
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "ContentBlock": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TextContent"
+        },
+        {
+          "$ref": "#/definitions/ImageContent"
+        },
+        {
+          "$ref": "#/definitions/AudioContent"
+        },
+        {
+          "$ref": "#/definitions/ResourceLink"
+        },
+        {
+          "$ref": "#/definitions/EmbeddedResource"
+        }
+      ]
+    },
+    "TextContent": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "annotations": {
+          "$ref": "#/definitions/Annotations"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "type"
+      ],
+      "type": "object"
+    },
+    "ImageContent": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "annotations": {
+          "$ref": "#/definitions/Annotations"
+        },
+        "data": {
+          "format": "byte",
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "type": {
+          "const": "image",
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "mimeType",
+        "type"
+      ],
+      "type": "object"
+    },
+    "AudioContent": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "annotations": {
+          "$ref": "#/definitions/Annotations"
+        },
+        "data": {
+          "format": "byte",
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "type": {
+          "const": "audio",
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "mimeType",
+        "type"
+      ],
+      "type": "object"
+    },
+    "EmbeddedResource": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "annotations": {
+          "$ref": "#/definitions/Annotations"
+        },
+        "resource": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TextResourceContents"
+            },
+            {
+              "$ref": "#/definitions/BlobResourceContents"
+            }
+          ]
+        },
+        "type": {
+          "const": "resource",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource",
+        "type"
+      ],
+      "type": "object"
+    },
+    "ResourceLink": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "annotations": {
+          "$ref": "#/definitions/Annotations"
+        },
+        "description": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "const": "resource_link",
+          "type": "string"
+        },
+        "uri": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "uri"
+      ],
+      "type": "object"
+    },
+    "TextResourceContents": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "uri": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "uri"
+      ],
+      "type": "object"
+    },
+    "BlobResourceContents": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "blob": {
+          "format": "byte",
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "uri": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "blob",
+        "uri"
+      ],
+      "type": "object"
+    },
+    "Annotations": {
+      "properties": {
+        "audience": {
+          "items": {
+            "$ref": "#/definitions/Role"
+          },
+          "type": "array"
+        },
+        "lastModified": {
+          "type": "string"
+        },
+        "priority": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "Role": {
+      "enum": [
+        "assistant",
+        "user"
+      ],
+      "type": "string"
+    }
+  }
+}

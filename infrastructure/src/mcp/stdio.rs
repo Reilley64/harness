@@ -1,9 +1,13 @@
 use crate::tool_io::Error;
+use application::error_context::ResultExt;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
@@ -34,7 +38,7 @@ pub(super) struct Client {
     input: ChildStdin,
     output: BufReader<ChildStdout>,
     next: u64,
-    redactions: Vec<String>,
+    redactions: Arc<[String]>,
 }
 
 impl Client {
@@ -46,6 +50,7 @@ impl Client {
         let domain::McpTransport::Stdio { command, args } = &definition.transport else {
             return Err("Streamable HTTP execution is unavailable; definition saved only".into());
         };
+
         let mut process = Command::new(command);
         process
             .args(args)
@@ -60,6 +65,7 @@ impl Client {
         }
         #[cfg(unix)]
         process.process_group(0);
+
         let mut redactions = Vec::new();
         for (name, reference) in &definition.environment {
             if !reference.starts_with("HARNESS_MCP_") {
@@ -78,17 +84,23 @@ impl Client {
             redactions.push(secret.to_owned());
             process.env(name, value);
         }
+        if cancellation.is_cancelled() {
+            return Err("MCP connection cancelled before launch".into());
+        }
+
         let mut child = process.spawn()?;
         let input = child.stdin.take().ok_or("Missing MCP stdin")?;
         let output = BufReader::new(child.stdout.take().ok_or("Missing MCP stdout")?);
         redactions.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
+
         let mut client = Self {
             child,
             input,
             output,
             next: 0,
-            redactions,
+            redactions: redactions.into(),
         };
+
         let response = tokio::select! {
             result = tokio::time::timeout(Duration::from_secs(30), client.rpc("initialize", json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"harness","version":env!("CARGO_PKG_VERSION")}}))) => result??,
             _ = cancellation.cancelled() => return Err("MCP connection cancelled".into()),
@@ -100,9 +112,11 @@ impl Client {
         {
             return Err("Unsupported MCP protocol or missing tools capability".into());
         }
+
         client
             .send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
             .await?;
+
         Ok(client)
     }
 
@@ -111,6 +125,7 @@ impl Client {
         if bytes.len() > LIMIT {
             return Err("MCP request exceeds 1 MiB".into());
         }
+
         bytes.push(b'\n');
         self.input.write_all(&bytes).await?;
         self.input.flush().await?;
@@ -122,6 +137,7 @@ impl Client {
         let id = self.next;
         self.send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
             .await?;
+
         for _ in 0..256 {
             let mut bytes = Vec::new();
             (&mut self.output)
@@ -131,20 +147,35 @@ impl Client {
             if bytes.is_empty() || bytes.len() > LIMIT || bytes.last() != Some(&b'\n') {
                 return Err("MCP connection closed or response exceeded 1 MiB".into());
             }
-            let mut response: Value = serde_json::from_slice(&bytes)?;
-            redact(&mut response, &self.redactions);
+            let redactions = Arc::clone(&self.redactions);
+            let (mut response, request_id) =
+                tokio::task::spawn_blocking(move || -> Result<_, Error> {
+                    let mut response: Value =
+                        serde_json::from_slice(&bytes).context("Invalid MCP JSON-RPC response")?;
+                    let request_id = response
+                        .get("method")
+                        .and_then(|_| response.get("id"))
+                        .cloned();
+                    redact(&mut response, &redactions);
+
+                    Ok((response, request_id))
+                })
+                .await??;
+
             if response["jsonrpc"] != "2.0" {
                 return Err("Invalid MCP JSON-RPC version".into());
             }
             if response.get("method").is_some() {
-                if let Some(request_id) = response.get("id") {
+                if let Some(request_id) = request_id {
                     self.send(json!({"jsonrpc":"2.0","id":request_id,"error":{"code":-32601,"message":"Client capability not supported"}})).await?;
                 }
                 continue;
             }
+
             if response["id"] != id {
                 return Err("MCP response identity mismatch".into());
             }
+
             let error = response.get("error");
             let result = response.get("result");
             if error.is_some() == result.is_some() {
@@ -156,8 +187,13 @@ impl Client {
                 }
                 return Err(RequestRejected.into());
             }
-            return result.cloned().ok_or_else(|| "Missing MCP result".into());
+
+            return response
+                .get_mut("result")
+                .map(Value::take)
+                .ok_or_else(|| "Missing MCP result".into());
         }
+
         Err("MCP notification limit exceeded".into())
     }
 
@@ -175,6 +211,7 @@ impl Client {
                         .map_or(json!({}), |cursor| json!({"cursor":cursor})),
                 )
                 .await?;
+
             let entries = response["tools"]
                 .as_array()
                 .ok_or("Invalid MCP tool list")?;
@@ -189,11 +226,13 @@ impl Client {
                 {
                     return Err("Duplicate, excessive or invalid MCP tool definitions".into());
                 }
+
                 let input_schema = serde_json::to_string(&entry["inputSchema"])?;
                 size += input_schema.len() + entry["description"].as_str().map_or(0, str::len);
                 if input_schema.len() > 65536 || size > LIMIT {
                     return Err("MCP tool schemas exceed metadata limits".into());
                 }
+
                 tools.push(domain::McpTool {
                     name: name.to_owned(),
                     description: entry["description"]
@@ -205,6 +244,7 @@ impl Client {
                     input_schema,
                 });
             }
+
             cursor = response
                 .get("nextCursor")
                 .and_then(Value::as_str)
@@ -213,6 +253,7 @@ impl Client {
                 return Ok(tools);
             }
         }
+
         Err("MCP tool pagination limit exceeded".into())
     }
 
@@ -227,25 +268,29 @@ impl Client {
             let Some(arguments) = arguments else {
                 return Ok((tools, None));
             };
+
             let schema = tools
                 .iter()
                 .find(|tool| tool.name == arguments.tool)
                 .ok_or("MCP tool is not advertised by the server")?
                 .input_schema
                 .clone();
+
             let input: Value = serde_json::from_str(&arguments.arguments)?;
             let checked = input.clone();
             let valid = tokio::task::spawn_blocking(move || -> Result<bool, Error> {
                 let schema: Value = serde_json::from_str(&schema)?;
                 let validator = jsonschema::options()
                     .build(&schema)
-                    .map_err(|_| "Invalid or externally referenced MCP input schema")?;
+                    .map_err(|error| error.to_owned())
+                    .context("Invalid or externally referenced MCP input schema")?;
                 Ok(validator.is_valid(&checked))
             })
             .await??;
             if !valid {
                 return Err("MCP arguments do not match the advertised input schema".into());
             }
+
             sent = true;
             let response = self
                 .rpc(
@@ -253,32 +298,20 @@ impl Client {
                     json!({"name":arguments.tool,"arguments":input}),
                 )
                 .await?;
-            let content = response["content"]
-                .as_array()
-                .ok_or("Invalid MCP tool response")?;
-            if response
-                .get("isError")
-                .is_some_and(|value| !value.is_boolean())
-                || response
-                    .get("structuredContent")
-                    .is_some_and(|value| !value.is_object())
-                || content.iter().any(|block| match block["type"].as_str() {
-                    Some("text") => !block["text"].is_string(),
-                    Some("image" | "audio") => {
-                        !block["data"].is_string() || !block["mimeType"].is_string()
-                    }
-                    Some("resource_link") => !block["uri"].is_string(),
-                    Some("resource") => {
-                        !block["resource"].is_object() || !block["resource"]["uri"].is_string()
-                    }
-                    _ => true,
-                })
-            {
-                return Err("Malformed or unsupported MCP tool result content".into());
-            }
-            Ok((
-                tools,
-                Some(domain::ToolResult {
+
+            let result = tokio::task::spawn_blocking(move || -> Result<_, Error> {
+                let schema: Value = serde_json::from_str(include_str!("content_schema.json"))?;
+                let validator = jsonschema::options()
+                    .with_format("byte", |value| STANDARD.decode(value).is_ok())
+                    .should_validate_formats(true)
+                    .build(&schema)
+                    .map_err(|error| error.to_owned())
+                    .context("Invalid bundled MCP result contract")?;
+                if !validator.is_valid(&response) {
+                    return Err("Malformed or unsupported MCP tool result content".into());
+                }
+
+                Ok(domain::ToolResult {
                     status: if response["isError"] == true {
                         domain::ToolStatus::Failed
                     } else {
@@ -287,9 +320,13 @@ impl Client {
                     output: serde_json::to_string(&response)?,
                     artifact: None,
                     truncated: false,
-                }),
-            ))
+                })
+            })
+            .await??;
+
+            Ok((tools, Some(result)))
         };
+
         let result: Result<(Vec<domain::McpTool>, Option<domain::ToolResult>), Error> = tokio::select! {
             result = tokio::time::timeout(Duration::from_secs(120), operation) => match result { Ok(result) => result, Err(_) => Err("MCP operation timed out".into()) },
             _ = cancellation.cancelled() => Err("MCP operation cancelled".into()),
@@ -312,6 +349,7 @@ impl Client {
                 })));
             }
         }
+
         result
     }
 

@@ -12,8 +12,8 @@ use application::use_cases::read_providers;
 use application::use_cases::read_work;
 use application::use_cases::update_agent;
 use application::use_cases::update_guidance;
-use application::use_cases::update_model_allowlist;
 use application::use_cases::update_mcp_configuration;
+use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
 use application::use_cases::update_work;
 

@@ -59,16 +59,25 @@ pub fn update_mcp_configuration(
         connections: connections.clone(),
         snapshots: BTreeMap::new(),
     }));
+
     move |workspace, action, cancellation| {
         let state = state.clone();
         Box::pin(async move {
+            ensure_active(&cancellation)?;
             let workspace = tokio::fs::canonicalize(workspace).await?;
-            let mut state = state.lock().await;
+            let mut state = tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => return Err("MCP configuration cancelled before admission".into()),
+                state = state.lock() => state,
+            };
+
+            ensure_active(&cancellation)?;
             storage::private_directory(&state.root).await?;
+
             if matches!(action, domain::McpConfigurationAction::Reload)
                 || !state.snapshots.contains_key(&workspace)
             {
-                state.reload(&workspace).await?;
+                state.reload(&workspace, &cancellation).await?;
             }
             match &action {
                 domain::McpConfigurationAction::Save {
@@ -81,6 +90,7 @@ pub fn update_mcp_configuration(
                             expected_revision,
                             Some(definition.clone()),
                             &definition.name,
+                            &cancellation,
                         )
                         .await?;
                 }
@@ -89,7 +99,7 @@ pub fn update_mcp_configuration(
                     name,
                 } => {
                     state
-                        .edit(&workspace, expected_revision, None, name)
+                        .edit(&workspace, expected_revision, None, name, &cancellation)
                         .await?;
                 }
                 domain::McpConfigurationAction::Connect { name, revision } => {
@@ -103,6 +113,7 @@ pub fn update_mcp_configuration(
                     ) {
                         return Err("Streamable HTTP execution/login is unavailable; definition saved only and no activation consent recorded".into());
                     }
+                    ensure_active(&cancellation)?;
                     let _lock = storage::lock(&state.root.join("trust.json")).await.context("MCP trust lock is unavailable; check local permissions or a concurrent update")?;
                     let mut trust = state.trust().await?;
                     trust.insert(trust_key(&workspace, name), revision.clone());
@@ -112,16 +123,21 @@ pub fn update_mcp_configuration(
                                 .into(),
                         );
                     }
-                    storage::replace(&state.root.join("trust.json"), &serde_json::to_vec(&trust)?)
-                        .await?;
+                    let bytes = serde_json::to_vec(&trust)?;
+                    ensure_active(&cancellation)?;
+
+                    storage::replace(&state.root.join("trust.json"), &bytes).await?;
                 }
                 domain::McpConfigurationAction::Disconnect { name } => {
                     let server = state.server(&workspace, name)?;
+                    ensure_active(&cancellation)?;
                     let _lock = storage::lock(&state.root.join("trust.json")).await.context("MCP trust lock is unavailable; check local permissions or a concurrent update")?;
                     let mut trust = state.trust().await?;
                     trust.remove(&trust_key(&workspace, name));
-                    storage::replace(&state.root.join("trust.json"), &serde_json::to_vec(&trust)?)
-                        .await?;
+                    let bytes = serde_json::to_vec(&trust)?;
+                    ensure_active(&cancellation)?;
+
+                    storage::replace(&state.root.join("trust.json"), &bytes).await?;
                     state
                         .connections
                         .disconnect(&workspace, &server.revision)
@@ -129,6 +145,7 @@ pub fn update_mcp_configuration(
                 }
                 _ => {}
             }
+
             let mut configuration = state.configuration(&workspace).await?;
             let connections = state.connections.clone();
             let registry_url = state.registry_url.clone();
@@ -157,9 +174,18 @@ pub fn update_mcp_configuration(
                 }
                 _ => {}
             }
+
             Ok(configuration)
         })
     }
+}
+
+fn ensure_active(cancellation: &CancellationToken) -> Result<(), Error> {
+    if cancellation.is_cancelled() {
+        return Err("MCP configuration cancelled before admission".into());
+    }
+
+    Ok(())
 }
 
 fn trust_key(workspace: &Path, name: &str) -> String {
@@ -181,6 +207,7 @@ async fn read(path: &Path, private: bool) -> Result<String, Error> {
     if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 262144 {
         return Err("MCP config must be a bounded regular file, not a symlink".into());
     }
+
     let bytes = if private {
         storage::read_private(path, 262144).await?
     } else {
@@ -196,12 +223,14 @@ async fn read(path: &Path, private: bool) -> Result<String, Error> {
         }
         bytes
     };
+
     Ok(String::from_utf8(bytes)?)
 }
 
 fn parse(text: &str) -> Result<FileRecord, Error> {
     let file: FileRecord = serde_json::from_str(text)?;
     record::validate(&file)?;
+
     Ok(file)
 }
 
@@ -243,6 +272,7 @@ impl State {
                 );
             }
         }
+
         Ok(Snapshot {
             configuration: domain::McpConfiguration {
                 revision,
@@ -261,7 +291,11 @@ impl State {
         tokio::task::spawn_blocking(move || Self::snapshot(&workspace, files)).await?
     }
 
-    async fn reload(&mut self, workspace: &Path) -> Result<(), Error> {
+    async fn reload(
+        &mut self,
+        workspace: &Path,
+        cancellation: &CancellationToken,
+    ) -> Result<(), Error> {
         let path = self.root.join(format!(
             "snapshot-{}.json",
             digest(workspace.as_os_str().as_encoded_bytes())
@@ -270,9 +304,13 @@ impl State {
             Ok(files) => Self::validated(workspace, files).await,
             Err(error) => Err(error),
         };
+
         match candidate {
             Ok(snapshot) => {
-                storage::replace(&path, &serde_json::to_vec(&snapshot.files)?).await?;
+                let bytes = serde_json::to_vec(&snapshot.files)?;
+                ensure_active(cancellation)?;
+
+                storage::replace(&path, &bytes).await?;
                 self.snapshots.insert(workspace.to_owned(), snapshot);
             }
             Err(error) => {
@@ -302,6 +340,7 @@ impl State {
                     };
                     self.snapshots.insert(workspace.to_owned(), snapshot);
                 }
+
                 let snapshot = self
                     .snapshots
                     .get_mut(workspace)
@@ -339,6 +378,7 @@ impl State {
             Err(error) => return Err(error.into()),
             Ok(_) => {}
         }
+
         let bytes = storage::read_private(&path, 262144).await?;
         tokio::task::spawn_blocking(move || Ok(serde_json::from_slice(&bytes)?)).await?
     }
@@ -356,6 +396,7 @@ impl State {
                 trust.get(&trust_key(workspace, &server.definition.name)) == Some(&server.revision),
             );
         }
+
         let revisions = configuration
             .servers
             .iter()
@@ -363,6 +404,7 @@ impl State {
             .map(|server| server.revision.clone())
             .collect::<Vec<_>>();
         self.connections.retain(workspace, &revisions).await;
+
         Ok(configuration)
     }
 
@@ -372,7 +414,9 @@ impl State {
         expected: &str,
         definition: Option<domain::McpDefinition>,
         name: &str,
+        cancellation: &CancellationToken,
     ) -> Result<(), Error> {
+        ensure_active(cancellation)?;
         let path = self.root.join("servers.json");
         let _lock = storage::lock(&path).await.context(
             "MCP configuration lock is unavailable; check local permissions or a concurrent update",
@@ -384,6 +428,7 @@ impl State {
                 "MCP configuration changed; reload and reconcile edits before saving".into(),
             );
         }
+
         let text = files.app.clone();
         let name = name.to_owned();
         let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, Error> {
@@ -404,20 +449,25 @@ impl State {
                     }
                 }
             }
+
             record::validate(&app)?;
             let bytes = serde_json::to_vec_pretty(&app)?;
             if bytes.len() > 262144 {
                 return Err("MCP configuration exceeds 256 KiB".into());
             }
+
             Ok(bytes)
         })
         .await??;
+
         let current = self.files(workspace).await?;
         if current.app != files.app || current.repository != files.repository {
             return Err("Concurrent manual MCP edit detected; no file written".into());
         }
+        ensure_active(cancellation)?;
+
         storage::replace(&path, &bytes).await?;
-        self.reload(workspace).await
+        self.reload(workspace, &CancellationToken::new()).await
     }
 }
 
@@ -429,6 +479,7 @@ async fn registry(
     if query.len() > 256 {
         return Err("Registry search exceeds 256 characters".into());
     }
+
     let mut url = reqwest::Url::parse(url)?;
     if !url.username().is_empty()
         || url.password().is_some()
@@ -440,6 +491,7 @@ async fn registry(
     {
         return Err("Registry requires HTTPS or loopback".into());
     }
+
     url.query_pairs_mut()
         .append_pair("search", query)
         .append_pair("limit", "10");
@@ -447,6 +499,7 @@ async fn registry(
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(15))
         .build()?;
+
     let operation = async {
         let mut response = client.get(url).send().await?.error_for_status()?;
         let mut bytes = Vec::new();
@@ -456,11 +509,13 @@ async fn registry(
             }
             bytes.extend_from_slice(&chunk);
         }
+
         tokio::task::spawn_blocking(move || -> Result<String, Error> {
             let value: Value = serde_json::from_slice(&bytes)?;
             Ok(serde_json::to_string(&value)?)
         })
         .await?
     };
+
     tokio::select! { result = operation => result, _ = cancellation.cancelled() => Err("Registry search cancelled; use manual configuration or server docs".into()) }
 }

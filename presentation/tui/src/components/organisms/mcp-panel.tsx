@@ -41,9 +41,11 @@ export function McpPanel({
         )}
       </Box>
     );
+
   const server = confirmation ?? configuration?.servers[selected];
   const count = Math.max(1, Math.min(6, rows - 18));
   const start = Math.max(0, selected - count + 1);
+
   return (
     <Box flexDirection="column">
       <TerminalText bold>MCP · shared effective configuration</TerminalText>

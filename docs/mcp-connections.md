@@ -31,8 +31,14 @@ nonsecret definitions are reviewed in ASCII-escaped pages with Left/Right;
 approval is enabled on the last page. Resize returns review to the first page.
 Enter explicitly approves that exact revision. Escape cancels review without
 activation, or closes the panel/cancels the wait. An already completed save or
-trust commit is not rolled back by dismissing a pending operation. Conversation
-state and the editable command draft are not submitted as chat by these controls.
+trust commit is not rolled back by dismissing a pending operation. Pre-cancelled
+operations and cancelled configuration-mutex waiters start no persistence or
+activation. Save/remove and protected trust updates check cancellation again at
+write admission; after admission, the commit and snapshot completion are awaited
+rather than abandoned or rolled back. Connect also checks cancellation before
+process launch, so a saved trust decision need not imply successful discovery.
+Read/reload to reconcile a completed commit whose discovery or response was lost.
+Conversation state and the editable command draft are not submitted as chat by these controls.
 
 Connect records local trust and initializes/discovers a stdio server. Subsequent
 `trusted` status describes consent/eligibility, **not a health or liveness
@@ -142,7 +148,10 @@ application configuration. Required missing references fail before launch.
 Raw child stderr is discarded. Known provisioned values are redacted from parsed
 stdio metadata/results (including JSON object keys) before they can enter native
 presentation, durable history or model continuation. Errors use safe contexts,
-not arbitrary remote error messages. This is not universal secret detection:
+not arbitrary remote error messages. Original parser and schema compiler errors
+remain internal causes beneath safe context; application tool-result and ACP
+projection use the safe diagnostic boundary from [security](security.md), never
+format the cause chain. This is not universal secret detection:
 a trusted process can read OS-user files, transform values or communicate by
 other means. Existing bash/file tools also remain unsandboxed. The local trust
 file and ACP client are trusted same-user surfaces, not protection against a
@@ -185,7 +194,26 @@ Unix process groups do not contain descendants that deliberately escape them.
 
 Initialization is bounded at 30 seconds; operations at 120 seconds. NDJSON frames
 are bounded at 1 MiB, tool discovery at 16 pages/256 unique tools/1 MiB metadata,
-and individual schemas at 64 KiB. Unsupported client requests are rejected; no
+and individual schemas at 64 KiB. Owned frame bytes and an immutable shared
+redaction context move to a blocking worker for decoding/redaction, without an
+async-worker copy of the frame or secret set. Cancellation can stop waiting while
+that worker safely owns its bounded inputs. JSON-RPC correlation retains server
+request IDs for unsupported-request responses; tool results are moved out rather
+than deep-copied on the async worker.
+
+Tool-result validation and encoding also run on a blocking worker. Supported
+text, image, audio, resource-link and embedded-resource blocks follow the bundled
+2025-06-18 MCP contract. Embedded resources require URI plus text or base64 blob;
+links require name and URI. Optional known metadata/annotations and field types
+are checked, including URI/base64 formats, without rejecting extension fields.
+The bundled `infrastructure/src/mcp/content_schema.json` is the reachable
+`CallToolResult` definition subset of the upstream
+[2025-06-18 schema](https://github.com/modelcontextprotocol/specification/blob/main/schema/2025-06-18/schema.json),
+with descriptive prose omitted but validation keywords preserved. Schema formats
+are asserted, including a local base64 `byte` validator; no schema retrieval is
+enabled. Malformed content is not evidence of success or a confirmed failure.
+
+Unsupported client requests are rejected; no
 sampling, elicitation, roots, shell, package install or browser login capability
 is granted by a server request. Explicit remote tool errors/rejections are Failed.
 Cancellation, disconnection, timeout or malformed protocol **after sending a
@@ -223,3 +251,13 @@ cover review/cancel, custom save, unavailable registry, reload, resize and termi
 cleanup; they are not a human terminal-emulator visual signoff. No permanent tests,
 test-only dependencies or production test hooks are added. Live servers, actual
 tracker writes/claims, HTTP/OAuth and later factory roles remain separate evidence.
+
+The cycle-2 rework retains original historical probe claims separately from fresh
+focused checks. Public configuration/typed-call probes cover pre-cancelled and
+queued mutations, an admitted completed save, compiler-cause retention with safe
+diagnostics, current-thread runtime responsiveness, frame/correlation bounds,
+and exact malformed-resource cases with valid controls. Focused stock ACP
+composition also uses the accepted Griller/CoS, both provider factories, positive
+Chat/Decisions catalog capabilities, allowlist, schema-6 checkpoints and obsolete
+assignment authority gates. Whole-project build/test/check is CI-owned under the
+[root policy](../AGENTS.md#verification), not a local acceptance claim.

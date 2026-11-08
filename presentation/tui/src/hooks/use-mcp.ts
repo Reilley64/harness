@@ -47,6 +47,7 @@ export function useMcp(
     setDimensions({ columns, rows });
     setPage(0);
   }
+
   const pending = useRef<AbortController | null>(null);
 
   const run = useCallback(
@@ -56,6 +57,7 @@ export function useMcp(
       pending.current = controller;
       setBusy(true);
       setError(null);
+
       try {
         const result = await agent.updateMcp(
           operation,
@@ -90,6 +92,7 @@ export function useMcp(
       setPage(0);
       return;
     }
+
     pending.current?.abort();
     pending.current = null;
     setBusy(false);
@@ -162,6 +165,7 @@ export function useMcp(
       }
       return;
     }
+
     const servers = configuration?.servers ?? [];
     if (key.upArrow || key.downArrow)
       setSelected(

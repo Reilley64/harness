@@ -23,6 +23,7 @@ impl Connections {
     pub(crate) async fn retain(&self, workspace: &Path, revisions: &[String]) {
         let mut clients = self.clients.lock().await;
         clients.retain(|(path, revision), _| path != workspace || revisions.contains(revision));
+
         for revision in revisions {
             clients
                 .entry((workspace.to_owned(), revision.clone()))
@@ -77,6 +78,7 @@ impl Connections {
                 "MCP server is not enabled and trusted; use /mcp to review and Connect".into(),
             );
         }
+
         let key = (workspace.to_owned(), server.revision.clone());
         let client = self
             .clients
@@ -86,8 +88,9 @@ impl Connections {
             .cloned()
             .ok_or("MCP trust was revoked or configuration changed")?;
         let mut guard = tokio::select! {
-            guard = client.lock() => guard,
+            biased;
             _ = cancellation.cancelled() => return Err("MCP operation cancelled before execution".into()),
+            guard = client.lock() => guard,
         };
         if !self
             .clients
@@ -98,12 +101,17 @@ impl Connections {
         {
             return Err("MCP trust was revoked while waiting; no call sent".into());
         }
+        if cancellation.is_cancelled() {
+            return Err("MCP operation cancelled before execution".into());
+        }
+
         let mut client = match guard.take() {
             Some(client) => client,
             None => {
                 stdio::Client::start(workspace, &server.definition, cancellation.clone()).await?
             }
         };
+
         let result = client.perform(arguments, cancellation).await;
         if result.as_ref().is_ok_and(|(_, result)| {
             result
@@ -112,6 +120,7 @@ impl Connections {
         }) {
             *guard = Some(client);
         }
+
         result
     }
 }

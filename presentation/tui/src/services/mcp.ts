@@ -24,6 +24,7 @@ export function parseMcpDefinition(value: unknown): McpDefinition {
     throw new PresentationError(
       "Environment values must be provisioned HARNESS_MCP_ references, not secrets.",
     );
+
   return value as McpDefinition;
 }
 
@@ -41,6 +42,7 @@ export function parseMcp(value: unknown): McpConfiguration {
     !Array.isArray(value.tools)
   )
     throw new PresentationError("Invalid MCP configuration response.");
+
   for (const server of value.servers) {
     if (
       typeof server !== "object" ||
@@ -52,5 +54,6 @@ export function parseMcp(value: unknown): McpConfiguration {
       throw new PresentationError("Invalid MCP server status.");
     parseMcpDefinition(server.definition);
   }
+
   return value as McpConfiguration;
 }

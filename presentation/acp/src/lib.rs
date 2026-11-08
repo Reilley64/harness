@@ -50,8 +50,8 @@ use application::use_cases::read_model_allowlist;
 use application::use_cases::read_model_selection;
 use application::use_cases::read_models;
 use application::use_cases::read_providers;
-use application::use_cases::update_model_allowlist;
 use application::use_cases::update_mcp_configuration;
+use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
 
 use crate::model_selection::ModelSelectionResponse;

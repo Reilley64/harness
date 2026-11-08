@@ -64,6 +64,7 @@ pub(super) fn validate(file: &FileRecord) -> Result<(), Error> {
     if file.version != 1 || file.servers.len() > 128 {
         return Err("Unsupported MCP config version or too many servers".into());
     }
+
     let mut names = BTreeSet::new();
     for record in &file.servers {
         if !name(&record.name) || !names.insert(&record.name) {
@@ -76,11 +77,13 @@ pub(super) fn validate(file: &FileRecord) -> Result<(), Error> {
             return Err("Environment values must reference provisioned HARNESS_MCP_ variables, never literal credentials".into());
         }
     }
+
     Ok(())
 }
 
 impl TryFrom<Record> for domain::McpDefinition {
     type Error = Error;
+
     fn try_from(record: Record) -> Result<Self, Error> {
         let transport = match record.transport {
             Some(TransportRecord::Stdio { command, args }) => {
@@ -116,6 +119,7 @@ impl TryFrom<Record> for domain::McpDefinition {
             None if !record.enabled => domain::McpTransport::Disabled,
             None => return Err("Enabled MCP server requires a transport".into()),
         };
+
         Ok(Self {
             name: record.name,
             enabled: record.enabled,

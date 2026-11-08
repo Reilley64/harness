@@ -118,6 +118,7 @@ export function HarnessScreen({
       key.ctrl &&
       input === "r" &&
       !guidance.open &&
+      !mcp.visible &&
       !connection.busy &&
       !models.picker &&
       !providers.picker
@@ -425,7 +426,11 @@ export function HarnessScreen({
         flexDirection="column"
         flexGrow={1}
         display={
-          map || stopConfirmation || guidance.open || approved.open || mcp.visible
+          map ||
+          stopConfirmation ||
+          guidance.open ||
+          approved.open ||
+          mcp.visible
             ? "none"
             : "flex"
         }

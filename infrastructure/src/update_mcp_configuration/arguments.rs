@@ -43,6 +43,7 @@ pub fn decode(text: &str) -> Result<domain::ToolInvocation, Error> {
         Arguments::Discover { name } => domain::McpConfigurationAction::Discover { name },
         Arguments::Registry { query } => domain::McpConfigurationAction::Registry { query },
     };
+
     Ok(domain::ToolInvocation::McpConfiguration(action))
 }
 

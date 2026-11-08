@@ -1580,6 +1580,7 @@ version = "0.1.0"
 dependencies = [
  "application",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "config",
  "constant_time_eq",

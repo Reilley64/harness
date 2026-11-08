@@ -13,6 +13,7 @@ pub enum Tool {
     McpCall,
     McpConfiguration,
 }
+
 impl Tool {
     pub const ALL: [Self; 12] = [
         Self::Read,
@@ -28,6 +29,7 @@ impl Tool {
         Self::McpCall,
         Self::McpConfiguration,
     ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Read => "read",
@@ -44,13 +46,20 @@ impl Tool {
             Self::McpConfiguration => "mcp_configuration",
         }
     }
+
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|tool| tool.as_str() == value)
     }
+
     pub fn may_mutate(self) -> bool {
         matches!(
             self,
-            Self::Bash | Self::Edit | Self::Write | Self::PublishWork | Self::McpCall | Self::McpConfiguration
+            Self::Bash
+                | Self::Edit
+                | Self::Write
+                | Self::PublishWork
+                | Self::McpCall
+                | Self::McpConfiguration
         )
     }
 }

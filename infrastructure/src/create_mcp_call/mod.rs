@@ -19,6 +19,7 @@ pub fn decode(text: &str) -> Result<domain::ToolInvocation, Error> {
     if arguments.server.len() > 64 || arguments.tool.len() > 128 || arguments.revision.len() != 64 {
         return Err("Invalid MCP tool identity or revision".into());
     }
+
     Ok(domain::ToolInvocation::McpCall(domain::McpCallArguments {
         server: arguments.server,
         tool: arguments.tool,
@@ -43,6 +44,7 @@ pub fn create_mcp_call(
 + Sync
 + use<> {
     let connections = connections.clone();
+
     move |workspace, arguments, cancellation| {
         let connections = connections.clone();
         let configuration = configuration.clone();
@@ -55,6 +57,7 @@ pub fn create_mcp_call(
                     cancellation.clone(),
                 )
                 .await?;
+
             let server = snapshot
                 .servers
                 .iter()
@@ -63,6 +66,7 @@ pub fn create_mcp_call(
             if server.revision != arguments.revision {
                 return Err("MCP definition changed; discover and review the current revision before execution".into());
             }
+
             connections
                 .call(&workspace, server, arguments, cancellation)
                 .await
