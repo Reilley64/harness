@@ -19,6 +19,8 @@ pub struct Settings {
     pub app_data_path: PathBuf,
     #[serde(default)]
     pub tools: ToolsSettings,
+    #[serde(default)]
+    pub mcp: McpSettings,
     pub replies: create_model_step::Settings,
     pub decider: create_native_decision::Settings,
     pub authentication: create_provider_connection::Settings,
@@ -33,6 +35,19 @@ pub struct ToolsSettings {
 impl Default for ToolsSettings {
     fn default() -> Self {
         Self { enabled: true }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct McpSettings {
+    pub registry_url: String,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            registry_url: "https://registry.modelcontextprotocol.io/v0.1/servers".into(),
+        }
     }
 }
 

@@ -17,6 +17,7 @@ use application::use_cases::update_agent;
 use application::use_cases::update_decider;
 use application::use_cases::update_decision;
 use application::use_cases::update_guidance;
+use application::use_cases::update_mcp_configuration;
 use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
 use application::use_cases::update_setup;
@@ -32,6 +33,7 @@ pub struct Dependencies {
     pub update_work: update_work::Dependencies,
     pub read_model_allowlist: read_model_allowlist::Dependencies,
     pub update_model_allowlist: update_model_allowlist::Dependencies,
+    pub mcp: update_mcp_configuration::Dependencies,
     pub providers: read_providers::Dependencies,
     pub authentication: create_provider_connection::Dependencies,
     pub models: read_models::Dependencies,

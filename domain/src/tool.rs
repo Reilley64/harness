@@ -11,9 +11,12 @@ pub enum Tool {
     WebSearch,
     PublishWork,
     PrepareAssignment,
+    McpCall,
+    McpConfiguration,
 }
+
 impl Tool {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 13] = [
         Self::Read,
         Self::Bash,
         Self::Edit,
@@ -25,7 +28,10 @@ impl Tool {
         Self::WebSearch,
         Self::PublishWork,
         Self::PrepareAssignment,
+        Self::McpCall,
+        Self::McpConfiguration,
     ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Read => "read",
@@ -39,15 +45,25 @@ impl Tool {
             Self::WebSearch => "web_search",
             Self::PublishWork => "publish_work",
             Self::PrepareAssignment => "prepare_assignment",
+            Self::McpCall => "mcp_call",
+            Self::McpConfiguration => "mcp_configuration",
         }
     }
+
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|tool| tool.as_str() == value)
     }
+
     pub fn may_mutate(self) -> bool {
         matches!(
             self,
-            Self::Bash | Self::Edit | Self::Write | Self::PublishWork | Self::PrepareAssignment
+            Self::Bash
+                | Self::Edit
+                | Self::Write
+                | Self::PublishWork
+                | Self::PrepareAssignment
+                | Self::McpCall
+                | Self::McpConfiguration
         )
     }
 }

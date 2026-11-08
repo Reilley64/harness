@@ -113,8 +113,9 @@ Bash and future configured MCP remain trusted OS-user tools, not sandboxes.
 Setup guidance requires exploration-only bash and separate human work/consent for
 machine-wide installs, remotes, external resources or authentication. Arbitrary
 trusted shell programs can still access/mutate OS-user resources; the draft gate
-is not a security claim about them. The accepted base has no MCP executor; no
-unaccepted MCP or OAuth candidate is imported or advertised here.
+is not a security claim about them. Configured stdio MCP uses the shared ordinary
+tool loop and its separate exact-definition local trust; Setup confirmation grants
+no MCP activation authority. HTTP execution and browser OAuth remain unavailable.
 
 ## ACP and native controls
 

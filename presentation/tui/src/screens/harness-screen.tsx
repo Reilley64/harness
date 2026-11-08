@@ -9,6 +9,7 @@ import { WorkingIndicator } from "../components/molecules/working-indicator.js";
 import { AgentMap } from "../components/organisms/agent-map.js";
 import { ApprovedWorkPanel } from "../components/organisms/approved-work-panel.js";
 import { GuidancePanel } from "../components/organisms/guidance-panel.js";
+import { McpPanel } from "../components/organisms/mcp-panel.js";
 import { ModelPicker } from "../components/organisms/model-picker.js";
 import { NativeDeciderPanel } from "../components/organisms/native-decider-panel.js";
 import { ProviderConnectionStatus } from "../components/organisms/provider-connection-status.js";
@@ -24,6 +25,7 @@ import { useConversation } from "../hooks/use-conversation.js";
 import { useCreateProviderConnection } from "../hooks/use-create-provider-connection.js";
 import { useGitBranch } from "../hooks/use-git-branch.js";
 import { useGuidance } from "../hooks/use-guidance.js";
+import { useMcp } from "../hooks/use-mcp.js";
 import { useModelPicker } from "../hooks/use-model-picker.js";
 import { useNativeDecider } from "../hooks/use-native-decider.js";
 import { usePromptDraft } from "../hooks/use-prompt-draft.js";
@@ -81,6 +83,7 @@ export function HarnessScreen({
     agent.workspace ??
     process.env.INIT_CWD ??
     process.cwd();
+  const mcp = useMcp(agent, workspace, columns, rows);
   const gitBranch = useGitBranch(workspace);
   const connection = useCreateProviderConnection(agent);
   const draft = usePromptDraft(chat.conversation?.id ?? "initial");
@@ -103,6 +106,7 @@ export function HarnessScreen({
     guidance.open ||
     approved.open ||
     native.mode !== null ||
+    mcp.visible ||
     setup.open;
   useContextNavigation(
     !modal && !stopConfirmation,
@@ -146,6 +150,7 @@ export function HarnessScreen({
       input === "r" &&
       !native.mode &&
       !guidance.open &&
+      !mcp.visible &&
       !approved.open &&
       !setup.open &&
       !connection.busy &&
@@ -158,6 +163,10 @@ export function HarnessScreen({
     }
     if (native.mode) {
       if (key.escape) native.close();
+      return;
+    }
+    if (mcp.visible) {
+      if (!(key.return && key.eventType === "repeat")) mcp.input(input, key);
       return;
     }
     if (approved.open) {
@@ -366,6 +375,9 @@ export function HarnessScreen({
     } else if (command === "/resume inspect") {
       draft.change("");
       void chat.acknowledge();
+    } else if (command === "/mcp" || command.startsWith("/mcp ")) {
+      draft.change("");
+      mcp.open(command.slice(4).trim());
     } else if (command === "/auth") {
       draft.change("");
       setNotice(null);
@@ -465,6 +477,7 @@ export function HarnessScreen({
           discuss={openConversation}
         />
       )}
+      {mcp.visible && <McpPanel state={mcp} rows={rows} />}
       {approved.open && (
         <ApprovedWorkPanel
           key={approved.work?.revision ?? "loading"}
@@ -530,6 +543,7 @@ export function HarnessScreen({
           guidance.open ||
           approved.open ||
           native.mode ||
+          mcp.visible ||
           setup.open
             ? "none"
             : "flex"
@@ -601,6 +615,16 @@ export function HarnessScreen({
                   kind: "status",
                   tone: "error",
                   content: models.error,
+                }}
+              />
+            )}
+            {(mcp.error || mcp.configuration?.stale) && (
+              <MessageLine
+                line={{
+                  id: "mcp-configuration-error",
+                  kind: "status",
+                  tone: "error",
+                  content: `${mcp.error ?? mcp.configuration?.error ?? "MCP is using its last validated snapshot."} Open /mcp to inspect and reload.`,
                 }}
               />
             )}
