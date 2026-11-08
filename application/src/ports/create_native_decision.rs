@@ -5,12 +5,12 @@ use crate::ports::PortFuture;
 #[from(Box<dyn std::error::Error + Send + Sync>)]
 #[display("failed to create native decision")]
 pub struct CreateNativeDecisionError {
-    pub reported_response: Option<domain::DecisionResponse>,
+    pub reported_response: Option<Box<domain::DecisionResponse>>,
 }
 
 impl CreateNativeDecisionError {
     pub fn with_report(mut self, report: domain::DecisionResponse) -> Self {
-        self.reported_response = Some(report);
+        self.reported_response = Some(Box::new(report));
         self
     }
 }

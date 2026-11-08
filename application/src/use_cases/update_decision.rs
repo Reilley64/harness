@@ -191,7 +191,7 @@ pub async fn call(
                         }),
                         Err(mut error) => {
                             let decision = if let Some(report) = error.reported_response.take() {
-                                checkpoint_report(&d, decision, report).await?
+                                checkpoint_report(&d, decision, *report).await?
                             } else {
                                 control.ok_or_else(|| Error::caused_by("Stopped intent disappeared"))?
                             };
@@ -214,7 +214,7 @@ pub async fn call(
         }
         Err(mut error) => {
             if let Some(report) = error.reported_response.take() {
-                decision = checkpoint_report(&d, decision, report).await?;
+                decision = checkpoint_report(&d, decision, *report).await?;
             }
             let is_unsupported = unsupported(&error);
             diagnostics.push(Error::caused_by(ErrorContext::caused_by(
