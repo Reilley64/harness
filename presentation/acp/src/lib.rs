@@ -1,5 +1,6 @@
 mod agents;
 mod authentication;
+mod children;
 mod conversations;
 mod decisions;
 mod dependencies;
@@ -71,6 +72,9 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
     let Dependencies {
         mcp,
         providers,
+        read_children,
+        update_children,
+        create_dispatch,
         read_decision,
         update_decision,
         read_deciders,
@@ -94,6 +98,9 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         read_model_allowlist,
         update_model_allowlist,
     } = dependencies.into();
+    let children_results = read_children.clone();
+    let background_children = update_children.clone();
+    let follow_up_children = update_children.clone();
     let sessions = conversations::Sessions::default();
     let agent_sessions = sessions.clone();
     let read_agent_sessions = sessions.clone();
@@ -132,6 +139,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/approvedWork".into(), serde_json::json!(true)),
                     ("harness/nativeDecider".into(), serde_json::json!(true)),
                     ("harness/setup".into(), serde_json::json!(true)),
+                    ("harness/children".into(), serde_json::json!(true)),
                 ]
                 .into_iter()
                 .collect();
@@ -147,6 +155,81 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 )
             },
             agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ReadRequest, responder, connection| {
+                let d = read_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_children::call(d, request.session_id).await {
+                        Ok(output) => responder.respond(children::Response { coordination: output.coordination.as_ref().map(children::summary), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ResultRequest, responder, connection| {
+                let d = children_results.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_children::call(d, request.session_id).await {
+                        Ok(output) => match output.coordination.as_ref().map(|state| children::result(state, &request.execution_id)).transpose() {
+                            Ok(result) => responder.respond(children::Response { coordination: None, execution: None, result }),
+                            Err(error) => responder.respond_with_error(error),
+                        },
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::DispatchRequest, responder, connection| {
+                let d = create_dispatch.clone();
+                connection.spawn(async move {
+                    let token = tokio_util::sync::CancellationToken::new();
+                    let future = application::use_cases::create_dispatch::call(d, request.session_id, request.revision, domain::AssignmentBrief { intent: request.intent, role: request.role, task: request.task, constraints: request.constraints, tool_context: request.tool_context, context_tokens: request.context_tokens }, request.routed, token.clone());
+                    tokio::pin!(future);
+                    let cancelled = responder.cancellation();
+                    let result = tokio::select! { result = &mut future => result, _ = cancelled.cancelled() => { token.cancel(); future.await } };
+                    match result {
+                        Ok(output) => responder.respond(children::Response { coordination: None, execution: Some(children::execution(&output.execution)), result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::JoinRequest, responder, connection| {
+                let d = update_children.clone();
+                connection.spawn(async move {
+                    let mode = match request.mode.as_str() { "any" => domain::JoinMode::Any, "all" => domain::JoinMode::All, _ => return responder.respond_with_error(agent_client_protocol::Error::invalid_params().data("Join mode must be any or all")) };
+                    match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::Join { id: request.id, mode, executions: request.executions }, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::BackgroundRequest, responder, connection| {
+                let d = background_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::Background { id: request.id }, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::FollowUpRequest, responder, connection| {
+                let d = follow_up_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::CompleteFollowUp { outcomes: request.outcomes }, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |request: decisions::ReadRequest, responder, connection| {

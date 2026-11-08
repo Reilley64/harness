@@ -1,8 +1,10 @@
 use application::use_cases::create_agent;
 use application::use_cases::create_conversation;
+use application::use_cases::create_dispatch;
 use application::use_cases::create_message;
 use application::use_cases::create_provider_connection;
 use application::use_cases::read_agent;
+use application::use_cases::read_children;
 use application::use_cases::read_conversation;
 use application::use_cases::read_deciders;
 use application::use_cases::read_decision;
@@ -14,6 +16,7 @@ use application::use_cases::read_providers;
 use application::use_cases::read_setup;
 use application::use_cases::read_work;
 use application::use_cases::update_agent;
+use application::use_cases::update_children;
 use application::use_cases::update_decider;
 use application::use_cases::update_decision;
 use application::use_cases::update_guidance;
@@ -25,6 +28,10 @@ use application::use_cases::update_work;
 
 #[fundle::bundle]
 pub struct Dependencies {
+    pub create_dispatch: create_dispatch::Dependencies,
+    pub read_children: read_children::Dependencies,
+    pub update_children: update_children::Dependencies,
+
     pub read_decision: read_decision::Dependencies,
     pub update_decision: update_decision::Dependencies,
     pub read_deciders: read_deciders::Dependencies,

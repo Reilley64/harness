@@ -37,7 +37,10 @@ fn input(
     if conversation.agent.as_ref().is_some_and(|agent| {
         matches!(
             agent.role,
-            domain::AgentRole::Griller | domain::AgentRole::ChiefOfStaff | domain::AgentRole::Setup
+            domain::AgentRole::Griller
+                | domain::AgentRole::ChiefOfStaff
+                | domain::AgentRole::Setup
+                | domain::AgentRole::Research
         )
     }) {
         let snapshot = conversation.run_instructions()?;
@@ -48,8 +51,14 @@ fn input(
         }
     }
     if let Some(a) = &conversation.assignment {
-        input.push(json!({"role":"developer","content":format!("Durable approved handoff. Sender: {}. Recipient: {}. Work: {}. Assignment intent: {}. Version: {}. Trusted human approval recorded at: {}. Source root: {}. Source revision: {}.\\nScope: {}\\nCriteria: {}\\nSpec: {}\\nDependencies: {}\\nWiki pointer: {}\\nCurrent-context pointer: {}\\nArtifacts: {}\\nFollow-up: discuss and plan this approved work. Native routing, child dispatch, joins, managed workspaces, review, integration and target merge are unavailable in this slice. Never simulate those effects or claim spec completion. Ordinary tools remain OS-user trusted, not managed implementation permission.",
+        input.push(json!({"role":"developer","content":format!("Durable approved handoff. Sender: {}. Recipient: {}. Work: {}. Assignment intent: {}. Version: {}. Trusted human approval recorded at: {}. Source root: {}. Source revision: {}.\\nScope: {}\\nCriteria: {}\\nSpec: {}\\nDependencies: {}\\nWiki pointer: {}\\nCurrent-context pointer: {}\\nArtifacts: {}\\nFollow-up: discuss and plan this approved work. Prepare and inspect native selections, then dispatch scoped Research with dispatch_research; retain chosen pairs and use captured joins without model polling. Implementers, managed workspaces, review, integration and target merge remain unavailable. Never simulate those effects or claim spec completion. Ordinary tools remain OS-user trusted, not managed implementation permission.",
             a.creator_id,conversation.id,a.work_id,a.intent,a.proposal.version,a.approved_at,a.proposal.root,a.proposal.source_revision,a.proposal.scope,a.proposal.criteria,a.proposal.spec,a.proposal.dependencies,a.proposal.wiki.as_deref().unwrap_or("unavailable / unknown"),a.proposal.context.as_deref().unwrap_or("unavailable / unknown"),a.proposal.artifacts.join(", "))}));
+    }
+    if let Some(current_work) = &conversation.current_work {
+        if current_work.len() > 65_536 {
+            return Err("Required current-work facts exceed capacity; inspect retained assignments before inference".into());
+        }
+        input.push(json!({"role":"developer","content":current_work}));
     }
     for pair in conversation.messages.as_chunks::<2>().0 {
         let user = &pair[0];

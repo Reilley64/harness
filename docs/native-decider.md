@@ -6,7 +6,7 @@ An actual approved Chief of Staff (CoS) can prepare a durable assignment intent,
 then a trusted native user can choose and inspect a typed native decision for it.
 This slice **does not launch a child**, create an agent/run/worktree, dispatch
 review, or integrate/merge anything. A selected pair is not executed work.
-HARNESS-29 owns subsequent dispatch; HARNESS-32 owns complete-pool hierarchy and
+[Managed Research dispatch](managed-dispatch.md) owns subsequent execution; HARNESS-32 owns complete-pool hierarchy and
 richer evidence refresh. Hosted routers remain disabled.
 
 ## Prepare through CoS

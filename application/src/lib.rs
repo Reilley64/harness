@@ -2,6 +2,7 @@ mod decision_access;
 pub mod error_context;
 mod model_access;
 pub mod ports;
+pub mod research_access;
 pub mod turn_control;
 pub mod use_cases;
 mod work_access;

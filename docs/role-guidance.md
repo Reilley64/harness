@@ -11,17 +11,18 @@ adopts an inspected candidate under the conversation lock and checked revision.
 Domain values remain Serde-free. Each conversation adapter owns its own records.
 
 Griller, [Setup](repository-setup.md) and the approved-work Chief of Staff execute
-through the shared loop. Research, Implementer, Reviewer, review-axis and Retro
-assets remain bundled for later assignment owners;
+through the shared loop. [Managed Research](managed-dispatch.md) resolves its
+Research closure through that same machinery. Implementer, Reviewer, review-axis
+and Retro assets remain bundled for later assignment owners;
 inspection is not an agent roster, dispatch API or creation relationship. Native
 Jev Decider has a separate typed-decision contract, not a conversational/tool role.
 All conversational roles use shared configured tools. Guidance cannot grant scope,
 settle work, reset allowances, authorize writes/merge or resolve Unknown effects.
 Bash/MCP are OS-user trusted; source worktrees do not isolate services or secrets.
 
-Child execution/joins/steering,
-completion/continuation, compaction and provider fallback are not implemented by
-this module. Missing glossary/ADR files are not unconditional Setup triggers.
+Child execution/joins/steering and completion/continuation belong to
+[managed dispatch](managed-dispatch.md), not this resolver. Compaction and provider
+fallback are not implemented by this module. Missing glossary/ADR files are not unconditional Setup triggers.
 
 ## Bundle and provenance
 
@@ -120,7 +121,8 @@ selection, not tool-path confinement or a general policy sandbox.
 A content-addressed snapshot records the selected phase, scopes, references, actual
 instruction bodies, dependency closure, source paths, content versions and upstream
 links. Its SHA-256 identity covers these values, not timestamps or a claim about
-historical content. Conversation schema v4 introduced instruction persistence; current v6 retains v5 deduplicated immutable snapshots,
+historical content. Conversation schema v4 introduced instruction persistence; schema six (and Research schema
+seven) retain v5 deduplicated immutable snapshots,
 the selected snapshot ID and each run's actual snapshot ID, in the existing private
 bounded atomic/check-revision conversation file. Snapshot checksum/closure and run
 references are validated on read/update. Corrupt records are rejected unchanged.

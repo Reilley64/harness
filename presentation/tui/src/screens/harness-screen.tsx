@@ -136,7 +136,9 @@ export function HarnessScreen({
             ? "harness - Chief of Staff"
             : role === "setup"
               ? "harness - Setup"
-              : "harness - Griller",
+              : role === "research"
+                ? "harness - Research"
+                : "harness - Griller",
   );
 
   useInput((input, key) => {
@@ -452,7 +454,7 @@ export function HarnessScreen({
       )}
       {stopConfirmation && (
         <TerminalText>
-          {`Stop ${role === "chief_of_staff" ? "Chief of Staff" : role === "setup" ? "Setup" : "Griller"}'s active leaf run? No descendants. Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
+          {`Stop ${role === "chief_of_staff" ? "Chief of Staff" : role === "setup" ? "Setup" : role === "research" ? "Research" : "Griller"}'s active run? Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
         </TerminalText>
       )}
       {native.mode && (

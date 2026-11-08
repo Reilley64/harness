@@ -1,4 +1,5 @@
 use crate::AssignmentBrief;
+use crate::ChildrenControl;
 use crate::CreateFileArguments;
 use crate::CreateProcessArguments;
 use crate::McpCallArguments;
@@ -27,4 +28,8 @@ pub enum ToolInvocation {
     ReadWebSearch(ReadWebSearchArguments),
     PublishWork(PublishWorkArguments),
     PrepareAssignment(AssignmentBrief),
+    DispatchResearch(AssignmentBrief, bool),
+    ControlChildren(ChildrenControl),
+    ReadChildren,
+    ReadChildResult(String),
 }

@@ -8,12 +8,13 @@ human can approve that version and deliver a durable handoff to a separate Chief
 of Staff (CoS). CoS uses the same real conversation, model-step and tool loop as
 Griller, with its own identity, instructions, messages, runs and accounting.
 
-This is approved handoff, not managed implementation. A CoS can now prepare and
-inspect a [native Decider selection](native-decider.md), without launching a child.
-Child dispatch, joins, managed workspaces, review, integration and target merge
+This module owns approved handoff, not managed implementation. CoS can prepare
+and inspect a [native Decider selection](native-decider.md); separate
+[managed Research dispatch](managed-dispatch.md) consumes settled selections.
+Managed workspaces, Implementer execution, review, integration and target merge
 remain unavailable. Unknown tool names produce ordinary Invalid results; unknown
-ACP methods are unavailable. No synthetic child counts, execution, readiness or
-spec completion is produced. `complete` is always false here; a later completion
+ACP methods are unavailable. No synthetic execution, readiness or spec completion
+is produced. `complete` is always false here; a later completion
 owner must establish the exact human-authorized verified target merge.
 
 Tools are OS-user trusted, not a sandbox or an effect classifier. Approval does
@@ -128,8 +129,9 @@ Use `o` after delivery to open CoS, `/open <conversation-id>` to open its existi
 conversation, `F3` or `/griller` to return to the repository Griller, and
 `./bin/harness --resume <conversation-id>` after restart. Native title and map
 metadata identify the selected actual role and recorded creator. Creator identity
-is not execution ownership or blanket Stop propagation. This slice has no execution
-descendants; Stop affects only the selected leaf. Growing multi-agent maps and
+is not execution ownership or blanket Stop propagation. The handoff module does
+not own child execution; [managed dispatch](managed-dispatch.md) documents the
+available controls and incomplete subtree/restart integration. Growing multi-agent maps and
 background conversation switching are not implemented by this handoff slice.
 Drafts and transcript viewport anchors are retained independently by conversation
 within the native UI session, including visits to an empty CoS. Plain empty-prompt

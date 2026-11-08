@@ -74,6 +74,8 @@ pub fn create_coordinator(
                     role: domain::AgentRole::ChiefOfStaff,
                 }),
                 assignment: Some(assignment),
+                research: None,
+                current_work: None,
                 runs: Vec::new(),
                 instruction_snapshots: vec![instruction.clone()],
                 selected_instructions: adopt_default.then_some(instruction.id),

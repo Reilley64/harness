@@ -33,6 +33,8 @@ pub fn create_conversation(
             let conversation = domain::Conversation {
                 id,
                 agent: None,
+                research: None,
+                current_work: None,
                 assignment: None,
                 runs: Vec::new(),
                 instruction_snapshots: Vec::new(),

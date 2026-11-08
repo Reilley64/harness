@@ -19,6 +19,16 @@ macro_rules! port {
     };
 }
 
+mod create_research;
+pub use create_research::CreateResearch;
+pub use create_research::CreateResearchError;
+mod read_coordination;
+mod update_coordination;
+pub use read_coordination::ReadCoordination;
+pub use read_coordination::ReadCoordinationError;
+pub use update_coordination::Response as CoordinationResponse;
+pub use update_coordination::UpdateCoordination;
+pub use update_coordination::UpdateCoordinationError;
 mod read_decision;
 pub use read_decision::ReadDecision;
 pub use read_decision::ReadDecisionError;

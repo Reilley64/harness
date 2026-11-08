@@ -8,6 +8,7 @@ use crate::MessageStatus;
 use crate::Model;
 use crate::ModelEffort;
 use crate::ModelStep;
+use crate::ResearchAssignment;
 use crate::Run;
 use crate::RunStatus;
 use crate::SteeringInstruction;
@@ -21,15 +22,21 @@ pub struct Conversation {
     pub id: String,
     pub agent: Option<Agent>,
     pub assignment: Option<WorkAssignment>,
-    pub runs: Vec<Run>,
-    pub instruction_snapshots: Vec<InstructionSnapshot>,
-    pub selected_instructions: Option<String>,
-    pub resume_required: bool,
-    pub provider_connection_id: String,
+    pub research: Option<ResearchAssignment>,
+
     pub workspace: Option<std::path::PathBuf>,
+    pub provider_connection_id: String,
     pub model: Model,
     pub effort: Option<ModelEffort>,
+
+    pub instruction_snapshots: Vec<InstructionSnapshot>,
+    pub selected_instructions: Option<String>,
+
     pub messages: Vec<Message>,
+    pub runs: Vec<Run>,
+    pub current_work: Option<String>,
+    pub resume_required: bool,
+
     pub created_at: u64,
     pub updated_at: u64,
     pub revision: u64,
@@ -75,6 +82,7 @@ impl Conversation {
         snapshot.validate()?;
         if self.agent.as_ref().is_some_and(|agent| {
             (agent.role == AgentRole::ChiefOfStaff) != (snapshot.phase == "coordination")
+                || (agent.role == AgentRole::Research) != (snapshot.phase == "research")
         }) {
             return Err("The instruction phase does not belong to this durable role");
         }

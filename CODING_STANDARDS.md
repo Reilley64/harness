@@ -53,6 +53,14 @@ definitions and distinct hook lifecycles. Do not insert spacing inside literals 
 change evaluation order for layout. Formatters normalize syntax; they do not infer
 these semantic groups.
 
+## Semantic field ordering
+
+Order struct fields by domain meaning, relationships and lifecycle, keeping related
+fields together with blank lines between distinct groups where useful. Align
+named-field construction and destructuring when safe. Preserve side-effect
+evaluation order and observable layout, serialization and canonical/trust
+fingerprints; do not reorder fields mechanically or broaden an edit into cleanup.
+
 ## Errors, effects, and storage
 
 - Use `#[ohno::error]` for application errors and boxed `From` conversions at
