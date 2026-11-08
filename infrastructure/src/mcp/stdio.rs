@@ -147,17 +147,14 @@ impl Client {
             if bytes.is_empty() || bytes.len() > LIMIT || bytes.last() != Some(&b'\n') {
                 return Err("MCP connection closed or response exceeded 1 MiB".into());
             }
-            let redactions = Arc::clone(&self.redactions);
             let (mut response, request_id) =
                 tokio::task::spawn_blocking(move || -> Result<_, Error> {
-                    let mut response: Value =
+                    let response: Value =
                         serde_json::from_slice(&bytes).context("Invalid MCP JSON-RPC response")?;
                     let request_id = response
                         .get("method")
                         .and_then(|_| response.get("id"))
                         .cloned();
-                    redact(&mut response, &redactions);
-
                     Ok((response, request_id))
                 })
                 .await??;
@@ -235,12 +232,7 @@ impl Client {
 
                 tools.push(domain::McpTool {
                     name: name.to_owned(),
-                    description: entry["description"]
-                        .as_str()
-                        .unwrap_or("")
-                        .chars()
-                        .take(4096)
-                        .collect(),
+                    description: entry["description"].as_str().unwrap_or("").to_owned(),
                     input_schema,
                 });
             }
@@ -265,40 +257,43 @@ impl Client {
         let mut sent = false;
         let operation = async {
             let tools = self.list().await?;
-            let Some(arguments) = arguments else {
+            let redactions = Arc::clone(&self.redactions);
+            let (tools, call) = tokio::task::spawn_blocking(move || -> Result<_, Error> {
+                let call = arguments
+                    .map(|arguments| -> Result<_, Error> {
+                        let tool = tools
+                            .iter()
+                            .find(|tool| tool.name == arguments.tool)
+                            .ok_or("MCP tool is not advertised by the server")?;
+                        let schema: Value = serde_json::from_str(&tool.input_schema)?;
+                        let input: Value = serde_json::from_str(&arguments.arguments)?;
+                        let validator = jsonschema::options()
+                            .build(&schema)
+                            .map_err(|error| error.to_owned())
+                            .context("Invalid or externally referenced MCP input schema")?;
+                        if !validator.is_valid(&input) {
+                            return Err(
+                                "MCP arguments do not match the advertised input schema".into()
+                            );
+                        }
+                        Ok((arguments.tool, input))
+                    })
+                    .transpose()?;
+
+                let tools = public_tools(tools, &redactions)?;
+                Ok((tools, call))
+            })
+            .await??;
+            let Some((name, input)) = call else {
                 return Ok((tools, None));
             };
 
-            let schema = tools
-                .iter()
-                .find(|tool| tool.name == arguments.tool)
-                .ok_or("MCP tool is not advertised by the server")?
-                .input_schema
-                .clone();
-
-            let input: Value = serde_json::from_str(&arguments.arguments)?;
-            let checked = input.clone();
-            let valid = tokio::task::spawn_blocking(move || -> Result<bool, Error> {
-                let schema: Value = serde_json::from_str(&schema)?;
-                let validator = jsonschema::options()
-                    .build(&schema)
-                    .map_err(|error| error.to_owned())
-                    .context("Invalid or externally referenced MCP input schema")?;
-                Ok(validator.is_valid(&checked))
-            })
-            .await??;
-            if !valid {
-                return Err("MCP arguments do not match the advertised input schema".into());
-            }
-
             sent = true;
             let response = self
-                .rpc(
-                    "tools/call",
-                    json!({"name":arguments.tool,"arguments":input}),
-                )
+                .rpc("tools/call", json!({"name":name,"arguments":input}))
                 .await?;
 
+            let redactions = Arc::clone(&self.redactions);
             let result = tokio::task::spawn_blocking(move || -> Result<_, Error> {
                 let schema: Value = serde_json::from_str(include_str!("content_schema.json"))?;
                 let validator = jsonschema::options()
@@ -311,13 +306,17 @@ impl Client {
                     return Err("Malformed or unsupported MCP tool result content".into());
                 }
 
+                let status = if response["isError"] == true {
+                    domain::ToolStatus::Failed
+                } else {
+                    domain::ToolStatus::Succeeded
+                };
+
+                let mut public = response;
+                redact(&mut public, &redactions);
                 Ok(domain::ToolResult {
-                    status: if response["isError"] == true {
-                        domain::ToolStatus::Failed
-                    } else {
-                        domain::ToolStatus::Succeeded
-                    },
-                    output: serde_json::to_string(&response)?,
+                    status,
+                    output: serde_json::to_string(&public)?,
                     artifact: None,
                     truncated: false,
                 })
@@ -368,6 +367,40 @@ impl Drop for Client {
         self.kill_group();
         let _ = self.child.start_kill();
     }
+}
+
+fn public_tools(
+    mut tools: Vec<domain::McpTool>,
+    secrets: &[String],
+) -> Result<Vec<domain::McpTool>, Error> {
+    let mut size = 0;
+    for tool in &mut tools {
+        let mut name = Value::String(tool.name.clone());
+        redact(&mut name, secrets);
+        if name.as_str() != Some(tool.name.as_str()) {
+            return Err(
+                "MCP tool identity contains a provisioned value; metadata cannot be exposed safely"
+                    .into(),
+            );
+        }
+
+        let mut description = Value::String(std::mem::take(&mut tool.description));
+        let mut schema: Value = serde_json::from_str(&tool.input_schema)?;
+        redact(&mut description, secrets);
+        redact(&mut schema, secrets);
+        tool.description = description
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(4096)
+            .collect();
+        tool.input_schema = serde_json::to_string(&schema)?;
+        size += tool.input_schema.len() + tool.description.len();
+        if tool.input_schema.len() > 65536 || size > LIMIT {
+            return Err("MCP redacted tool schemas exceed metadata limits".into());
+        }
+    }
+    Ok(tools)
 }
 
 fn redact(value: &mut Value, secrets: &[String]) {

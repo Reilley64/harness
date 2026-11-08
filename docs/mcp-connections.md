@@ -194,12 +194,14 @@ Unix process groups do not contain descendants that deliberately escape them.
 
 Initialization is bounded at 30 seconds; operations at 120 seconds. NDJSON frames
 are bounded at 1 MiB, tool discovery at 16 pages/256 unique tools/1 MiB metadata,
-and individual schemas at 64 KiB. Owned frame bytes and an immutable shared
-redaction context move to a blocking worker for decoding/redaction, without an
-async-worker copy of the frame or secret set. Cancellation can stop waiting while
-that worker safely owns its bounded inputs. JSON-RPC correlation retains server
-request IDs for unsupported-request responses; tool results are moved out rather
-than deep-copied on the async worker.
+and individual schemas at 64 KiB. Owned frame bytes move to a blocking decoder;
+public metadata/results move to blocking workers with an immutable shared
+redaction context, without an async-worker copy of the frame or secret set.
+Cancellation can stop waiting while those workers safely own their bounded
+inputs. JSON-RPC correlation, initialization and original argument schemas are
+interpreted before redaction. Tool results are moved rather than deep-copied on
+the async worker. A tool name containing a provisioned value is unavailable,
+not silently renamed into a different executable identity.
 
 Tool-result validation and encoding also run on a blocking worker. Supported
 text, image, audio, resource-link and embedded-resource blocks follow the bundled
@@ -212,6 +214,13 @@ The bundled `infrastructure/src/mcp/content_schema.json` is the reachable
 with descriptive prose omitted but validation keywords preserved. Schema formats
 are asserted, including a local base64 `byte` validator; no schema retrieval is
 enabled. Malformed content is not evidence of success or a confirmed failure.
+
+The original tool result is validated and its typed outcome fixed before public
+redaction. Known provisioned values overlapping `isError`, optional-field names,
+URI strings or base64 data cannot change Failed/Succeeded/Unknown. Redaction
+still protects known values and object keys in durable/model-visible output.
+That output is a sanitized observation, not an unchanged or replayable MCP
+protocol envelope; its redacted fields are not reinterpreted to select status.
 
 Unsupported client requests are rejected; no
 sampling, elicitation, roots, shell, package install or browser login capability
