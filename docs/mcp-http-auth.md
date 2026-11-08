@@ -104,7 +104,9 @@ PKCE S256 must be advertised. Each attempt has unpredictable state and a fresh
 verifier. Duplicate/malformed/stale callback fields and redirect/client/resource
 mismatches are rejected before code exchange. A present `iss` must exactly match
 the recorded issuer, even without advertisement and on error callbacks. When
-advertised, `iss` is mandatory. This comparison never folds host/scheme, removes
+advertised, `iss` is mandatory; without advertisement, an absent `iss` is permitted
+but a present one must still match exactly. Malformed advertised capability flags
+are rejected rather than interpreted as absent/false. This comparison never folds host/scheme, removes
 default ports, normalizes percent encoding or changes trailing slashes. A denial
 cannot act on unvalidated issuer information. Both authorization and token requests
 include the resource indicator. Tokens are sent in headers, never in MCP URLs.

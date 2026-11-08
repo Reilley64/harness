@@ -326,14 +326,21 @@ pub(super) async fn discover(resource: &Url, issuer: &str) -> Result<Metadata, E
             registration,
             userinfo,
             scope,
-            iss_required: server["authorization_response_iss_parameter_supported"] == true,
-            document_supported: server["client_id_metadata_document_supported"] == true,
+            iss_required: flag(&server, "authorization_response_iss_parameter_supported")?,
+            document_supported: flag(&server, "client_id_metadata_document_supported")?,
             secret_post_supported: server["token_endpoint_auth_methods_supported"]
                 .as_array()
                 .is_some_and(|methods| methods.iter().any(|method| method == "client_secret_post")),
         })
     })
     .await?
+}
+
+fn flag(server: &Value, name: &str) -> Result<bool, Error> {
+    match server.get(name) {
+        None => Ok(false),
+        Some(value) => Ok(serde_json::from_value(value.clone()).context("MCP authorization-server advertised a malformed capability; correct its metadata before connecting")?),
+    }
 }
 
 pub(super) fn parameters(value: &str) -> Result<BTreeMap<String, String>, Error> {
