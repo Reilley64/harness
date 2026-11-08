@@ -172,10 +172,10 @@ pub fn create_native_decision(
             tokio::pin!(operation);
             let bytes = tokio::select! {
                 biased;
-                result = &mut operation => result,
                 _ = cancellation.cancelled() => {
                     Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "Native decision stopped").into())
                 },
+                result = &mut operation => result,
             }.map_err(ports::CreateNativeDecisionError::from)?;
 
             tokio::task::spawn_blocking(move || decode(bytes))
