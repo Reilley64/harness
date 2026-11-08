@@ -83,7 +83,10 @@ exact-definition native Connect approval, the backend discovers metadata and
 presents an operation-correlated protected browser link. A dedicated TUI pane keeps
 it hidden: `o` opens it, `l` reveals/hides it, and Escape cancels the attempt.
 Revealed links are paged with left/right arrows and reset on resize; protected
-controls remain visible at small supported dimensions. Safe operation/configuration
+controls remain visible at the 50×18 supported minimum. Below that viewport,
+protected actions are blocked; Escape still cancels/navigates. MCP modals consume
+bracketed paste without executing shortcuts, and modified/repeated activation
+keys do not open or approve work. Safe operation/configuration
 diagnostics are likewise paged rather than clipped behind ordinary metadata.
 Link notifications
 bind the operation ID, workspace and definition revision. Replacement, dismissal

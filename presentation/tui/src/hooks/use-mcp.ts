@@ -1,3 +1,4 @@
+import { usePaste } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../services/acp.js";
 import { openAuthorizationUrl } from "../services/authorization.js";
@@ -16,6 +17,7 @@ export function useMcp(
   rows: number,
 ) {
   const [visible, setVisible] = useState(false);
+  usePaste(() => undefined, { isActive: visible });
   const [configuration, setConfiguration] = useState<McpConfiguration | null>(
     null,
   );
@@ -167,12 +169,25 @@ export function useMcp(
       leftArrow?: boolean;
       rightArrow?: boolean;
       return?: boolean;
+      ctrl?: boolean;
+      meta?: boolean;
+      eventType?: "press" | "repeat" | "release";
     },
   ) {
+    if (key.eventType === "release") return;
     if (key.escape) {
       close();
       return;
     }
+    if (columns < 50 || rows < 18 || key.ctrl || key.meta) return;
+    if (
+      key.eventType === "repeat" &&
+      !key.leftArrow &&
+      !key.rightArrow &&
+      !key.upArrow &&
+      !key.downArrow
+    )
+      return;
     if (busy && authorizationUrl) {
       if (input === "l") {
         setAuthorizationVisible((visible) => !visible);
