@@ -109,12 +109,12 @@ requests use `-32602`.
 `execution` has `intent`, `assignmentId`, `agentId`, `executionId`, `creatorId`,
 `parentConversationId`, `parentRunId`, `parentRevision`, nullable `workId`/`workVersion`, `role`, `providerId`,
 `modelId`, nullable `effort`, `instructions`, `routed`, `status`, nullable
-`outcomeId`, `deliveredTo`, `followUpCompletedBy`, `stopRequested`, `resumeRequired`, and a `source` conversation URI.
+`outcomeId`, `deliveredTo`, `followUpCompletedBy`, `stopRequested`, `resumeRequired`, nullable `recoveryNotice`, and a `source` conversation URI.
 Status is `held`, `running`, `completed`, `needs_human`, `failed`, `stopped` or
 `unknown`. Creation lineage is separate from actual Stop ownership.
 
 `coordination` has `agentId`, `conversationId`, `revision`, `authorityComplete`,
-`gate`, `status`, nullable
+`gate`, `status`, `restartRequired`, retained `recoveryNotices`, nullable
 `runId`, `settled`,
 `children` (execution summaries), and `joins`. `status` distinguishes `running`,
 `waiting`, `ready`, `needs_human`, `approval`, `stopped`, `resume_required` and

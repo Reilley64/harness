@@ -91,5 +91,17 @@ pub async fn call(
             .await
             .map_err(Error::caused_by)?;
     }
+    conversation = coordination_recovery::restore(
+        &dependencies.read_coordination,
+        &dependencies.update_coordination,
+        &dependencies.lock_conversation,
+        &dependencies.lock_execution,
+        &dependencies.read_conversation,
+        &dependencies.update_conversation,
+        conversation,
+        &tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     Ok(Output { conversation })
 }

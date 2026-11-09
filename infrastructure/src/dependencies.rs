@@ -10,6 +10,7 @@ use crate::create_process;
 use crate::create_research;
 use crate::create_tool_output;
 use crate::lock_conversation;
+use crate::lock_execution;
 use crate::mcp::Connections;
 use crate::read_agent;
 use crate::read_code_matches;
@@ -110,6 +111,7 @@ pub struct Dependencies {
     read_conversation: ports::ReadConversation,
     update_conversation: ports::UpdateConversation,
     lock_conversation: ports::LockConversation,
+    lock_execution: ports::LockExecution,
     read_provider_connection: ports::ReadProviderConnection,
     create_model_step_factory: ports::CreateModelStepFactory,
     create_provider_connection_factory: ports::CreateProviderConnectionFactory,
@@ -426,6 +428,16 @@ impl Dependencies {
                 ports::UpdateConversation::new(move |conversation| {
                     let result = implementation(conversation);
                     Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .lock_execution(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = lock_execution::lock_execution(
+                    &settings.app_data_path.join("coordination/owners"),
+                );
+                ports::LockExecution::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { result.await.map_err(lock_execution::error) })
                 })
             })
             .lock_conversation(|deps| {

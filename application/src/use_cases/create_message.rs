@@ -64,6 +64,22 @@ pub(crate) async fn resume(
     workspace: std::path::PathBuf,
     cancellation: CancellationToken,
 ) -> Result<Output, Error> {
+    let source = dependencies
+        .read_conversation
+        .call(id.clone())
+        .await
+        .map_err(Error::caused_by)?;
+    let _owner = if let Some(research) = source.research {
+        Some(
+            dependencies
+                .lock_execution
+                .call(research.execution_id)
+                .await
+                .map_err(Error::caused_by)?,
+        )
+    } else {
+        None
+    };
     coordinate(
         dependencies,
         id,
@@ -145,21 +161,55 @@ async fn coordinate(
         .map_err(Error::caused_by)?;
         checkpoint(&dependencies, &mut conversation).await?;
     }
+    conversation = coordination_recovery::restore(
+        &dependencies.read_coordination,
+        &dependencies.update_coordination,
+        &dependencies.lock_conversation,
+        &dependencies.lock_execution,
+        &dependencies.read_conversation,
+        &dependencies.update_conversation,
+        conversation,
+        &cancellation,
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    let ended_before_resume = conversation
+        .runs
+        .last()
+        .is_some_and(|run| run.status == domain::RunStatus::NeedsHuman);
     let recovering_research = content.is_none() && conversation.research.is_some();
     if content.is_none() && conversation.resume_input().map_err(Error::caused_by)? {
+        let mut recovered_receipt = recovering_research;
         if let Some(research) = &conversation.research {
-            dependencies
-                .update_coordination
-                .call(
-                    research.parent_id.clone(),
-                    domain::CoordinationCommand::ResumeChild {
-                        execution_id: research.execution_id.clone(),
-                    },
-                    None,
-                    cancellation.clone(),
-                )
+            let owner = dependencies
+                .read_coordination
+                .call(research.parent_id.clone())
                 .await
-                .map_err(Error::caused_by)?;
+                .map_err(Error::caused_by)?
+                .ok_or_else(|| {
+                    Error::caused_by("Recovered input execution ownership is missing")
+                })?;
+            let known = owner
+                .children
+                .iter()
+                .find(|child| child.execution_id == research.execution_id)
+                .ok_or_else(|| Error::caused_by("Recovered input execution is missing"))?;
+            if ended_before_resume && known.outcome.is_some() {
+                recovered_receipt = false;
+            } else {
+                dependencies
+                    .update_coordination
+                    .call(
+                        research.parent_id.clone(),
+                        domain::CoordinationCommand::ResumeChild {
+                            execution_id: research.execution_id.clone(),
+                        },
+                        None,
+                        cancellation.clone(),
+                    )
+                    .await
+                    .map_err(Error::caused_by)?;
+            }
         }
         coordination_recovery::resume_input(
             &dependencies.read_coordination,
@@ -169,7 +219,7 @@ async fn coordinate(
         .await
         .map_err(Error::caused_by)?;
         checkpoint(&dependencies, &mut conversation).await?;
-        if recovering_research {
+        if recovered_receipt {
             receipts::persist(&dependencies, &conversation).await?;
         }
         return Ok(Output {

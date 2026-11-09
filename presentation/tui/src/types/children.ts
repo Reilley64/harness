@@ -17,6 +17,7 @@ export type ChildExecution = {
   status: string;
   stopRequested: boolean;
   resumeRequired: boolean;
+  recoveryNotice: string | null;
 
   outcomeId: string | null;
   deliveredTo: string | null;
@@ -57,6 +58,7 @@ export type Children = {
   revision: number;
   sessionRevision?: number;
   authorityComplete: boolean;
+  restartRequired: boolean;
   contextBlocked: boolean | null;
 
   gate: string;

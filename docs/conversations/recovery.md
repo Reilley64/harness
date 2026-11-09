@@ -116,7 +116,11 @@ input, not as factory completion. Model steps and generations remain the existin
 durable message-level records.
 
 A recovered in-progress reply/run becomes Interrupted and requires explicit
-Resume. Read/load/start never dispatch inference or tools. An ordinary prompt
+Resume. A parent already ended for human input is also gated if its actual owned
+work lost its controller. [Idle-owner recovery](../managed-dispatch.md#idle-owner-recovery)
+uses per-execution ownership leases, not PID death as proof of unsent work.
+Explicit Resume at that ended boundary restores the existing question without
+inference; only its matching later answer starts a new run. Read/load/start never dispatch inference or tools. An ordinary prompt
 cannot bypass the gate. `/resume` uses the public Resume operation, preserving the
 same run/reply and saved model while continuing only from recorded provider items
 and honest results. It keeps generation/execution budgets across recovery and

@@ -384,6 +384,7 @@ async fn dispatch(
         status: domain::ChildExecutionStatus::Held,
         stop_requested: false,
         resume_required: false,
+        recovery_notice: None,
 
         outcome: None,
 
@@ -417,11 +418,17 @@ async fn dispatch(
     if cancellation.is_cancelled() {
         return stopped_before_spawn(&d,accepted,diagnostics,response.coordination.revision,"Dispatch stopped after durable admission and before a child future was created. No child inference or tools started.").await;
     }
+    let owner = d
+        .lock_execution
+        .call(accepted.execution_id.clone())
+        .await
+        .map_err(Error::caused_by)?;
     let worker = d.clone();
     let child = accepted.clone();
     let token = CancellationToken::new();
     let execution_token = token.clone();
     let task = Box::pin(async move {
+        let _owner = owner;
         let result = execute(worker.clone(), child.clone(), workspace, execution_token).await;
         if let Err(original) = result {
             let fenced = worker
@@ -615,6 +622,15 @@ async fn execute(
             .await
             .map_err(Error::caused_by)?;
     }
+    let unsettled = match conversation.as_ref() {
+        Some(conversation) => d
+            .read_coordination
+            .call(conversation.id.clone())
+            .await
+            .map_err(Error::caused_by)?
+            .is_some_and(|state| !state.settled()),
+        None => true,
+    };
     let outcome_id = child.execution_id.clone();
     let conversation_id = child.agent_id.clone();
     let outcome = tokio::task::spawn_blocking(move || {
@@ -622,7 +638,7 @@ async fn execute(
         let uncertain = conversation.as_ref().is_some_and(|conversation| conversation.messages.iter().flat_map(|message| &message.steps).flat_map(|step| &step.calls).any(|call| call.status == domain::ToolStatus::Unknown));
         let status = if uncertain || control_unknown {
             domain::ChildExecutionStatus::Unknown
-        } else if !failed && reply.is_some_and(|reply| reply.status == domain::MessageStatus::Completed) {
+        } else if !failed && !unsettled && reply.is_some_and(|reply| reply.status == domain::MessageStatus::Completed) {
             domain::ChildExecutionStatus::Completed
         } else if stopped {
             domain::ChildExecutionStatus::Stopped
@@ -630,7 +646,7 @@ async fn execute(
             domain::ChildExecutionStatus::Failed
         } else {
             match reply.map(|reply| reply.status) {
-                Some(domain::MessageStatus::Completed) => domain::ChildExecutionStatus::Completed,
+                Some(domain::MessageStatus::Completed) if !unsettled => domain::ChildExecutionStatus::Completed,
                 Some(domain::MessageStatus::Cancelled) => domain::ChildExecutionStatus::Stopped,
                 _ => domain::ChildExecutionStatus::NeedsHuman,
             }

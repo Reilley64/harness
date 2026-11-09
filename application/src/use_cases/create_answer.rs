@@ -147,16 +147,20 @@ async fn answer(
             "Answer does not match the retained human-input receipt",
         ));
     }
-    if let Some(scope) = state.scope(&research.execution_id) {
-        if scope.approved_by.is_none()
+    if let Some(scope) = state.scope(&research.execution_id)
+        && (scope.approved_by.is_none()
             || (scope.supersedes_run.as_deref() == Some(request_run.as_str())
-                && scope.approved_by != approval_id)
-        {
-            return Err(Error::caused_by(
-                "Only matching exact-version approval can supersede this input; an answer cannot clear scope approval",
-            ));
-        }
+                && scope.approved_by != approval_id))
+    {
+        return Err(Error::caused_by(
+            "Only matching exact-version approval can supersede this input; an answer cannot clear scope approval",
+        ));
     }
+    let _owner = d
+        .lock_execution
+        .call(research.execution_id.clone())
+        .await
+        .map_err(Error::caused_by)?;
     let controller = child.controller.clone();
     let result = create_message::answer(
         d.clone(),
@@ -170,7 +174,7 @@ async fn answer(
         cancellation,
     )
     .await;
-    let output = match result {
+    let mut output = match result {
         Ok(output) => output,
         Err(original) => {
             let _guard = match d.lock_conversation.call(id.clone()).await {
@@ -200,6 +204,17 @@ async fn answer(
             });
         }
     };
+    let unsettled = d
+        .read_coordination
+        .call(output.conversation.id.clone())
+        .await
+        .map_err(|error| {
+            error::retain(
+                Error::caused_by(error),
+                std::mem::take(&mut output.tool_errors),
+            )
+        })?
+        .is_some_and(|state| !state.settled());
     let (mut conversation, outcome) = tokio::task::spawn_blocking(move || {
         let conversation = output.conversation;
         let reply = conversation.messages.last().ok_or_else(|| Error::caused_by("Later child run has no reply"))?;
@@ -207,7 +222,7 @@ async fn answer(
         let uncertain = reply.steps.iter().flat_map(|step| &step.calls).any(|call| call.status == domain::ToolStatus::Unknown);
         let status = if uncertain { domain::ChildExecutionStatus::Unknown } else {
             match reply.status {
-                domain::MessageStatus::Completed => domain::ChildExecutionStatus::Completed,
+                domain::MessageStatus::Completed if !unsettled => domain::ChildExecutionStatus::Completed,
                 domain::MessageStatus::Cancelled => domain::ChildExecutionStatus::Stopped,
                 domain::MessageStatus::Failed => domain::ChildExecutionStatus::Failed,
                 _ => domain::ChildExecutionStatus::NeedsHuman,

@@ -288,6 +288,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             status: status(&value.status)?,
             stop_requested: value.stop_requested,
             resume_required: false,
+            recovery_notice: None,
             outcome: value
                 .outcome
                 .map(|value| {

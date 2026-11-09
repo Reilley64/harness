@@ -36,6 +36,7 @@ pub struct ChildExecution {
     pub status: ChildExecutionStatus,
     pub stop_requested: bool,
     pub resume_required: bool,
+    pub recovery_notice: Option<String>,
 
     pub outcome: Option<ChildOutcome>,
 
@@ -184,6 +185,10 @@ impl ChildExecution {
             .iter()
             .any(|id| id.is_empty() || id.len() > 128)
             || self.resume_required && self.status != ChildExecutionStatus::Unknown
+            || self
+                .recovery_notice
+                .as_ref()
+                .is_some_and(|id| id.is_empty() || id.len() > 128)
             || self.routed != self.work_id.is_some()
             || self.work_id.is_some() != self.work_version.is_some()
             || self.work_id.is_some() != self.work_intent.is_some()

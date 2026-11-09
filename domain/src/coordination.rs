@@ -24,6 +24,8 @@ pub struct Coordination {
     pub instructions: Vec<ChildInstruction>,
     pub recovered: Vec<String>,
     pub scopes: Vec<ScopeAmendment>,
+    pub restart_required: bool,
+    pub recovery_notices: Vec<String>,
 }
 
 impl Coordination {
@@ -44,6 +46,8 @@ impl Coordination {
             instructions: Vec::new(),
             recovered: Vec::new(),
             scopes: Vec::new(),
+            restart_required: false,
+            recovery_notices: Vec::new(),
         }
     }
 
@@ -67,6 +71,8 @@ impl Coordination {
             || self.instructions.len() > 256
             || self.recovered.len() > 256
             || self.scopes.len() > 256
+            || self.recovery_notices.len() > 4096
+            || self.restart_required && self.recovery_notices.is_empty()
         {
             return Err(
                 "Coordination facts are missing or exceed bounded storage; inspect retained work",
@@ -92,6 +98,14 @@ impl Coordination {
                 })
             {
                 return Err("Child identity is duplicated or belongs to another parent");
+            }
+        }
+        for (index, notice) in self.recovery_notices.iter().enumerate() {
+            if notice.is_empty()
+                || notice.len() > 128
+                || self.recovery_notices[..index].contains(notice)
+            {
+                return Err("Recovery notice history is invalid or duplicated");
             }
         }
         for (index, scope) in self.scopes.iter().enumerate() {
@@ -179,6 +193,7 @@ impl Coordination {
 
     pub fn settled(&self) -> bool {
         self.authority_complete
+            && !self.restart_required
             && self.controller.is_none()
             && self
                 .scopes
@@ -201,7 +216,8 @@ impl Coordination {
     }
 
     pub fn eligible(&self, run_id: &str) -> Result<bool, &'static str> {
-        if !self.authority_complete || self.gate != CoordinationGate::Open {
+        if !self.authority_complete || self.restart_required || self.gate != CoordinationGate::Open
+        {
             return Ok(false);
         }
         for join in self.joins.iter().filter(|join| join.run_id == run_id) {
@@ -399,6 +415,68 @@ impl Coordination {
 
     fn transition(&mut self, command: CoordinationCommand) -> Result<bool, &'static str> {
         match command {
+            CoordinationCommand::RecoverChild {
+                execution_id,
+                notice_id,
+            } => {
+                let child = self
+                    .children
+                    .iter_mut()
+                    .find(|child| child.execution_id == execution_id)
+                    .ok_or("Lost execution owner is missing")?;
+                if child.outcome.is_some() {
+                    return Ok(false);
+                }
+                if !matches!(
+                    child.status,
+                    ChildExecutionStatus::Held | ChildExecutionStatus::Running
+                ) && !child.resume_required
+                {
+                    return Ok(false);
+                }
+                if child.resume_required && child.recovery_notice.is_some() {
+                    return Ok(false);
+                }
+                child.status = ChildExecutionStatus::Unknown;
+                child.resume_required = !child.stop_requested;
+                child.recovery_notice = Some(notice_id);
+                if !self.recovered.contains(&execution_id) {
+                    self.recovered.push(execution_id);
+                }
+            }
+            CoordinationCommand::RetainRecovery {
+                agent_id,
+                notices,
+                idle,
+            } => {
+                if agent_id != self.agent_id || !self.authority_complete || notices.is_empty() {
+                    return Err("Recovery does not match complete durable ownership");
+                }
+                let mut changed = false;
+                for notice in notices {
+                    if !self.recovery_notices.contains(&notice) {
+                        self.recovery_notices.push(notice);
+                        changed = true;
+                    }
+                }
+                if changed && idle {
+                    self.restart_required = true;
+                    self.controller = None;
+                    self.run_id = None;
+                    self.waiting = false;
+                    if self.gate == CoordinationGate::Open {
+                        self.gate = CoordinationGate::NeedsHuman;
+                    }
+                }
+                return Ok(changed);
+            }
+            CoordinationCommand::ResumeIdle { agent_id } => {
+                if agent_id != self.agent_id || !self.restart_required || self.controller.is_some()
+                {
+                    return Err("Idle recovery requires its exact explicit Resume acknowledgement");
+                }
+                self.restart_required = false;
+            }
             CoordinationCommand::RequestScope(scope) => return self.request_scope(scope),
             CoordinationCommand::ApproveScope {
                 id,
@@ -903,6 +981,7 @@ impl Coordination {
             } => {
                 if gate == CoordinationGate::Open {
                     if !self.authority_complete
+                        || self.restart_required
                         || controller.is_some()
                         || run_id.is_some()
                         || self.controller.is_some()
@@ -932,9 +1011,17 @@ impl Coordination {
                     return Ok(false);
                 }
                 if gate == CoordinationGate::ResumeRequired {
+                    if self.recovery_notices.is_empty() {
+                        return Err(
+                            "Recovery requires a retained intent before closing execution ownership",
+                        );
+                    }
                     for child in &mut self.children {
                         if child.outcome.is_none() {
                             child.status = ChildExecutionStatus::Unknown;
+                            if !child.resume_required {
+                                child.recovery_notice = self.recovery_notices.last().cloned();
+                            }
                             child.resume_required = true;
                             if !self.recovered.contains(&child.execution_id) {
                                 self.recovered.push(child.execution_id.clone());

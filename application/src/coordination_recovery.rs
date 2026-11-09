@@ -1,3 +1,6 @@
+mod idle;
+pub(crate) use idle::restore;
+
 use crate::ports::ReadCoordination;
 use crate::ports::UpdateCoordination;
 use tokio_util::sync::CancellationToken;
@@ -31,6 +34,19 @@ pub(crate) async fn pause(
         return Ok(());
     }
     if let (Some(controller), Some(run_id)) = (state.controller.clone(), state.run_id.clone()) {
+        let state = update
+            .call(
+                conversation.id.clone(),
+                domain::CoordinationCommand::RetainRecovery {
+                    agent_id: state.agent_id.clone(),
+                    notices: vec![uuid::Uuid::new_v4().to_string()],
+                    idle: false,
+                },
+                Some(state.revision),
+                CancellationToken::new(),
+            )
+            .await?
+            .coordination;
         update
             .call(
                 conversation.id.clone(),
@@ -95,6 +111,19 @@ pub(crate) async fn resume_input(
     let Some(state) = read.call(conversation.id.clone()).await? else {
         return Ok(());
     };
+    if state.restart_required {
+        update
+            .call(
+                conversation.id.clone(),
+                domain::CoordinationCommand::ResumeIdle {
+                    agent_id: state.agent_id.clone(),
+                },
+                Some(state.revision),
+                CancellationToken::new(),
+            )
+            .await?;
+        return Ok(());
+    }
     if state.gate != domain::CoordinationGate::ResumeRequired {
         return Err("Recovered input cannot bypass its exact Resume gate or Stop".into());
     }
@@ -135,6 +164,19 @@ pub(crate) async fn acknowledge(
     let Some(state) = read.call(conversation.id.clone()).await? else {
         return Ok(());
     };
+    if state.restart_required {
+        update
+            .call(
+                conversation.id.clone(),
+                domain::CoordinationCommand::ResumeIdle {
+                    agent_id: state.agent_id.clone(),
+                },
+                Some(state.revision),
+                CancellationToken::new(),
+            )
+            .await?;
+        return Ok(());
+    }
     if !matches!(
         state.gate,
         domain::CoordinationGate::ResumeRequired | domain::CoordinationGate::Stopped

@@ -86,7 +86,14 @@ pub async fn call(
                     execution_token,
                 )
                 .await
-                .map(|_| ())
+                .map_err(Error::caused_by)
+                .and_then(|output| {
+                    if output.tool_errors.is_empty() {
+                        Ok(())
+                    } else {
+                        Err(error::retain(output.tool_errors))
+                    }
+                })
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
             });
             d.child_runtime

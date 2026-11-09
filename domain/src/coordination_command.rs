@@ -11,6 +11,18 @@ pub enum CoordinationCommand {
         execution_id: String,
         text: String,
     },
+    RecoverChild {
+        execution_id: String,
+        notice_id: String,
+    },
+    RetainRecovery {
+        agent_id: String,
+        notices: Vec<String>,
+        idle: bool,
+    },
+    ResumeIdle {
+        agent_id: String,
+    },
     RequestScope(ScopeAmendment),
     ApproveScope {
         id: String,

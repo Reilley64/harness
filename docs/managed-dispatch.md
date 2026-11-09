@@ -310,6 +310,40 @@ are rewritten by its creation. The native decision record remains schema one. Ea
 coordination/claim format-one records are rejected unchanged rather than inferring
 missing durable agent-versus-conversation identity or downmigrating them.
 
+### Idle-owner recovery
+
+Each real owned worker holds a private per-execution kernel ownership lease from
+admission through receipt persistence. Later answer/Resume controllers hold the
+same lease. These are execution-owner resources, separate from short record
+transition locks; controls and result writes never wait for the worker's model or
+tool to release a storage critical section. Neither a PID nor a heartbeat proves
+an effect was unsent.
+
+Recovery inspects those leases and actual recorded descendants while holding the
+selected conversation execution guard. Live owners are not mistaken for dead
+workers merely because another backend reads their history. Lost active owners
+receive durable recovery notices without replay. A parent that already ended for
+human input also requires explicit Resume when its outstanding ownership was
+interrupted. A matching answer cannot bypass that post-restart gate.
+
+At an ended input boundary, explicit Resume only acknowledges restart and restores
+the same question, without inference. The subsequent matching answer starts the
+later run. Previously known results are not replaced by an invented report.
+Required descendant follow-up keeps an owning Research outcome NeedsHuman rather
+than falsely declaring the assignment settled merely because its prose ended.
+
+Recovery notice receipt and explicit restart acknowledgement remain separate facts.
+Repeated reads do not reopen an already acknowledged observation; a new lost owner
+gets a new notice. Recovery walks are bounded at 4096 records and 64 ownership
+levels per selected scope. Oversized, cyclic, missing or corrupt facts block
+actionably; they are not an empty scope or a worker-slot limit.
+
+Coordination format seven requires restart-notice metadata and explicit child
+recovery objects. Earlier formats retain their known facts; an older recovery
+without a notice acquires an inspection notice, not invented crash history or
+permission. Existing immutable claims and conversation schemas are unchanged.
+No downmigration or mixed-version live-controller compatibility is inferred.
+
 A held or running claim is not proof that a request was unsent. PID death or an
 expired heartbeat cannot authorize replay. Reopening does not launch an accepted
 child again. Normal leaf recovery retains uncertain effects and requires explicit

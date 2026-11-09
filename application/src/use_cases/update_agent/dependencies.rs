@@ -8,4 +8,5 @@ pub struct Dependencies {
     pub(super) read_conversation: ports::ReadConversation,
     pub(super) update_conversation: ports::UpdateConversation,
     pub(super) lock_conversation: ports::LockConversation,
+    pub(super) lock_execution: ports::LockExecution,
 }

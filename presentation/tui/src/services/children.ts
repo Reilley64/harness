@@ -71,6 +71,7 @@ export function parseExecution(value: unknown): ChildExecution {
     status,
     stopRequested: flag(v.stopRequested),
     resumeRequired: flag(v.resumeRequired),
+    recoveryNotice: optional(v.recoveryNotice),
     outcomeId: optional(v.outcomeId),
     deliveredTo: optional(v.deliveredTo),
     followUpCompletedBy: optional(v.followUpCompletedBy),
@@ -121,6 +122,7 @@ export function parseChildren(value: unknown): Children | null {
         ? undefined
         : integer(state.sessionRevision),
     authorityComplete: flag(state.authorityComplete),
+    restartRequired: flag(state.restartRequired),
     contextBlocked:
       state.contextBlocked === undefined ? null : flag(state.contextBlocked),
 

@@ -35,11 +35,19 @@ pub(super) async fn persist(
         .iter()
         .flat_map(|step| &step.calls)
         .any(|call| call.status == domain::ToolStatus::Unknown);
+    let unsettled = d
+        .read_coordination
+        .call(conversation.id.clone())
+        .await
+        .map_err(Error::caused_by)?
+        .is_some_and(|state| !state.settled());
     let status = if uncertain {
         domain::ChildExecutionStatus::Unknown
     } else {
         match reply.status {
-            domain::MessageStatus::Completed => domain::ChildExecutionStatus::Completed,
+            domain::MessageStatus::Completed if !unsettled => {
+                domain::ChildExecutionStatus::Completed
+            }
             domain::MessageStatus::Cancelled => domain::ChildExecutionStatus::Stopped,
             domain::MessageStatus::Failed => domain::ChildExecutionStatus::Failed,
             _ => domain::ChildExecutionStatus::NeedsHuman,

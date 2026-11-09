@@ -33,6 +33,7 @@ pub struct ChildRuntime {
 struct State {
     closing: bool,
     tasks: HashMap<String, Execution>,
+    retired: Vec<Execution>,
 }
 
 struct Execution {
@@ -50,11 +51,12 @@ impl ChildRuntime {
         operation: PortFuture<Result<(), Error>>,
         cancellation: CancellationToken,
     ) -> Result<(), StartError> {
-        self.start_run(
+        self.start_owned(
             parent_id,
             execution_id.clone(),
             execution_id,
             operation,
+            false,
             cancellation,
         )
     }
@@ -67,17 +69,43 @@ impl ChildRuntime {
         operation: PortFuture<Result<(), Error>>,
         cancellation: CancellationToken,
     ) -> Result<(), StartError> {
+        self.start_owned(
+            parent_id,
+            execution_id,
+            run_key,
+            operation,
+            true,
+            cancellation,
+        )
+    }
+
+    fn start_owned(
+        &self,
+        parent_id: String,
+        execution_id: String,
+        run_key: String,
+        operation: PortFuture<Result<(), Error>>,
+        retry_finished: bool,
+        cancellation: CancellationToken,
+    ) -> Result<(), StartError> {
         let mut state = self.state.lock();
         if state.closing {
             return Err(StartError::Closing);
         }
-        if state.tasks.contains_key(&run_key)
+        if state
+            .tasks
+            .get(&run_key)
+            .is_some_and(|task| !retry_finished || !task.task.is_finished())
+            || state.retired.len() >= 4096
             || state
                 .tasks
                 .values()
                 .any(|task| task.execution_id == execution_id && !task.task.is_finished())
         {
             return Err(StartError::AlreadyOwned);
+        }
+        if let Some(prior) = state.tasks.remove(&run_key) {
+            state.retired.push(prior);
         }
         state.tasks.insert(
             run_key,
@@ -122,11 +150,13 @@ impl ChildRuntime {
                 for execution in state.tasks.values() {
                     execution.cancellation.cancel();
                 }
-                std::mem::take(&mut state.tasks)
+                let mut tasks = std::mem::take(&mut state.retired);
+                tasks.extend(std::mem::take(&mut state.tasks).into_values());
+                tasks
             };
             *shutdown = Some(tokio::spawn(async move {
                 let mut errors = Vec::new();
-                for (_, execution) in tasks {
+                for execution in tasks {
                     match execution.task.await {
                         Ok(Ok(())) => {}
                         Ok(Err(error)) => errors.push(error),

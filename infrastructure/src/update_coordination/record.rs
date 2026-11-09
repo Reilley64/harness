@@ -122,6 +122,21 @@ pub(super) struct Record {
     recovered: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     scopes: Option<Vec<ScopeRecord>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    restart: Option<RestartRecord>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct RestartRecord {
+    required: bool,
+    notices: Vec<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveryRecord {
+    notice: Option<String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -180,6 +195,8 @@ struct ChildRecord {
     stop_requested: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     resume_required: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery: Option<RecoveryRecord>,
 
     outcome: Option<OutcomeRecord>,
 
@@ -527,6 +544,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             status: status(&value.status)?,
             stop_requested: value.stop_requested,
             resume_required: value.resume_required.unwrap_or(false),
+            recovery_notice: value.recovery.and_then(|recovery| recovery.notice),
             outcome: value
                 .outcome
                 .map(|value| {
@@ -602,6 +620,7 @@ impl From<domain::ChildExecution> for ChildRecord {
             status: status_name(value.status),
             stop_requested: value.stop_requested,
             resume_required: None,
+            recovery: None,
             outcome: value.outcome.map(|value| OutcomeRecord {
                 id: value.id,
                 status: status_name(value.status),
@@ -641,10 +660,11 @@ impl TryFrom<Record> for domain::Coordination {
     fn try_from(value: Record) -> Result<Self, Error> {
         if !matches!(
             (value.format, value.instructions.is_some()),
-            (2, false) | (3, true) | (4, true) | (5, true) | (6, true)
+            (2, false) | (3, true) | (4, true) | (5, true) | (6, true) | (7, true)
         ) || value.children.iter().any(|child| {
             child.history.is_some() != (value.format >= 4)
                 || child.resume_required.is_some() != (value.format >= 5)
+                || child.recovery.is_some() != (value.format == 7)
         }) {
             return Err(
                 "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
@@ -654,8 +674,25 @@ impl TryFrom<Record> for domain::Coordination {
         if value.recovered.is_some() != (value.format >= 5) {
             return Err("Recovered ownership facts are incomplete or incompatible".into());
         }
-        if value.scopes.is_some() != (value.format == 6) {
+        if value.scopes.is_some() != (value.format >= 6) {
             return Err("Scope authority facts are incomplete or incompatible".into());
+        }
+        if value.restart.is_some() != (value.format == 7) {
+            return Err("Idle recovery facts are incomplete or incompatible".into());
+        }
+        if let Some(restart) = &value.restart {
+            for notice in &restart.notices {
+                conversations::validate_id(notice)?;
+            }
+        }
+        for child in &value.children {
+            if let Some(notice) = child
+                .recovery
+                .as_ref()
+                .and_then(|recovery| recovery.notice.as_ref())
+            {
+                conversations::validate_id(notice)?;
+            }
         }
         conversations::validate_id(&value.conversation_id)?;
         conversations::validate_id(&value.agent_id)?;
@@ -664,6 +701,13 @@ impl TryFrom<Record> for domain::Coordination {
             agent_id: value.agent_id,
             revision: value.revision,
             authority_complete: value.authority_complete,
+            restart_required: value
+                .restart
+                .as_ref()
+                .is_some_and(|restart| restart.required),
+            recovery_notices: value
+                .restart
+                .map_or_else(Vec::new, |restart| restart.notices),
             gate: match value.gate.as_str() {
                 "open" => domain::CoordinationGate::Open,
                 "needs_human" => domain::CoordinationGate::NeedsHuman,
@@ -755,11 +799,18 @@ impl TryFrom<Record> for domain::Coordination {
 
 impl From<domain::Coordination> for Record {
     fn from(value: domain::Coordination) -> Self {
-        let scoped = !value.scopes.is_empty();
+        let restarted = !value.recovery_notices.is_empty()
+            || value
+                .children
+                .iter()
+                .any(|child| child.recovery_notice.is_some());
+        let scoped = restarted || !value.scopes.is_empty();
         let recovered = scoped || !value.recovered.is_empty();
         let later_runs = recovered || value.children.iter().any(|child| !child.history.is_empty());
         Self {
-            format: if scoped {
+            format: if restarted {
+                7
+            } else if scoped {
                 6
             } else if recovered {
                 5
@@ -787,6 +838,10 @@ impl From<domain::Coordination> for Record {
             run_id: value.run_id,
             waiting: value.waiting,
             recovered: recovered.then_some(value.recovered),
+            restart: restarted.then_some(RestartRecord {
+                required: value.restart_required,
+                notices: value.recovery_notices,
+            }),
             scopes: scoped.then(|| {
                 value
                     .scopes
@@ -821,7 +876,13 @@ impl From<domain::Coordination> for Record {
                 .into_iter()
                 .map(|child| {
                     let resume_required = child.resume_required;
+                    let recovery_notice = child.recovery_notice.clone();
                     let mut record = ChildRecord::from(child);
+                    if restarted {
+                        record.recovery = Some(RecoveryRecord {
+                            notice: recovery_notice,
+                        });
+                    }
                     if recovered {
                         record.resume_required = Some(resume_required);
                     }

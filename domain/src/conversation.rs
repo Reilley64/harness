@@ -238,13 +238,21 @@ impl Conversation {
         let Some(reply) = self.messages.last_mut() else {
             return Ok(false);
         };
-        if !self.resume_required
-            || reply.status != MessageStatus::Interrupted
-            || !reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
+        let Some(run) = self.runs.last_mut() else {
+            return Ok(false);
+        };
+        let ended = run.status == RunStatus::NeedsHuman
+            && !matches!(
+                reply.status,
+                MessageStatus::InProgress | MessageStatus::Interrupted
+            );
+        let checkpointed_input = run.status == RunStatus::Interrupted
+            && reply.status == MessageStatus::Interrupted
+            && reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
                 call.name == Tool::RequestHumanInput.as_str()
                     && call.status == ToolStatus::Succeeded
-            })
-        {
+            });
+        if !self.resume_required || !(ended || checkpointed_input) {
             return Ok(false);
         }
         if reply
@@ -255,15 +263,13 @@ impl Conversation {
         {
             return Err("Uncertain effects require inspection before answering recovered input");
         }
-        let run = self
-            .runs
-            .last_mut()
-            .ok_or("Recovered input has no durable requesting run")?;
-        if run.reply_id != reply.id || run.status != RunStatus::Interrupted {
-            return Err("Recovered input does not match its interrupted run");
+        if run.reply_id != reply.id {
+            return Err("Recovered input does not match its durable run");
         }
-        reply.status = MessageStatus::Incomplete;
-        run.status = RunStatus::NeedsHuman;
+        if checkpointed_input {
+            reply.status = MessageStatus::Incomplete;
+            run.status = RunStatus::NeedsHuman;
+        }
         self.resume_required = false;
         Ok(true)
     }

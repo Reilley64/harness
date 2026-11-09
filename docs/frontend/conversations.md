@@ -243,7 +243,13 @@ remain and uncertainty is not rollback. Ctrl+X inside the editor cuts its curren
 run. ACP cancellation remains available without adding a human approval gate
 to backend/tool authority.
 
-Interrupted work displays Resume-required state. `/resume` explicitly continues
+Interrupted work displays Resume-required state. This includes an idle parent
+whose background ownership was lost: a typed answer alone cannot bypass restart.
+At an ended input boundary, `/resume` restores the same question without inference;
+use its matching answer afterwards. Live owners in another backend are not treated
+as dead just because the inspector reads them.
+
+Interrupted active work displays Resume-required state. `/resume` explicitly continues
 the same run. For uncertain effects, `/resume inspect` acknowledges the interruption
 without generation, retaining Unknown results and permitting a new inspection
 instruction. Reopening, map navigation or ordinary prompts cannot start recovered

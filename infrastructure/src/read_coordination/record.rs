@@ -22,6 +22,20 @@ pub(super) struct Record {
     instructions: Option<Vec<ChildInstructionRecord>>,
     recovered: Option<Vec<String>>,
     scopes: Option<Vec<ScopeRecord>>,
+    restart: Option<RestartRecord>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RestartRecord {
+    required: bool,
+    notices: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveryRecord {
+    notice: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -79,6 +93,7 @@ struct ChildRecord {
     status: String,
     stop_requested: bool,
     resume_required: Option<bool>,
+    recovery: Option<RecoveryRecord>,
 
     outcome: Option<OutcomeRecord>,
 
@@ -336,6 +351,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             status: status(&value.status)?,
             stop_requested: value.stop_requested,
             resume_required: value.resume_required.unwrap_or(false),
+            recovery_notice: value.recovery.and_then(|recovery| recovery.notice),
             outcome: value
                 .outcome
                 .map(|value| {
@@ -384,10 +400,11 @@ impl TryFrom<Record> for domain::Coordination {
     fn try_from(value: Record) -> Result<Self, Error> {
         if !matches!(
             (value.format, value.instructions.is_some()),
-            (2, false) | (3, true) | (4, true) | (5, true) | (6, true)
+            (2, false) | (3, true) | (4, true) | (5, true) | (6, true) | (7, true)
         ) || value.children.iter().any(|child| {
             child.history.is_some() != (value.format >= 4)
                 || child.resume_required.is_some() != (value.format >= 5)
+                || child.recovery.is_some() != (value.format == 7)
         }) {
             return Err(
                 "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
@@ -397,8 +414,25 @@ impl TryFrom<Record> for domain::Coordination {
         if value.recovered.is_some() != (value.format >= 5) {
             return Err("Recovered ownership facts are incomplete or incompatible".into());
         }
-        if value.scopes.is_some() != (value.format == 6) {
+        if value.scopes.is_some() != (value.format >= 6) {
             return Err("Scope authority facts are incomplete or incompatible".into());
+        }
+        if value.restart.is_some() != (value.format == 7) {
+            return Err("Idle recovery facts are incomplete or incompatible".into());
+        }
+        if let Some(restart) = &value.restart {
+            for notice in &restart.notices {
+                conversations::validate_id(notice)?;
+            }
+        }
+        for child in &value.children {
+            if let Some(notice) = child
+                .recovery
+                .as_ref()
+                .and_then(|recovery| recovery.notice.as_ref())
+            {
+                conversations::validate_id(notice)?;
+            }
         }
         conversations::validate_id(&value.conversation_id)?;
         conversations::validate_id(&value.agent_id)?;
@@ -407,6 +441,13 @@ impl TryFrom<Record> for domain::Coordination {
             agent_id: value.agent_id,
             revision: value.revision,
             authority_complete: value.authority_complete,
+            restart_required: value
+                .restart
+                .as_ref()
+                .is_some_and(|restart| restart.required),
+            recovery_notices: value
+                .restart
+                .map_or_else(Vec::new, |restart| restart.notices),
             gate: match value.gate.as_str() {
                 "open" => domain::CoordinationGate::Open,
                 "needs_human" => domain::CoordinationGate::NeedsHuman,
