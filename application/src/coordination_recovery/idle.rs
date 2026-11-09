@@ -8,6 +8,8 @@ use crate::ports::UpdateConversation;
 use crate::ports::UpdateCoordination;
 use tokio_util::sync::CancellationToken;
 
+type Recovery = (domain::Conversation, Vec<String>, usize);
+
 pub(crate) async fn restore(
     read: &ReadCoordination,
     update: &UpdateCoordination,
@@ -47,7 +49,7 @@ fn walk(
     mut remaining: usize,
     forced_notice: Option<String>,
     cancellation: CancellationToken,
-) -> PortFuture<Result<(domain::Conversation, Vec<String>, usize), Error>> {
+) -> PortFuture<Result<Recovery, Error>> {
     Box::pin(async move {
         if cancellation.is_cancelled() {
             return Err("Execution recovery inspection was cancelled".into());
