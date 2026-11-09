@@ -94,10 +94,10 @@ async fn resolve(
 ) -> Result<domain::InstructionSnapshot, Error> {
     if !matches!(
         phase.as_str(),
-        "grilling" | "specification" | "tickets" | "coordination" | "setup"
+        "grilling" | "specification" | "tickets" | "coordination" | "setup" | "research"
     ) {
         return Err(
-            "Required phase must be grilling, specification, tickets, coordination or setup".into(),
+            "Required phase must be grilling, specification, tickets, coordination, setup or research".into(),
         );
     }
     if scopes.len() > 32 || references.len() > 32 {
@@ -185,6 +185,7 @@ async fn resolve(
     let role = match phase.as_str() {
         "coordination" => "role/chief-of-staff",
         "setup" => "role/setup",
+        "research" => "role/research",
         _ => "role/griller",
     };
     let mut needed = vec![role.to_owned(), format!("procedure/{phase}")];

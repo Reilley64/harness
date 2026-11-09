@@ -5,14 +5,22 @@ export function useContextNavigation(
   active: boolean,
   toggle: () => void,
   griller: () => void,
+  children?: () => void,
 ) {
   const { stdin } = useStdin();
-  const latest = useRef({ active, toggle, griller });
-  latest.current = { active, toggle, griller };
+  const latest = useRef({ active, toggle, griller, children });
+  latest.current = { active, toggle, griller, children };
   useEffect(() => {
     let pending = "";
     let pasting = false;
-    const shortcuts = ["\x1bOQ", "\x1bOR", "\x1b[12~", "\x1b[13~", "\x1b[200~"];
+    const shortcuts = [
+      "\x1bOQ",
+      "\x1bOR",
+      "\x1b[12~",
+      "\x1b[13~",
+      "\x1b[17~",
+      "\x1b[200~",
+    ];
     const pasteEnd = ["\x1b[201~"];
     const input = (chunk: Buffer | string) => {
       for (const character of chunk.toString()) {
@@ -31,6 +39,7 @@ export function useContextNavigation(
         else if (latest.current.active) {
           if (sequence === "\x1bOQ" || sequence === "\x1b[12~")
             latest.current.toggle();
+          else if (sequence === "\x1b[17~") latest.current.children?.();
           else latest.current.griller();
         }
       }

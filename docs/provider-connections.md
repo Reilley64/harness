@@ -125,6 +125,8 @@ issuer before the key can be used. No OpenAI credential lookup or reuse occurs.
 A regional/different inference origin requires a separately designed trust
 binding; changing a URL alone does not forward this key there.
 
+OpenAI environment names/defaults are listed in [provider authentication settings](catalog-configuration.md#provider-authentication-settings).
+
 ## Credential storage
 
 The default directory is `~/.harness/auth/`; OpenAI uses `openai.json` and a

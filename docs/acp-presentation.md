@@ -48,7 +48,12 @@ authentication methods, and includes:
     "harness/agents": true,
     "harness/guidance": true,
     "harness/approvedWork": true,
-    "harness/setup": true
+    "harness/setup": true,
+    "harness/mcp": true,
+    "harness/nativeDecider": true,
+    "harness/modelAllowlist": true,
+    "harness/usage": true,
+    "harness/children": true
   }
 }
 ```
@@ -58,359 +63,67 @@ before requesting providers, and checks the model marker before requesting model
 
 ## Repository-agent extension
 
-`harness/agents: true` advertises the narrow durable Setup/Griller controls.
-Read/start accept optional `role: "setup" | "griller"`; absent role uses repository
-presence detection. See [repository Setup](repository-setup.md) for its real
-read/confirmation extension, native draft inspector and recovery contract.
-The controls are:
-
-- `_harness/agent/read` accepts `{cwd}` and returns
-  `{conversation: null | <safe conversation>}`. A missing Griller is normal.
-- `_harness/agent/start` accepts `{cwd, selection: {"harness/modelSelection":
-  {providerId, modelId, effort}}}` and returns an existing or newly created Griller,
-  without inference. Existing context wins over the supplied creation selection.
-- `_harness/agent/resume` accepts `{sessionId}` after read/load/start and returns a
-  standard-shaped prompt response with safe conversation metadata. It resumes the
-  same interrupted run/reply through the ordinary coordinator/streaming updates,
-  without a fabricated user message.
-- `_harness/agent/acknowledge` accepts `{sessionId}` and returns `{conversation}`.
-  It explicitly releases the interruption gate for a new human inspection
-  instruction, without inference or altering recorded uncertain effects.
-
-Safe conversation metadata adds nullable `agent: {id, role: "griller",
-creatorId: null}`, `runs: [{id, agentId, replyId, task: "grilling", modelId,
-effort, status}]`, and `resumeRequired`. Runs expose running, needs_human, stopped,
-failed and interrupted states; provider call identities/continuation stay private.
-Legacy records have no agent/runs rather than inferred factory lineage.
-
-Standard `session/new/load/prompt/cancel` remain supported. Ordinary prompts cannot
-bypass an interruption gate. Cancellation explicitly stops the active leaf and
-never generates a handoff. Unknown outcomes block direct Resume. All controls use
-closure-backed application use cases and bounded atomic conversation storage.
-These agent routes do not implement child delegation or a generic factory-command
-protocol. Separate [approved-work routes](approved-work.md) provide exact-version
-human approval, durable queries and separate CoS handoff; later execution/merge
-capabilities remain unavailable.
+See [Repository-agent extension](acp/conversations.md#repository-agent-extension).
 
 ## Approved-work extension
 
-`harness/approvedWork: true` advertises `_harness/work/read` and the trusted local
-`_harness/work/approve` operation. See [approved work](approved-work.md) for exact
-schemas, native approval, role metadata, persistence/admission and recovery. The
-approval method is never an advertised model tool; ordinary chat/status cannot
-authorize it. A delivered CoS uses the ordinary session/prompt/Resume/tool paths.
+See [Approved-work extension](acp/conversations.md#approved-work-extension).
 
 ## Native Decider extension
 
-`harness/nativeDecider: true` advertises the separate native-release preferences,
-CoS assignment decision queries/select/Stop operations described in
-[native Decider](native-decider.md). No child dispatch is advertised. Selection
-requests have no application or SDK deadline and remain explicitly stoppable.
+See [Native Decider extension](acp/conversations.md#native-decider-extension).
 
 ## Guidance extension
 
-`harness/guidance: true` advertises read/adopt operations through real application
-use cases. See [role guidance](role-guidance.md) for request/response schemas,
-resolution/override precedence, snapshots and recoverable blocks. Inspection
-includes actual instruction text/source/version/upstream, not a synthetic agent
-roster. Safe conversation metadata adds `selectedInstructions` and each run's
-nullable `instructions` snapshot ID; `task` reflects its captured phase.
+See [Guidance extension](acp/conversations.md#guidance-extension).
 
 ## MCP configuration extension
 
-Initialization advertises `_meta["harness/mcp"]: true`.
-`_harness/mcp` accepts an explicit `workspace` and a tagged `action`:
-`read`, `reload`, `save` (`expected_revision`, `definition`), `remove`
-(`expected_revision`, `name`), `registry` (`query`), `discover` (`name`),
-`connect` (`name`, exact definition `revision`) or `disconnect` (`name`).
-Definitions use the documented [MCP configuration schema](mcp-connections.md).
-Responses contain `revision`, `stale`, `error`, `servers` (nonsecret definition,
-source, revision, eligibility status), `tools` (names/descriptions/input schemas)
-and optional `registry_metadata`.
+See [MCP configuration extension](acp/mcp.md#mcp-configuration-extension).
 
 ### MCP OAuth challenge correlation
 
-OAuth Connect also requires a top-level `authentication_id`: a fresh opaque
-string of 1–128 UTF-8 bytes, distinct from the JSON-RPC request ID. It is optional
-for other operations and for Connect without OAuth. A missing or unusable ID
-cannot supply the authorization presenter required by OAuth Connect.
-
-After reviewing and approving the exact nonsecret definition, a trusted client
-can send:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "mcp-connect-1",
-  "method": "_harness/mcp",
-  "params": {
-    "workspace": "/absolute/workspace",
-    "action": "connect",
-    "name": "oauth-tools",
-    "revision": "<exact server revision>",
-    "authentication_id": "<fresh opaque authorization ID>"
-  }
-}
-```
-
-While that request is pending, the backend can send this Harness notification:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "_harness/mcp/authorization",
-  "params": {
-    "authentication_id": "<fresh opaque authorization ID>",
-    "workspace": "/absolute/workspace",
-    "revision": "<exact server revision>",
-    "authorization_url": "https://accounts.example.invalid/authorize"
-  }
-}
-```
-
-The challenge echoes the request's authentication ID, workspace and definition
-revision. Register the pending presentation before sending Connect; accept a link
-only when all three match the active operation. Invalidate its presentation on
-cancellation, replacement, dismissal or completion, and ignore stale or unrelated
-challenges. Treat the URL as protected native authorization data, not chat,
-model-tool output, durable conversation history or a diagnostic log. The current
-TUI hides it until explicit reveal/open; see [frontend](frontend.md#mcp-configuration).
-A challenge is not a successful login or connection result: await the original
-`_harness/mcp` response and reconcile failures through read/reload rather than
-resending effects blindly.
+See the [exact challenge/correlation contract](acp/mcp.md#mcp-oauth-challenge-correlation).
 
 ### MCP cancellation and supported transports
 
-Native command and agent configuration invocation share the public application
-use case/backend. The model-facing decoder rejects Connect/Disconnect; only the
-trusted native/local ACP client presents those interactions. ACP is a trusted
-same-user interface, not an authenticated permission boundary against arbitrary
-local clients. It never accepts actual environment/header secret values or
-provider tokens. MCP errors use `-32006` with safe contexts; invalid requests use
-`-32602`. Connection-owned tasks preserve request responsiveness. SDK request
-cancellation signals that operation, but the backend still awaits its completion:
-admitted configuration and credential commits are not abandoned or reported as
-rolled back. Clients should keep the response wait while cancelling; the current
-TUI uses `stopWaitingOnCancel: false` and includes pending MCP requests in its
-bounded 60-second shutdown drain. A lost response requires read/reload to reconcile
-completed state, not an assumed rollback or automatic replay. Closing a panel or
-cancelling one consumer is not a global Disconnect of shared tools.
-
-Native startup reads configuration for its bound workspace without launching
-servers or logging in. Standard ACP client-supplied `mcpServers` remain unused;
-Harness owns effective configuration and local activation rather than trusting a
-session parameter as executable consent. Both stdio and Streamable HTTP tools use
-this shared backend. See [HTTP and OAuth](mcp-http-auth.md) for the supported
-protocol/client profiles, private token lifecycle, bounded transport and recovery
-limits; model-provider authentication remains separate.
+See [cancellation, owned commits and shutdown](acp/mcp.md#mcp-cancellation-and-supported-transports).
 
 ## Provider catalog extension
 
-Request:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "_harness/providers",
-  "params": {}
-}
-```
-
-Successful result:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "result": {
-    "providers": [{ "id": "openai", "name": "ChatGPT" }, { "id": "openrouter", "name": "OpenRouter" }]
-  }
-}
-```
-
-The method reads through the application port, including its existing memory cache
-and disk fallback. Errors return JSON-RPC code `-32001`, message
-`Could not load providers`, and a static safe diagnostic in `data`. Provider
-URLs, paths, and raw error bodies are not published. Unknown methods return
-`-32601`; unexpected catalog parameters return `-32602`.
-
-This is a Harness extension, not the unstable ACP `providers/list` method.
-The catalog describes available providers; it does not claim they support a
-working login flow.
+See [Provider catalog extension](acp/catalogs-and-connections.md#provider-catalog-extension).
 
 ## Model catalog extension
 
-`_harness/models` accepts an empty object and calls `read_models`, with the same
-memory-cache and file-fallback composition used by the provider catalog.
-Unexpected parameters return `-32602`. Catalog errors return `-32003` with
-message `Could not load models` and a static safe diagnostic in `data`.
-
-A result uses camelCase presentation fields, unlike the HTTP catalog's snake_case:
-
-```json
-{
-  "models": [
-    {
-      "id": "example-model",
-      "name": "Example Model",
-      "providerId": "openai",
-      "efforts": ["low", "medium", "high", "extra_high"],
-      "pricing": { "input": 1.25, "cachedInput": 0.25, "output": 10 }
-    }
-  ]
-}
-```
-
-These example rates are illustrative USD per million tokens. A null pricing
-object or individual null value means unavailable, while numeric zero means free.
-An empty efforts array means no effort control is available. Domain types remain
-Serde-free; infrastructure and ACP have their own DTOs.
-
-Requests run as connection-owned tasks so cancellation and other ACP requests
-stay responsive while loading. Closing the Ink picker aborts the request and
-suppresses stale results. Selecting a model updates frontend state; the next
-session creation/prompt validates and persists the selection.
+See [Model catalog extension](acp/catalogs-and-connections.md#model-catalog-extension).
 
 ## Model permission settings
 
-The `harness/modelAllowlist` extension exposes ordinary application policy reads
-and replacements. The catalog adds nullable `blocked` local-admission diagnostics;
-catalog presence alone is not eligibility or account entitlement. See
-[model allowlist](model-allowlist.md) for request shapes, errors and cancellation.
-Saved model snapshots do not establish current permission.
+See [Model permission settings](acp/catalogs-and-connections.md#model-permission-settings).
 
 ## Saved model selection
 
-`_harness/model-selection/read` accepts `{}` and returns
-`{"selection": null}` when no preference exists, otherwise
-`{"selection": {"model": <model summary>, "effort": "extra_high"}}`.
-The model summary has the same shape as a catalog entry. Reading requires no
-catalog, credentials, session creation, or inference.
-
-`_harness/model-selection/update` accepts
-`{"providerId": "openai", "modelId": "gpt-6.1-sol", "effort": "extra_high"}`.
-Effort may be null. It validates the catalog model and supported effort, atomically
-saves the preference, and returns the same selection response shape. Unknown
-fields or malformed effort values use `-32602`; validation/storage failures use
-`-32005` with a safe diagnostic. Preferences live under the shared app-data root.
-Explicit session load does not read or overwrite this default; actual sends
-remember the validated selection used for that message.
+See [Saved model selection](acp/catalogs-and-connections.md#saved-model-selection).
 
 ## Provider connection creation
 
-Typing `/auth` opens the picker and loads the catalog asynchronously. Selecting
-ChatGPT calls standard ACP `authenticate` with `methodId: "openai"`; OpenRouter
-uses `methodId: "openrouter"` and the same safe challenge/cancellation envelope.
-The adapter
-calls `create_provider_connection::call`; the use case selects a provider-bound
-`CreateProviderConnection` through `CreateProviderConnectionFactory`, then invokes
-it. Infrastructure owns provider selection, OAuth, and credential persistence.
-
-Ink adds a fresh correlation identifier to each authentication request:
-
-```json
-{
-  "methodId": "openai",
-  "_meta": { "harness/authenticationId": "<opaque-attempt-id>" }
-}
-```
-
-Before authentication completes, the agent sends a Harness notification:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "_harness/authentication",
-  "params": {
-    "authenticationId": "<opaque-attempt-id>",
-    "providerId": "openai",
-    "authorizationUrl": "https://auth.openai.com/api/accounts/authorize?..."
-  }
-}
-```
-
-Rust starts the loopback callback listener before presenting the challenge and
-opens the browser by default. Ink displays progress and can reopen the link on
-explicit user input. The full sign-in URL is hidden by default; `l` explicitly
-reveals/hides it when manual sign-in is needed. The correlation identifier is optional for other ACP
-clients; their notifications have a null `authenticationId`.
-
-A successful `authenticate` response includes only safe connection information:
-
-```json
-{
-  "_meta": {
-    "harness/providerConnection": {
-      "id": "<connection-id>",
-      "providerId": "openai"
-    }
-  }
-}
-```
-
-No access, refresh, or ID token, OIDC subject, or account email/display label
-crosses ACP. Connection metadata contains only the opaque local connection ID
-and provider ID. Authorization URLs omit ID-token
-hints. Failure returns `-32002` with message `Could not create provider connection`
-and diagnostic text in `data`. Unsupported authentication methods return
-`-32602`. Ink checks advertised methods before starting a flow.
-
-Escape aborts the client request using ACP `$/cancel_request`. A cancelled
-request returns `-32800`; dropping the operation closes the callback listener
-and releases its credential lock. Connection-owned tasks keep the ACP dispatch
-loop free to process cancellation and other requests while sign-in is pending.
-
-Client-hosted filesystem/terminal methods and permission requests remain
-unimplemented; enabled tools execute in the agent. See
-[provider connections](provider-connections.md) for OAuth and credential storage.
+See [Provider connection creation](acp/catalogs-and-connections.md#provider-connection-creation).
 
 ## Conversations
 
-Standard ACP v1 methods present the conversation use cases:
+See [Conversations](acp/conversations.md#conversations).
 
-- `session/new` calls `create_conversation` for unassociated pilot sessions.
-  Native Griller creation uses the repository-agent extension instead. Its `_meta["harness/modelSelection"]` is required:
-  `{ "providerId": "openai", "modelId": "<catalog-id>", "effort": "medium" }`.
-  Effort may be null. The backend resolves the saved provider connection; no
-  credentials or tokens are supplied by the frontend.
-- `session/load` calls `read_conversation` with an explicit canonical UUID.
-  It replays ordered user/agent chunks and tool calls at their persisted UTF-8
-  text offsets, retaining stable message/tool IDs and Harness status metadata.
-  Tool replay includes an initial `tool_call` and current `tool_call_update`.
-  It returns authoritative conversation metadata, including partial statuses,
-  without inference or credentials/catalog access.
-- `session/prompt` accepts baseline text and `resource_link` blocks and calls
-  `create_message`. Resource links become JSON-encoded user-content references
-  marked as unread; they never trigger fetching or imply access to their contents.
-  Optional image, audio and embedded-resource blocks remain unsupported. Mixed
-  text retains its whitespace and the combined message has a 1 MiB UTF-8 limit.
-  Optional model
-  selection metadata changes the next reply's provider/model/effort after current
-  admission and resolution of that provider's saved connection. The user message and in-progress assistant are stored first.
-- `session/update` carries `agent_message_chunk` text with a stable `messageId`
-  during inference. Credentials and opaque reasoning events are never forwarded.
-- `session/cancel` signals the active reply. The prompt finishes only after the
-  cancelled partial assistant is saved, then returns `stopReason: "cancelled"`.
-  JSON-RPC request cancellation also signals rather than dropping message creation.
+## Token usage and workspace
 
-New/load/prompt responses include `_meta["harness/conversation"]`: ID, provider
-connection ID, model/effort, ordered messages with stable IDs/roles/content/status
-and per-reply provider/model/effort, timestamps, and revision. Message and run
-snapshots add `providerId`; legacy single-provider records derive it only from
-their stored provider. This is a safe presentation
-snapshot, never the credential record. Incomplete and refused replies map to
-`max_tokens` and `refusal`; normal completion maps to `end_turn`.
+See [Token usage and workspace](acp/conversations.md#token-usage-and-workspace).
 
-Sessions must be created, loaded, or opened through agent read/start in this ACP
-process before prompting. Prompt
-overlap is rejected locally and by the cross-process conversation lock.
-Conversation errors use `-32004` with message `Conversation request failed` and
-diagnostic text in `data`; malformed selection/content uses `-32602`. Generation
-failure still saves partial text as failed. The frontend reloads the authoritative
-snapshot after such errors rather than claiming an optimistic message was saved.
+## Tools and steering
 
-See [conversations](conversations.md) for domain rules and durability limits.
+See [Tools and steering](acp/conversations.md#tools-and-steering).
+
+## Child coordination extension
+
+See [dispatch, captured joins, status and source-linked results](acp/children.md).
 
 ## Lifecycle
 
@@ -440,49 +153,3 @@ The default Mise task builds the managed agent through `build:agent` and uses
 `target/debug/harness` (`harness.exe` on Windows).
 The UI needs an interactive terminal; another ACP client can launch the Rust
 binary directly without a TTY.
-
-## Token usage and workspace
-
-Conversation metadata includes the canonical bound `workspace` and a `usage`
-summary with nullable `inputTokens`, `outputTokens`, `contextTokens`, `modelId`,
-and a boolean `partial`. Input/output are cumulative reported session tokens;
-context is the latest request's input plus output, not the cumulative total.
-Missing reports remain unknown; partial totals are lower bounds.
-
-The `harness/usage` capability advertises `_harness/usage` notifications:
-`{sessionId, usage}`. Reports are emitted after durable generation accounting;
-retained model steps are checkpointed before their updates, including steps that
-request tools. Discarded or cancelled generations contribute any reported counts
-without contributing continuation. Final/resumed snapshots are authoritative.
-Model metadata includes nullable `contextWindow`, sourced from the catalog's
-optional `context_window`. No account quota or inferred token count is exposed.
-
-The ACP projection also emits standard `usage_update` with `used` and `size` when
-the latest reported context and matching model capacity are known. Its
-`_meta["harness/usage"]` retains cumulative/partial details. Unknown counts or
-capacity suppress that standard update rather than fabricating required values.
-A model switch can defer standard usage until the final snapshot supplies its
-capacity. Live updates and replay share the same projection implementation; the
-custom notification remains available to existing clients.
-
-## Tools and steering
-
-Standard `tool_call` and `tool_call_update` updates include
-`_meta["harness/tool"]` with the stable execution/message IDs, original argument
-JSON, exact Harness status, preview, artifact path, truncation flag, elapsed
-milliseconds and UTF-8 text offset. Terminal conversation snapshots contain the
-same `tools` summaries and accepted `steering`; provider continuation is private.
-
-`_harness/conversation/steer` accepts `{sessionId, id, text}`, where `id` is a
-canonical UUID. Its `{accepted:boolean}` response is acknowledged only after
-persistence, and accepted IDs are deduplicated conversation-wide. An identical
-UUID/text retry is acknowledged without mutation or generation restart, including
-after its original turn; a UUID bound to different text is rejected. Idle retries
-check persisted history using the same identity rule. The same turn continues; clients
-must not implement steering by cancelling and resending the original request.
-Budget exhaustion finishes with a tool-free summary, message status `limited`,
-and standard stop reason `max_turn_requests`. Standard `session/cancel` cancels
-without a follow-up. All enabled tools run
-automatically after any required MCP connection trust: there are no per-call
-permission requests. See [tool calls](tool-calls.md) and
-[MCP connections](mcp-connections.md).

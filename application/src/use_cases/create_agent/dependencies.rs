@@ -6,6 +6,8 @@ pub struct Dependencies {
     pub(super) create_agent: ports::CreateAgent,
     pub(super) read_setup: ports::ReadSetup,
     pub(super) read_agent: ports::ReadAgent,
+    pub(super) read_coordination: ports::ReadCoordination,
+    pub(super) update_coordination: ports::UpdateCoordination,
     pub(super) read_conversation: ports::ReadConversation,
     pub(super) update_conversation: ports::UpdateConversation,
     pub(super) lock_conversation: ports::LockConversation,

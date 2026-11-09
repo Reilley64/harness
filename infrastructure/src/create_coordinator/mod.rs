@@ -74,15 +74,21 @@ pub fn create_coordinator(
                     role: domain::AgentRole::ChiefOfStaff,
                 }),
                 assignment: Some(assignment),
-                runs: Vec::new(),
-                instruction_snapshots: vec![instruction.clone()],
-                selected_instructions: adopt_default.then_some(instruction.id),
-                resume_required: false,
-                provider_connection_id: connection.id,
+                research: None,
+
                 workspace: Some(work.workspace),
+                provider_connection_id: connection.id,
                 model,
                 effort: approval.selection.effort,
+
+                instruction_snapshots: vec![instruction.clone()],
+                selected_instructions: adopt_default.then_some(instruction.id),
+
                 messages: Vec::new(),
+                runs: Vec::new(),
+                current_work: None,
+                resume_required: false,
+
                 created_at: now,
                 updated_at: now,
                 revision: 0,

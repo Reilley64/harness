@@ -17,6 +17,7 @@ pub(super) fn create_model_step<P>(
     read_model_allowlist: application::ports::ReadModelAllowlist,
     read_models: application::ports::ReadModels,
     read_work: application::ports::ReadWork,
+    read_coordination: application::ports::ReadCoordination,
 ) -> impl Fn(
     domain::Conversation,
     Vec<domain::Tool>,
@@ -46,6 +47,7 @@ where
         let prepare = prepare.clone();
         let read_models = read_models.clone();
         let read_work = read_work.clone();
+        let read_coordination = read_coordination.clone();
         let read_model_allowlist = read_model_allowlist.clone();
         Box::pin(async move {
             let mut reported_usage = None;
@@ -59,13 +61,17 @@ where
                 base_url.trim_end_matches('/')
             ))?;
 
-            let (model, effort, assignment, coordinator_id, reply_metadata, conversation) = tokio::task::spawn_blocking(move || {
+            let (model, effort, assignment, coordinator_id, research, connection_id, instructions, parent_run, reply_metadata, conversation) = tokio::task::spawn_blocking(move || {
                 let reply_metadata = conversation.messages.last().map(|message| (message.id.clone(), message.content.len()));
                 (
                     conversation.model.clone(),
                     conversation.effort,
                     conversation.assignment.clone(),
                     conversation.id.clone(),
+                    conversation.research.clone(),
+                    conversation.provider_connection_id.clone(),
+                    conversation.selected_instructions.clone(),
+                    conversation.current_work.as_ref().and_then(|_| conversation.runs.last().map(|run| run.id.clone())),
                     reply_metadata,
                     conversation,
                 )
@@ -105,6 +111,16 @@ where
                         work.authorize_assignment(a,&coordinator_id).context("Approved work changed; inspect and approve the current scope/criteria version")?;
                     }
 
+                    application::research_access::read(&read_coordination, &read_work, research.as_ref(), &coordinator_id, &current, effort, &connection_id, instructions.as_deref()).await?;
+                    if let Some(run_id) = &parent_run {
+                        let state = read_coordination.call(coordinator_id.clone()).await?.ok_or("Required current-work coordination is unavailable")?;
+                        if state.gate != domain::CoordinationGate::Open || state.run_id.as_ref() != Some(run_id) || state.controller.is_none() {
+                            return Err("Parent coordination changed or is gated before HTTP admission".into());
+                        }
+                    }
+                    if cancellation.is_cancelled() {
+                        return Err("Model generation was cancelled before HTTP admission".into());
+                    }
                     attempted = true;
                     let mut response = http
                         .post(url)

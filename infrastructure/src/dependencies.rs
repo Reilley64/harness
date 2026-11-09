@@ -1,26 +1,32 @@
 use crate::create_agent;
 use crate::create_conversation;
 use crate::create_coordinator;
+use crate::create_execution_diagnostics;
 use crate::create_file;
 use crate::create_mcp_call;
 use crate::create_model_step_factory;
 use crate::create_native_decision;
 use crate::create_process;
+use crate::create_research;
 use crate::create_tool_output;
 use crate::lock_conversation;
 use crate::mcp::Connections;
 use crate::read_agent;
 use crate::read_code_matches;
 use crate::read_conversation;
+use crate::read_coordination;
 use crate::read_decider;
 use crate::read_decision;
 use crate::read_directory;
+use crate::read_execution_claim;
+use crate::read_execution_claims;
 use crate::read_file;
 use crate::read_instructions;
 use crate::read_model_allowlist;
 use crate::read_model_selection;
 use crate::read_paths;
 use crate::read_provider_connection;
+use crate::read_research_guidance;
 use crate::read_setup;
 use crate::read_setup_draft;
 use crate::read_text_matches;
@@ -30,12 +36,14 @@ use crate::read_web_search;
 use crate::read_work;
 use crate::read_work_proposal;
 use crate::update_conversation;
+use crate::update_coordination;
 use crate::update_decider;
 use crate::update_decision;
 use crate::update_file;
 use crate::update_mcp_configuration;
 use crate::update_model_allowlist;
 use crate::update_model_selection;
+use crate::update_research_guidance;
 use crate::update_setup_draft;
 use crate::update_work;
 
@@ -52,6 +60,15 @@ use crate::settings::Settings;
 pub struct Dependencies {
     settings: Settings,
     create_assignment: application::use_cases::create_assignment::Dependencies,
+    child_runtime: application::child_runtime::ChildRuntime,
+    create_execution_diagnostics: ports::CreateExecutionDiagnostics,
+    create_research: ports::CreateResearch,
+    read_coordination: ports::ReadCoordination,
+    read_execution_claim: ports::ReadExecutionClaim,
+    read_execution_claims: ports::ReadExecutionClaims,
+    read_research_guidance: ports::ReadResearchGuidance,
+    update_research_guidance: ports::UpdateResearchGuidance,
+    update_coordination: ports::UpdateCoordination,
     read_decision: ports::ReadDecision,
     update_decision: ports::UpdateDecision,
     create_native_decision: ports::CreateNativeDecision,
@@ -161,6 +178,93 @@ impl Dependencies {
                             })
                         },
                     ))
+                })
+            })
+            .create_execution_diagnostics(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = create_execution_diagnostics::create_execution_diagnostics(
+                    &settings.app_data_path.join("coordination/diagnostics"),
+                );
+                ports::CreateExecutionDiagnostics::new(move |parent, execution, diagnostics| {
+                    let result = implementation(parent, execution, diagnostics);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .create_research(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation =
+                    create_research::create_research(&settings.app_data_path.join("conversations"));
+                ports::CreateResearch::new(move |execution, workspace, cancellation| {
+                    let result = implementation(execution, workspace, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .child_runtime(|_| application::child_runtime::ChildRuntime::default())
+            .read_coordination(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_coordination::read_coordination(
+                    &settings.app_data_path.join("coordination"),
+                );
+                ports::ReadCoordination::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_research_guidance(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_research_guidance::read_research_guidance(
+                    &settings.app_data_path.join("coordination").join("guidance"),
+                );
+                ports::ReadResearchGuidance::new(move |intent| {
+                    let result = read(intent);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_research_guidance(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let update = update_research_guidance::update_research_guidance(
+                    &settings.app_data_path.join("coordination").join("guidance"),
+                );
+                ports::UpdateResearchGuidance::new(move |guidance, token| {
+                    let result = update(guidance, token);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_execution_claims(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_execution_claims::read_execution_claims(
+                    &settings.app_data_path.join("coordination"),
+                );
+                ports::ReadExecutionClaims::new(move |parent, token| {
+                    let result = read(parent, token);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_execution_claim(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_execution_claim::read_execution_claim(
+                    &settings.app_data_path.join("coordination").join("intents"),
+                );
+                ports::ReadExecutionClaim::new(move |intent, cancellation| {
+                    let result = implementation(intent, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_coordination(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = update_coordination::update_coordination(
+                    &settings.app_data_path.join("coordination"),
+                );
+                ports::UpdateCoordination::new(move |id, command, revision, cancellation| {
+                    let result = implementation(id, command, revision, cancellation);
+                    Box::pin(async move {
+                        result.await.map_err(|error| {
+                            let conflict = error
+                                .downcast_ref::<update_coordination::RevisionConflict>()
+                                .is_some();
+                            ports::UpdateCoordinationError::from(error).with_conflict(conflict)
+                        })
+                    })
                 })
             })
             .read_decision(|deps| {
@@ -388,6 +492,8 @@ impl Dependencies {
                 let read_models = read_models.clone();
                 let read_work: &ports::ReadWork = deps.as_ref();
                 let read_work = read_work.clone();
+                let read_coordination: &ports::ReadCoordination = deps.as_ref();
+                let read_coordination = read_coordination.clone();
                 let credentials_path = settings.app_data_path.join("auth");
                 ports::CreateModelStepFactory::new(move |provider_id| {
                     let create = create_model_step_factory::create_model_step_factory(
@@ -398,6 +504,7 @@ impl Dependencies {
                         read_model_allowlist.clone(),
                         read_models.clone(),
                         read_work.clone(),
+                        read_coordination.clone(),
                     )?;
                     Ok(create)
                 })

@@ -157,8 +157,9 @@ function parseAgent(value: unknown): NonNullable<Conversation["agent"]> {
     !record(value) ||
     (value.role !== "griller" &&
       value.role !== "chief_of_staff" &&
-      value.role !== "setup") ||
-    (value.role === "chief_of_staff"
+      value.role !== "setup" &&
+      value.role !== "research") ||
+    (value.role === "chief_of_staff" || value.role === "research"
       ? typeof value.creatorId !== "string"
       : value.creatorId !== null)
   )
@@ -183,6 +184,7 @@ function parseRuns(value: unknown): Run[] {
         "tickets",
         "coordination",
         "setup",
+        "research",
       ].includes(String(run.task)) ||
       !["running", "needs_human", "stopped", "failed", "interrupted"].includes(
         String(run.status),

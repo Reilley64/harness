@@ -19,6 +19,7 @@ second model loop.
 | `web_search` | `ReadWebSearch` | `read_web_search` |
 | `publish_work` | `PublishWork` | `read_work_proposal` + application `create_work` |
 | `prepare_assignment` | `PrepareAssignment` | application `create_assignment` + `update_decision` |
+| Managed Research tools | `DispatchResearch`, `ControlChildren`, `ReadChildren`, `ReadChildResult` | application `create_dispatch`, `update_children`, `read_children`; [runtime and retrieval](managed-dispatch.md) |
 | `mcp_configuration` | `McpConfiguration` | `update_mcp_configuration` |
 | `mcp_call` | `McpCall` | `create_mcp_call` |
 
@@ -32,8 +33,11 @@ execution for text-only operation. AST search is advertised only when
 `ast-grep --version` reports exactly `ast-grep 0.51.0`. Trusted configured stdio and Streamable HTTP
 MCP servers use the same durable tool loop; see [MCP connections](mcp-connections.md)
 for native configuration, protected trust, discovery and shared cleanup, and
-[HTTP/OAuth](mcp-http-auth.md) for supported authentication and qualification limits. There are no plugins, managed child dispatch,
-browser automation, PTYs, persistent shells or managed background jobs. Trusted exact-version
+[HTTP/OAuth](mcp-http-auth.md) for supported authentication and qualification limits.
+[Managed Research](managed-dispatch.md) adds dispatch, fixed joins, backgrounding,
+status and source-linked result tools; Implementers require managed workspaces.
+There are no plugins, browser automation, PTYs, persistent shells or general-purpose
+background process jobs. Trusted exact-version
 [approved handoff](approved-work.md) can create a separate conversational CoS;
 model tools cannot grant human approval.
 
@@ -84,14 +88,13 @@ reported incompatible model is an error before tools, never a replacement worker
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 6 with approved assignment/CoS metadata, optional Setup
-tool drafts, per-message/run
-provider provenance, optional resolved-model/serving-provider metadata, agent/run
-associations and immutable instruction snapshots. Versions 1 through 5 remain
-readable without rewriting until mutation/recovery; versions 1 through 4 use
-their single stored provider for missing legacy provider provenance. Historical
-instruction provenance and human consent are never invented.
-See [role guidance](role-guidance.md) and [repository Setup](repository-setup.md).
+Conversation records preserve per-message/run provider provenance, optional
+resolved-model/serving-provider metadata, agent/run associations and immutable
+instruction snapshots. Historical instruction provenance and human consent are
+never invented. [Conversation recovery](conversations/recovery.md) owns general
+version compatibility; [managed Research](managed-dispatch.md#compatibility-and-recovery-limits)
+owns its additive schema-seven lineage. See [role guidance](role-guidance.md) and
+[repository Setup](repository-setup.md).
 Read/create/update conversation adapters and preference adapters each own their
 serialized `Record` types. Shared filesystem helpers operate on bytes, not DTOs.
 

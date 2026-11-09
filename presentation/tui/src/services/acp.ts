@@ -27,6 +27,7 @@ import {
   parseProviderConnection,
   validAuthorizationUrl,
 } from "./authorization.js";
+import { parseChildResult, parseChildren, parseExecution } from "./children.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
 import { parseDeciders, parseDecision } from "./decisions.js";
 import { PresentationError } from "./errors.js";
@@ -118,6 +119,7 @@ export function connectAgent() {
   const pendingPolicyWrites = new Set<Promise<string[]>>();
   const pendingWorkWrites = new Set<Promise<WorkResponse>>();
   const pendingNative = new Set<Promise<unknown>>();
+  const pendingChildren = new Set<Promise<unknown>>();
   const pendingMcp = new Set<Promise<McpConfiguration>>();
   const mcpControllers = new Set<AbortController>();
   const nativeControllers = new Map<string, AbortController>();
@@ -355,6 +357,108 @@ export function connectAgent() {
     if (patterns === undefined) return pending;
     pendingPolicyWrites.add(pending);
     return pending.finally(() => pendingPolicyWrites.delete(pending));
+  }
+
+  async function childRequest(
+    method: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+    write = false,
+  ): Promise<unknown> {
+    const init = await initialize();
+    signal?.throwIfAborted();
+    if (closing || init._meta?.["harness/children"] !== true)
+      throw new PresentationError(
+        "Managed child controls unavailable or closing.",
+      );
+    const pending = connection.agent.request<unknown>(method, params, {
+      cancellationSignal: signal,
+    });
+    if (write) pendingChildren.add(pending);
+    try {
+      return await pending;
+    } finally {
+      pendingChildren.delete(pending);
+    }
+  }
+
+  async function readChildren(sessionId: string, signal?: AbortSignal) {
+    return parseChildren(
+      await childRequest("_harness/children/read", { sessionId }, signal),
+    );
+  }
+  async function childResult(
+    sessionId: string,
+    executionId: string,
+    signal?: AbortSignal,
+  ) {
+    return parseChildResult(
+      await childRequest(
+        "_harness/children/result",
+        { sessionId, executionId },
+        signal,
+      ),
+    );
+  }
+  async function controlChildren(
+    sessionId: string,
+    operation: "join" | "background" | "stop",
+    args: Record<string, unknown>,
+  ) {
+    return parseChildren(
+      await childRequest(
+        `_harness/children/${operation}`,
+        { ...args, sessionId },
+        undefined,
+        true,
+      ),
+    );
+  }
+  async function dispatchChild(
+    sessionId: string,
+    args: Record<string, unknown>,
+  ) {
+    const state = await readChildren(sessionId);
+    if (state?.sessionRevision === undefined)
+      throw new PresentationError("Inspect an active parent before dispatch.");
+    const value = await childRequest(
+      "_harness/children/dispatch",
+      { ...args, sessionId, revision: state.sessionRevision },
+      undefined,
+      true,
+    );
+    if (!value || typeof value !== "object" || !("execution" in value))
+      throw new PresentationError("Invalid dispatch response.");
+    return parseExecution(value.execution);
+  }
+  async function adoptResearch(
+    sessionId: string,
+    intent: string,
+    revision: number,
+    snapshot: string,
+  ) {
+    await childRequest(
+      "_harness/children/guidance/adopt",
+      { sessionId, intent, revision, snapshot },
+      undefined,
+      true,
+    );
+  }
+  async function viewConversation(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<Conversation> {
+    const value = await childRequest(
+      "_harness/conversation/view",
+      { sessionId },
+      signal,
+    );
+    if (!value || typeof value !== "object" || !("conversation" in value))
+      throw new PresentationError("Invalid actor snapshot.");
+    const next = parseConversation(value.conversation);
+    if (next.id !== sessionId)
+      throw new PresentationError("Actor snapshot target changed.");
+    return next;
   }
 
   async function nativeRequest(
@@ -850,7 +954,8 @@ export function connectAgent() {
       pendingPolicyWrites.size ||
       pendingWorkWrites.size ||
       pendingNative.size ||
-      pendingMcp.size
+      pendingMcp.size ||
+      pendingChildren.size
     ) {
       await Promise.allSettled([...replies.keys()].map(cancelReply));
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -863,6 +968,7 @@ export function connectAgent() {
             ...pendingWorkWrites,
             ...pendingNative,
             ...pendingMcp,
+            ...pendingChildren,
           ]),
           new Promise<void>((resolve) => {
             timer = setTimeout(resolve, 60000);
@@ -872,10 +978,19 @@ export function connectAgent() {
         clearTimeout(timer);
       }
     }
+    let drainError: unknown;
+    try {
+      if ((await initialize())._meta?.["harness/children"] === true)
+        await connection.agent.request("_harness/children/drain", {});
+    } catch (error) {
+      drainError = error;
+    }
     connection.close();
     child.stdin.end();
-    if (!child.pid || child.exitCode !== null || child.signalCode !== null)
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
+      if (drainError) throw drainError;
       return;
+    }
     const exited = new Promise<void>((resolve) =>
       child.once("close", () => resolve()),
     );
@@ -887,10 +1002,17 @@ export function connectAgent() {
       clearTimeout(terminate);
       clearTimeout(kill);
     }
+    if (drainError) throw drainError;
   }
 
   return {
     initialize,
+    readChildren,
+    childResult,
+    controlChildren,
+    dispatchChild,
+    adoptResearch,
+    viewConversation,
     updateMcp,
     listProviders,
     listModels,

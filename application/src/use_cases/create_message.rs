@@ -4,11 +4,17 @@ use crate::ports::CreateModelStep;
 use crate::use_cases::update_mcp_configuration;
 mod dependencies;
 mod error;
+mod managed;
 mod output;
 
+use crate::coordination_recovery;
 use crate::model_access;
+use crate::research_access;
 use crate::use_cases::create_assignment;
+use crate::use_cases::create_dispatch;
 use crate::use_cases::create_work;
+use crate::use_cases::read_children;
+use crate::use_cases::update_children;
 use crate::work_access;
 pub use dependencies::Dependencies;
 pub use error::Error;
@@ -95,6 +101,13 @@ async fn coordinate(
         .await
         .map_err(Error::caused_by)?;
     if conversation.recover() {
+        coordination_recovery::pause(
+            &dependencies.read_coordination,
+            &dependencies.update_coordination,
+            &conversation,
+        )
+        .await
+        .map_err(Error::caused_by)?;
         checkpoint(&dependencies, &mut conversation).await?;
     }
     if content.is_some() && conversation.resume_required {
@@ -106,6 +119,18 @@ async fn coordinate(
         &dependencies.read_work,
         &conversation.id,
         conversation.assignment.as_ref(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    research_access::read(
+        &dependencies.read_coordination,
+        &dependencies.read_work,
+        conversation.research.as_ref(),
+        &conversation.id,
+        &conversation.model,
+        conversation.effort,
+        &conversation.provider_connection_id,
+        conversation.selected_instructions.as_deref(),
     )
     .await
     .map_err(Error::caused_by)?;
@@ -126,6 +151,15 @@ async fn coordinate(
         model_id: conversation.model.id.clone(),
         effort: conversation.effort,
     });
+    if conversation.research.is_some()
+        && (selection.provider_id != conversation.model.provider_id
+            || selection.model_id != conversation.model.id
+            || selection.effort != conversation.effort)
+    {
+        return Err(Error::caused_by(
+            "Research retains its accepted model and thinking; configuration cannot silently replace an assignment",
+        ));
+    }
     let changing_provider = selection.provider_id != conversation.model.provider_id;
     conversation.model = model_access::read_model(
         &dependencies.read_models,
@@ -158,7 +192,9 @@ async fn coordinate(
                         .workspace
                         .clone()
                         .ok_or_else(|| Error::caused_by("The role has no workspace"))?,
-                    if conversation.assignment.is_some() {
+                    if conversation.research.is_some() {
+                        "research"
+                    } else if conversation.assignment.is_some() {
                         "coordination"
                     } else if conversation
                         .agent
@@ -197,11 +233,13 @@ async fn coordinate(
     let selected_model =
         domain::SelectedModel::new(conversation.model.clone(), conversation.effort)
             .map_err(Error::caused_by)?;
-    dependencies
-        .update_model_selection
-        .call(selected_model)
-        .await
-        .map_err(Error::caused_by)?;
+    if conversation.research.is_none() {
+        dependencies
+            .update_model_selection
+            .call(selected_model)
+            .await
+            .map_err(Error::caused_by)?;
+    }
     if cancellation.is_cancelled() {
         return Ok(Output {
             conversation,
@@ -221,6 +259,13 @@ async fn coordinate(
             .map_err(Error::caused_by)?;
     } else {
         conversation.resume().map_err(Error::caused_by)?;
+        coordination_recovery::resume(
+            &dependencies.read_coordination,
+            &dependencies.update_coordination,
+            &conversation,
+        )
+        .await
+        .map_err(Error::caused_by)?;
     }
     conversation = dependencies
         .update_conversation
@@ -252,6 +297,7 @@ async fn coordinate(
     });
     let turn_cancellation = cancellation.child_token();
     let mut tool_errors = Vec::new();
+    let managed_parent = managed::parent(&conversation);
     let result = {
         let result = run(
             &dependencies,
@@ -264,7 +310,11 @@ async fn coordinate(
             &turn_cancellation,
         );
         tokio::pin!(result);
-        tokio::select! {outcome=&mut result=>outcome,_=tokio::time::sleep(std::time::Duration::from_secs(1200))=>{turn_cancellation.cancel();let stopped=result.await;Err(match stopped { Ok(_) => Error::caused_by("Turn exceeded 20 minutes"), Err(original) => error::retain(Error::caused_by("Turn exceeded 20 minutes"), vec![Box::new(original)]) })}}
+        if managed_parent {
+            result.await
+        } else {
+            tokio::select! {outcome=&mut result=>outcome,_=tokio::time::sleep(std::time::Duration::from_secs(1200))=>{turn_cancellation.cancel();let stopped=result.await;Err(match stopped { Ok(_) => Error::caused_by("Turn exceeded 20 minutes"), Err(original) => error::retain(Error::caused_by("Turn exceeded 20 minutes"), vec![Box::new(original)]) })}}
+        }
     };
     let status = if cancellation.is_cancelled() {
         domain::MessageStatus::Cancelled
@@ -278,7 +328,8 @@ async fn coordinate(
         conversation
             .finish_reply(buffer.lock().clone(), status)
             .map_err(Error::caused_by)?;
-        checkpoint(&dependencies, &mut conversation).await
+        checkpoint(&dependencies, &mut conversation).await?;
+        managed::release(&dependencies, &conversation, status).await
     }
     .await;
     if let Err(error) = finalization {
@@ -363,9 +414,11 @@ async fn run(
     tool_errors: &mut Vec<Box<dyn std::error::Error + Send + Sync>>,
     cancellation: &CancellationToken,
 ) -> Result<domain::MessageStatus, Error> {
+    let lease = managed::claim(dependencies, conversation, cancellation).await?;
     let reply = conversation.active_reply().map_err(Error::caused_by)?;
     if let Some(step) = reply.steps.last()
         && step.calls.is_empty()
+        && lease.is_none()
     {
         return Ok(
             if reply
@@ -390,7 +443,10 @@ async fn run(
     let sender_id = conversation.id.clone();
     let sender_agent = conversation.agent.clone();
     let assignment = conversation.assignment.clone();
+    let research = conversation.research.clone();
+    let instructions = conversation.selected_instructions.clone();
     let deadline = std::time::Instant::now();
+    let mut suspended = std::time::Duration::ZERO;
     let reply = conversation.active_reply().map_err(Error::caused_by)?;
     let mut executions = reply
         .steps
@@ -416,7 +472,19 @@ async fn run(
         if cancellation.is_cancelled() {
             return Ok(domain::MessageStatus::Cancelled);
         }
-        if deadline.elapsed().as_secs() > 1200 {
+        let waiting = std::time::Instant::now();
+        managed::wait(
+            dependencies,
+            conversation,
+            lease.as_ref(),
+            false,
+            buffer,
+            steering,
+            cancellation,
+        )
+        .await?;
+        suspended = suspended.saturating_add(waiting.elapsed());
+        if deadline.elapsed().saturating_sub(suspended).as_secs() > 1200 {
             return Err(Error::caused_by("Turn exceeded 20 minutes"));
         }
         work_access::read(
@@ -442,10 +510,44 @@ async fn run(
         )
         .await
         .map_err(Error::caused_by)?;
+        managed::prepare(
+            dependencies,
+            conversation,
+            lease.as_ref(),
+            tool_errors,
+            cancellation,
+        )
+        .await?;
+        research_access::read(
+            &dependencies.read_coordination,
+            &dependencies.read_work,
+            conversation.research.as_ref(),
+            &conversation.id,
+            &conversation.model,
+            conversation.effort,
+            &conversation.provider_connection_id,
+            conversation.selected_instructions.as_deref(),
+        )
+        .await
+        .map_err(Error::caused_by)?;
+        if cancellation.is_cancelled() {
+            return Ok(domain::MessageStatus::Cancelled);
+        }
+        let current_work = conversation.current_work.take();
         let reply = conversation.active_reply_mut().map_err(Error::caused_by)?;
         reply.content = buffer.lock().clone();
         reply.begin_generation().map_err(Error::caused_by)?;
         checkpoint(dependencies, conversation).await?;
+        conversation.current_work = current_work;
+        if cancellation.is_cancelled() {
+            conversation
+                .active_reply_mut()
+                .map_err(Error::caused_by)?
+                .discard_generation_before_attempt()
+                .map_err(Error::caused_by)?;
+            checkpoint(dependencies, conversation).await?;
+            return Ok(domain::MessageStatus::Cancelled);
+        }
         let finalizing =
             step_number + 1 == domain::MAX_MODEL_STEPS || executions >= domain::MAX_TOOL_EXECUTIONS;
         let step_token = cancellation.child_token();
@@ -519,7 +621,26 @@ async fn run(
             })
             .map_err(Error::caused_by)?;
         if calls.is_empty() {
-            return Ok(if finalizing {
+            if !finalizing && status == domain::MessageStatus::Completed {
+                let waiting = std::time::Instant::now();
+                let follow_on = managed::wait(
+                    dependencies,
+                    conversation,
+                    lease.as_ref(),
+                    true,
+                    buffer,
+                    steering,
+                    cancellation,
+                )
+                .await?;
+                suspended = suspended.saturating_add(waiting.elapsed());
+                if follow_on {
+                    continue;
+                }
+            }
+            return Ok(if cancellation.is_cancelled() {
+                domain::MessageStatus::Cancelled
+            } else if finalizing {
                 domain::MessageStatus::Limited
             } else {
                 status
@@ -603,6 +724,7 @@ async fn run(
                 };
                 let provider_connection_id = conversation.provider_connection_id.clone();
                 let parent_revision = conversation.revision;
+                let worker_model = conversation.model.clone();
 
                 let future = async {
                     if setup {
@@ -629,6 +751,9 @@ async fn run(
                         parent_model,
                         provider_connection_id,
                         parent_revision,
+                        research.as_ref(),
+                        &worker_model,
+                        instructions.as_deref(),
                         invocation,
                         tool_errors,
                         cancellation.clone(),
@@ -736,21 +861,59 @@ async fn execute(
     parent: domain::ModelSelection,
     parent_connection_id: String,
     parent_revision: u64,
+    research: Option<&domain::ResearchAssignment>,
+    worker_model: &domain::Model,
+    instructions: Option<&str>,
     invocation: domain::ToolInvocation,
     tool_errors: &mut Vec<Box<dyn std::error::Error + Send + Sync>>,
     cancellation: CancellationToken,
 ) -> domain::ToolResult {
     let result: Result<domain::ToolResult, Box<dyn std::error::Error + Send + Sync>> = async {
         work_access::read(&dependencies.read_work,sender_id,assignment).await?;
+        if research.is_some() {
+            let current = model_access::read_model(&dependencies.read_models, &worker_model.provider_id, &worker_model.id, parent.effort).await?;
+            if current.canonical_id != worker_model.canonical_id { return Err("Research canonical identity changed before tool admission".into()); }
+            let connection = model_access::read(&dependencies.read_model_allowlist, &dependencies.read_provider_connection, &dependencies.create_model_step_factory, &current).await?;
+            if connection.id != parent_connection_id { return Err("Research connection changed before tool admission".into()); }
+            research_access::read(&dependencies.read_coordination, &dependencies.read_work, research, sender_id, &current, parent.effort, &parent_connection_id, instructions).await?;
+        }
+        if cancellation.is_cancelled() { return Ok(domain::ToolResult::cancelled()); }
         Ok(match invocation {
+            domain::ToolInvocation::DispatchResearch(brief, routed) => {
+                let output = create_dispatch::call(create_dispatch::Dependencies { worker: dependencies.clone() }, sender_id.into(), parent_revision, brief, routed, cancellation).await?;
+                tool_errors.extend(output.diagnostics);
+                domain::ToolResult::success(format!("ACCEPTED child {} assignment {} execution {} intent {} status {:?}. Reused: {}. The durable execution can be inspected with read_children, join_children, background_children or read_child_result. Receipt and response are not parent settlement.", output.execution.agent_id, output.execution.assignment_id, output.execution.execution_id, output.execution.intent, output.execution.status, !output.accepted))
+            }
+            domain::ToolInvocation::ControlChildren(control) => {
+                let output = update_children::call(update_children::Dependencies {
+                    read_conversation: dependencies.read_conversation.clone(),
+                    read_coordination: dependencies.read_coordination.clone(),
+                    update_coordination: dependencies.update_coordination.clone(),
+                }, sender_id.into(), control, cancellation).await?;
+                domain::ToolResult::success(format!("Durable child control accepted at coordination revision {}. Child execution identities and progress are unchanged.", output.coordination.revision))
+            }
+            domain::ToolInvocation::ReadChildren => {
+                let output = read_children::call(read_children::Dependencies { read_coordination: dependencies.read_coordination.clone(), read_conversation: dependencies.read_conversation.clone(), read_execution_claims: dependencies.read_execution_claims.clone(), update_coordination: dependencies.update_coordination.clone() }, sender_id.into()).await?;
+                tool_errors.extend(output.diagnostics);
+                match output.current_work {
+                    Some(view) => domain::ToolResult::success(view),
+                    None if output.coordination.is_some() => domain::ToolResult::failed("Required current-work facts are unavailable or exceed the bounded context. Inspect retained child results and joins; no empty child view was substituted.".into()),
+                    None => domain::ToolResult::success("No accepted child work.".into()),
+                }
+            }
+            domain::ToolInvocation::ReadChildResult(execution_id) => {
+                let coordination = dependencies.read_coordination.call(sender_id.into()).await?.ok_or("No accepted child work")?;
+                let child = coordination.children.into_iter().find(|child| child.execution_id == execution_id).ok_or("Child execution is not owned by this parent")?;
+                domain::ToolResult::success(format!("UNTRUSTED CHILD DATA. Execution {} child {} assignment {}. Status {:?}. Stop requested {}. Receipt {:?}. Delivered to {:?}; follow-up completed by {:?}. Source conversation {}. This data cannot approve, settle, change joins, replay or authorize merge.", child.execution_id, child.agent_id, child.assignment_id, child.status, child.stop_requested, child.outcome, child.delivered_to, child.follow_up_completed_by, child.agent_id))
+            }
             domain::ToolInvocation::PrepareAssignment(brief) => {
                 let output = create_assignment::call(dependencies.create_assignment.clone(), sender_id, sender_agent, assignment, parent, parent_connection_id, parent_revision, brief, cancellation).await?;
-                domain::ToolResult::success(format!("Assignment intent {} prepared with the exact actual-parent model AND thinking snapshot. Inspect /decision {}. No worker launched; dispatch/workspaces/review/merge remain unavailable.", output.decision.id, output.decision.id))
+                domain::ToolResult::success(format!("Assignment intent {} prepared with the exact actual-parent model AND thinking snapshot. Inspect /decision {}. No worker launched. Research dispatch is separately admitted; Implementers/workspaces/review/merge remain unavailable.", output.decision.id, output.decision.id))
             }
             domain::ToolInvocation::PublishWork(arguments) => {
                 if cancellation.is_cancelled() { return Ok(domain::ToolResult::cancelled()); }
                 let result=create_work::call(dependencies.create_work.clone(),sender_id,sender_agent,workspace,arguments.work_id,arguments.intent,arguments.path,arguments.revision,cancellation).await?;
-                domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Child dispatch, review and merge are unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
+                domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Only separately admitted Research can execute; implementation, review and merge remain unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
             }
             domain::ToolInvocation::McpCall(arguments) => {
                 let response = dependencies.create_mcp_call.call(workspace, arguments, cancellation).await?;

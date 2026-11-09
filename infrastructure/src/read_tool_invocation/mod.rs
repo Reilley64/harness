@@ -1,7 +1,9 @@
 use crate::create_file;
 use crate::create_mcp_call;
 use crate::create_process;
+use crate::create_research;
 use crate::read_code_matches;
+use crate::read_coordination;
 use crate::read_directory;
 use crate::read_file;
 use crate::read_paths;
@@ -9,6 +11,7 @@ use crate::read_text_matches;
 use crate::read_web_search;
 use crate::read_work_proposal;
 use crate::tool_io;
+use crate::update_coordination;
 use crate::update_decision;
 use crate::update_file;
 use crate::update_mcp_configuration;
@@ -33,6 +36,15 @@ pub fn read_tool_invocation()
             domain::Tool::WebSearch => read_web_search::decode(&arguments),
             domain::Tool::PublishWork => read_work_proposal::decode(&arguments),
             domain::Tool::PrepareAssignment => update_decision::decode(&arguments),
+            domain::Tool::DispatchResearch => create_research::decode(&arguments),
+            domain::Tool::JoinChildren
+            | domain::Tool::BackgroundChildren
+            | domain::Tool::CompleteChildrenFollowUp => {
+                update_coordination::decode(tool, &arguments)
+            }
+            domain::Tool::ReadChildren | domain::Tool::ReadChildResult => {
+                read_coordination::decode(tool, &arguments)
+            }
         }
     }
 }

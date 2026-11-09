@@ -16,6 +16,7 @@ pub fn create_model_step_factory(
     read_model_allowlist: application::ports::ReadModelAllowlist,
     read_models: application::ports::ReadModels,
     read_work: application::ports::ReadWork,
+    read_coordination: application::ports::ReadCoordination,
 ) -> Result<CreateModelStep, ModelStepError> {
     match provider_id.0.as_str() {
         "openai" => {
@@ -26,6 +27,7 @@ pub fn create_model_step_factory(
                 read_model_allowlist,
                 read_models,
                 read_work,
+                read_coordination,
             );
             Ok(CreateModelStep::new(create))
         }
@@ -37,6 +39,7 @@ pub fn create_model_step_factory(
                 read_model_allowlist,
                 read_models,
                 read_work,
+                read_coordination,
             );
             Ok(CreateModelStep::new(create))
         }

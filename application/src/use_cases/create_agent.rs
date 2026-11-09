@@ -2,6 +2,7 @@ mod dependencies;
 mod error;
 mod output;
 
+use crate::coordination_recovery;
 use crate::model_access;
 
 pub use dependencies::Dependencies;
@@ -77,6 +78,13 @@ pub async fn call(
         ));
     }
     if conversation.recover() {
+        coordination_recovery::pause(
+            &dependencies.read_coordination,
+            &dependencies.update_coordination,
+            &conversation,
+        )
+        .await
+        .map_err(Error::caused_by)?;
         conversation = dependencies
             .update_conversation
             .call(conversation)

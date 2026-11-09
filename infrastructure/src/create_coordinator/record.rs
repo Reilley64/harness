@@ -105,6 +105,8 @@ impl TryFrom<AssignmentRecord> for domain::WorkAssignment {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub(super) struct Record {
     version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    research: Option<ResearchRecord>,
     #[serde(default)]
     assignment: Option<AssignmentRecord>,
     #[serde(default)]
@@ -130,6 +132,16 @@ pub(super) struct Record {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+struct ResearchRecord {
+    parent_id: String,
+    parent_agent_id: String,
+    intent: String,
+
+    assignment_id: String,
+    execution_id: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 struct AgentRecord {
     id: String,
     role: String,
@@ -169,7 +181,18 @@ struct MessageRecord {
 impl From<domain::Conversation> for Record {
     fn from(conversation: domain::Conversation) -> Self {
         Self {
-            version: 6,
+            version: if conversation.research.is_some() {
+                7
+            } else {
+                6
+            },
+            research: conversation.research.map(|value| ResearchRecord {
+                parent_id: value.parent_id,
+                parent_agent_id: value.parent_agent_id,
+                intent: value.intent,
+                assignment_id: value.assignment_id,
+                execution_id: value.execution_id,
+            }),
             assignment: conversation.assignment.map(Into::into),
             instruction_snapshots: conversation
                 .instruction_snapshots
@@ -179,7 +202,9 @@ impl From<domain::Conversation> for Record {
             selected_instructions: conversation.selected_instructions,
             agent: conversation.agent.map(|agent| AgentRecord {
                 id: agent.id.0,
-                role: if agent.role == domain::AgentRole::ChiefOfStaff {
+                role: if agent.role == domain::AgentRole::Research {
+                    "research"
+                } else if agent.role == domain::AgentRole::ChiefOfStaff {
                     "chief_of_staff"
                 } else if agent.role == domain::AgentRole::Setup {
                     "setup"
@@ -274,7 +299,7 @@ impl TryFrom<Record> for domain::Conversation {
     type Error = StorageError;
 
     fn try_from(dto: Record) -> Result<Self, Self::Error> {
-        if !matches!(dto.version, 1..=6) {
+        if !matches!(dto.version, 1..=7) {
             return Err("Unsupported conversation format".into());
         }
         conversations::validate_id(&dto.id)?;
@@ -441,6 +466,7 @@ impl TryFrom<Record> for domain::Conversation {
                     "griller" => domain::AgentRole::Griller,
                     "chief_of_staff" if dto.version >= 6 => domain::AgentRole::ChiefOfStaff,
                     "setup" if dto.version >= 6 => domain::AgentRole::Setup,
+                    "research" if dto.version >= 7 => domain::AgentRole::Research,
                     _ => return Err(StorageError::from("Unsupported agent role")),
                 };
                 Ok(domain::Agent {
@@ -572,22 +598,67 @@ impl TryFrom<Record> for domain::Conversation {
         {
             return Err("Instruction snapshot belongs to a different role".into());
         }
+        let research = dto.research.map(|value| domain::ResearchAssignment {
+            parent_id: value.parent_id,
+            parent_agent_id: value.parent_agent_id,
+            intent: value.intent,
+            assignment_id: value.assignment_id,
+            execution_id: value.execution_id,
+        });
+        if agent
+            .as_ref()
+            .is_some_and(|agent| agent.role == domain::AgentRole::Research)
+            != research.is_some()
+            || (dto.version == 7) != research.is_some()
+        {
+            return Err("Invalid Research assignment/role binding".into());
+        }
+        if let Some(research) = &research {
+            for id in [
+                &research.parent_id,
+                &research.parent_agent_id,
+                &research.intent,
+                &research.assignment_id,
+                &research.execution_id,
+            ] {
+                conversations::validate_id(id)?;
+            }
+            if agent.as_ref().is_none_or(|agent| agent.id.0 != dto.id)
+                || research.parent_id == dto.id
+                || instruction_snapshots
+                    .iter()
+                    .any(|snapshot| snapshot.phase != "research")
+            {
+                return Err("Research provenance or captured instructions are inconsistent".into());
+            }
+        } else if instruction_snapshots
+            .iter()
+            .any(|snapshot| snapshot.phase == "research")
+        {
+            return Err("Research instructions require an actual Research assignment".into());
+        }
         let model: domain::Model = dto.model.into();
         let effort = dto.effort.map(Into::into);
         model.validate_effort(effort)?;
         Ok(Self {
             id: dto.id,
-            assignment,
             agent,
-            runs,
-            instruction_snapshots,
-            selected_instructions: dto.selected_instructions,
-            resume_required: dto.resume_required,
-            provider_connection_id: dto.provider_connection_id,
+            assignment,
+            research,
+
             workspace: dto.workspace,
+            provider_connection_id: dto.provider_connection_id,
             model,
             effort,
+
+            instruction_snapshots,
+            selected_instructions: dto.selected_instructions,
+
             messages,
+            runs,
+            current_work: None,
+            resume_required: dto.resume_required,
+
             created_at: dto.created_at,
             updated_at: dto.updated_at,
             revision: dto.revision,

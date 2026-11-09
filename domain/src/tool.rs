@@ -11,12 +11,18 @@ pub enum Tool {
     WebSearch,
     PublishWork,
     PrepareAssignment,
+    DispatchResearch,
+    JoinChildren,
+    BackgroundChildren,
+    CompleteChildrenFollowUp,
+    ReadChildren,
+    ReadChildResult,
     McpCall,
     McpConfiguration,
 }
 
 impl Tool {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 19] = [
         Self::Read,
         Self::Bash,
         Self::Edit,
@@ -28,6 +34,12 @@ impl Tool {
         Self::WebSearch,
         Self::PublishWork,
         Self::PrepareAssignment,
+        Self::DispatchResearch,
+        Self::JoinChildren,
+        Self::BackgroundChildren,
+        Self::CompleteChildrenFollowUp,
+        Self::ReadChildren,
+        Self::ReadChildResult,
         Self::McpCall,
         Self::McpConfiguration,
     ];
@@ -45,6 +57,12 @@ impl Tool {
             Self::WebSearch => "web_search",
             Self::PublishWork => "publish_work",
             Self::PrepareAssignment => "prepare_assignment",
+            Self::DispatchResearch => "dispatch_research",
+            Self::JoinChildren => "join_children",
+            Self::BackgroundChildren => "background_children",
+            Self::CompleteChildrenFollowUp => "complete_children_followup",
+            Self::ReadChildren => "read_children",
+            Self::ReadChildResult => "read_child_result",
             Self::McpCall => "mcp_call",
             Self::McpConfiguration => "mcp_configuration",
         }
@@ -62,6 +80,10 @@ impl Tool {
                 | Self::Write
                 | Self::PublishWork
                 | Self::PrepareAssignment
+                | Self::DispatchResearch
+                | Self::JoinChildren
+                | Self::BackgroundChildren
+                | Self::CompleteChildrenFollowUp
                 | Self::McpCall
                 | Self::McpConfiguration
         )
