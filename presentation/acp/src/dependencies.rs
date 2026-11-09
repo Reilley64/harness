@@ -3,6 +3,7 @@ use application::use_cases::create_conversation;
 use application::use_cases::create_dispatch;
 use application::use_cases::create_message;
 use application::use_cases::create_provider_connection;
+use application::use_cases::delete_execution;
 use application::use_cases::delete_executions;
 use application::use_cases::read_agent;
 use application::use_cases::read_children;
@@ -32,6 +33,7 @@ use application::use_cases::update_work;
 pub struct Dependencies {
     pub create_dispatch: create_dispatch::Dependencies,
     pub update_research_guidance: update_research_guidance::Dependencies,
+    pub delete_execution: delete_execution::Dependencies,
     pub delete_executions: delete_executions::Dependencies,
     pub read_children: read_children::Dependencies,
     pub update_children: update_children::Dependencies,

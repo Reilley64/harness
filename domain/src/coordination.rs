@@ -242,10 +242,22 @@ impl Coordination {
                     .iter_mut()
                     .find(|child| child.execution_id == execution_id)
                     .ok_or("Child execution is missing")?;
-                if child.outcome.is_some() || child.stop_requested {
+                if child.stop_requested {
                     return Ok(false);
                 }
                 child.stop_requested = true;
+            }
+            CoordinationCommand::Stop { agent_id } => {
+                if agent_id != self.agent_id {
+                    return Err("Stop belongs to a different durable agent");
+                }
+                let changed = self.gate != CoordinationGate::Stopped
+                    || self.children.iter().any(|child| !child.stop_requested);
+                self.gate = CoordinationGate::Stopped;
+                for child in &mut self.children {
+                    child.stop_requested = true;
+                }
+                return Ok(changed);
             }
             CoordinationCommand::Receive {
                 execution_id,
@@ -334,7 +346,10 @@ impl Coordination {
             } => {
                 self.controls(&controller, &run_id)?;
                 if agent_id != self.agent_id
-                    || self.gate != CoordinationGate::ResumeRequired
+                    || !matches!(
+                        self.gate,
+                        CoordinationGate::ResumeRequired | CoordinationGate::Stopped
+                    )
                     || !self.authority_complete
                 {
                     return Err(
@@ -346,7 +361,9 @@ impl Coordination {
                         child.stop_requested = true;
                     }
                 }
-                self.gate = CoordinationGate::NeedsHuman;
+                if self.gate != CoordinationGate::Stopped {
+                    self.gate = CoordinationGate::NeedsHuman;
+                }
                 self.controller = None;
                 self.run_id = None;
                 self.waiting = false;
@@ -476,7 +493,9 @@ impl Coordination {
                         run_id.as_deref().ok_or("Closing gate run is missing")?,
                     )?;
                 }
-                if self.gate == gate {
+                if self.gate == gate
+                    || self.gate == CoordinationGate::Stopped && gate != CoordinationGate::Open
+                {
                     return Ok(false);
                 }
                 if gate == CoordinationGate::ResumeRequired {

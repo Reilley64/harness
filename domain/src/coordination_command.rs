@@ -18,6 +18,9 @@ pub enum CoordinationCommand {
     StopChild {
         execution_id: String,
     },
+    Stop {
+        agent_id: String,
+    },
     Receive {
         execution_id: String,
         controller: String,

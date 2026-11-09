@@ -5,6 +5,7 @@ pub mod create_dispatch;
 pub mod create_message;
 pub mod create_provider_connection;
 pub mod create_work;
+pub mod delete_execution;
 pub mod delete_executions;
 pub mod read_agent;
 pub mod read_children;

@@ -13,6 +13,7 @@ use crate::research_access;
 use crate::use_cases::create_assignment;
 use crate::use_cases::create_dispatch;
 use crate::use_cases::create_work;
+use crate::use_cases::delete_execution;
 use crate::use_cases::read_children;
 use crate::use_cases::update_children;
 use crate::work_access;
@@ -298,6 +299,9 @@ async fn coordinate(
     let turn_cancellation = cancellation.child_token();
     let mut tool_errors = Vec::new();
     let managed_parent = managed::parent(&conversation);
+    let monitored_conversation = conversation.id.clone();
+    let monitored_run = conversation.runs.last().map(|run| run.id.clone());
+    let mut durably_stopped = false;
     let result = {
         let result = run(
             &dependencies,
@@ -311,12 +315,32 @@ async fn coordinate(
         );
         tokio::pin!(result);
         if managed_parent {
-            result.await
+            let monitor = managed::monitor(
+                &dependencies.read_coordination,
+                monitored_conversation,
+                monitored_run
+                    .ok_or_else(|| Error::caused_by("Managed execution has no logical run"))?,
+            );
+            tokio::pin!(monitor);
+            tokio::select! {
+                outcome = &mut result => outcome,
+                control = &mut monitor => {
+                    turn_cancellation.cancel();
+                    let outcome = result.await;
+                    match control {
+                        Ok(()) => { durably_stopped = true; outcome }
+                        Err(error) => Err(match outcome {
+                            Ok(_) => error,
+                            Err(original) => error::retain(error, vec![Box::new(original)]),
+                        }),
+                    }
+                }
+            }
         } else {
             tokio::select! {outcome=&mut result=>outcome,_=tokio::time::sleep(std::time::Duration::from_secs(1200))=>{turn_cancellation.cancel();let stopped=result.await;Err(match stopped { Ok(_) => Error::caused_by("Turn exceeded 20 minutes"), Err(original) => error::retain(Error::caused_by("Turn exceeded 20 minutes"), vec![Box::new(original)]) })}}
         }
     };
-    let status = if cancellation.is_cancelled() {
+    let status = if cancellation.is_cancelled() || durably_stopped {
         domain::MessageStatus::Cancelled
     } else {
         match &result {
@@ -744,6 +768,7 @@ async fn run(
                     }
                     execute(
                         dependencies,
+                        lease.as_ref(),
                         workspace.clone(),
                         &sender_id,
                         sender_agent.as_ref(),
@@ -854,6 +879,7 @@ fn mcp_summary(configuration: domain::McpConfiguration) -> String {
 
 async fn execute(
     dependencies: &Dependencies,
+    lease: Option<&managed::Lease>,
     workspace: std::path::PathBuf,
     sender_id: &str,
     sender_agent: Option<&domain::Agent>,
@@ -877,6 +903,7 @@ async fn execute(
             if connection.id != parent_connection_id { return Err("Research connection changed before tool admission".into()); }
             research_access::read(&dependencies.read_coordination, &dependencies.read_work, research, sender_id, &current, parent.effort, &parent_connection_id, instructions).await?;
         }
+        managed::admit(dependencies, sender_id, lease).await?;
         if cancellation.is_cancelled() { return Ok(domain::ToolResult::cancelled()); }
         Ok(match invocation {
             domain::ToolInvocation::DispatchResearch(brief, routed) => {
@@ -886,6 +913,15 @@ async fn execute(
             }
             domain::ToolInvocation::ControlChildren(control) => {
                 let output = update_children::call(update_children::Dependencies {
+                    delete_execution: delete_execution::Dependencies {
+                        child_runtime: dependencies.child_runtime.clone(),
+                        read_children: read_children::Dependencies {
+                            read_coordination: dependencies.read_coordination.clone(),
+                            read_conversation: dependencies.read_conversation.clone(),
+                            read_execution_claims: dependencies.read_execution_claims.clone(),
+                            update_coordination: dependencies.update_coordination.clone(),
+                        },
+                    },
                     read_conversation: dependencies.read_conversation.clone(),
                     read_coordination: dependencies.read_coordination.clone(),
                     update_coordination: dependencies.update_coordination.clone(),

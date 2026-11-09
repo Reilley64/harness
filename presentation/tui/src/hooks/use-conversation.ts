@@ -57,6 +57,7 @@ export function useConversation(
     };
   }, [agent, cancelOpen]);
   const cancelled = useRef(false);
+  const stopping = useRef<string | null>(null);
   const sessionReady = useRef<Promise<string | null>>(Promise.resolve(null));
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<{
@@ -73,6 +74,12 @@ export function useConversation(
     selection: ModelSelection | null,
     resume = false,
   ): Promise<SendResult> {
+    if (stopping.current !== null && stopping.current === current.current?.id) {
+      setError(
+        "Wait for the selected execution's durable Stop acknowledgement.",
+      );
+      return { accepted: false, draft: content };
+    }
     if (!resume && !content.trim()) return { accepted: false, draft: content };
     if (new TextEncoder().encode(content).length > 1_048_576) {
       setError("Prompt exceeds 1 MiB of UTF-8 text; your draft was preserved.");
@@ -207,13 +214,46 @@ export function useConversation(
     return { accepted, draft: content };
   }
   function cancel() {
-    if (!active.current) return;
+    const selected = current.current;
+    if (!active.current && !selected) return;
     cancelled.current = true;
     setCancelling(true);
-    if (current.current)
-      void agent
-        .cancelReply(current.current.id)
-        .catch((error) => setError(errorMessage(error)));
+    if (!selected || stopping.current === selected.id) return;
+    const id = selected.id;
+    const navigationRevision = opening.current;
+    stopping.current = id;
+    const scoped = selected.agent && selected.agent.role !== "setup";
+    const operation = scoped ? agent.stopExecution(id) : agent.cancelReply(id);
+    void operation
+      .catch(async (original) => {
+        let failure = original;
+        try {
+          await agent.cancelReply(id);
+        } catch (cleanup) {
+          failure = new AggregateError(
+            [original, cleanup],
+            "Stop and local cancellation failed.",
+          );
+        }
+        if (
+          mounted.current &&
+          owner.current === agent &&
+          current.current?.id === id &&
+          opening.current === navigationRevision
+        )
+          setError(errorMessage(failure));
+      })
+      .finally(() => {
+        if (stopping.current === id) stopping.current = null;
+        if (
+          mounted.current &&
+          owner.current === agent &&
+          current.current?.id === id &&
+          opening.current === navigationRevision &&
+          !active.current
+        )
+          setCancelling(false);
+      });
   }
   const messages: Message[] = pending
     ? [

@@ -22,7 +22,10 @@ pub(crate) async fn pause(
     let Some(state) = read.call(conversation.id.clone()).await? else {
         return Ok(());
     };
-    if state.gate == domain::CoordinationGate::ResumeRequired {
+    if matches!(
+        state.gate,
+        domain::CoordinationGate::ResumeRequired | domain::CoordinationGate::Stopped
+    ) {
         return Ok(());
     }
     if let (Some(controller), Some(run_id)) = (state.controller.clone(), state.run_id.clone()) {
@@ -50,6 +53,9 @@ pub(crate) async fn resume(
     let Some(state) = read.call(conversation.id.clone()).await? else {
         return Ok(());
     };
+    if state.gate == domain::CoordinationGate::Stopped {
+        return Err("Stopped execution cannot Resume; inspect and acknowledge the interruption before a later human instruction".into());
+    }
     if state.gate != domain::CoordinationGate::ResumeRequired {
         return Ok(());
     }
@@ -87,7 +93,11 @@ pub(crate) async fn acknowledge(
     let Some(state) = read.call(conversation.id.clone()).await? else {
         return Ok(());
     };
-    if state.gate != domain::CoordinationGate::ResumeRequired {
+    if !matches!(
+        state.gate,
+        domain::CoordinationGate::ResumeRequired | domain::CoordinationGate::Stopped
+    ) || state.controller.is_none()
+    {
         return Ok(());
     }
     let run = conversation

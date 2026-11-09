@@ -18,7 +18,8 @@ Fields are camelCase and unknown fields are rejected.
 | `_harness/children/dispatch` | `{sessionId, revision, intent, routed, role, task, constraints, toolContext, contextTokens}` | Admit or reuse a Research execution and return before long child completion. |
 | `_harness/children/join` | `{sessionId, id, mode, executions}` | Capture a fixed `any`/`all` set on the parent's active logical run. |
 | `_harness/children/background` | `{sessionId, id}` | Release that captured join without restarting children. |
-| `_harness/children/stop` | `{sessionId, executionId}` | Persist a monotonic fence for this parent's exact child; lineage is not Stop ownership. |
+| `_harness/children/stop` | `{sessionId, executionId}` | Stop this parent's exact execution and its retained owned descendants, not siblings. |
+| `_harness/execution/stop` | `{sessionId, executionId?}` | Stop the selected conversation's owned subtree, or its exact selected child subtree. |
 | `_harness/children/drain` | `{}` | Stop/cancel/drain this backend's owned workers before shutdown; terminal runtime close, not a fleet Stop. |
 | `_harness/children/guidance/adopt` | `{sessionId, revision, intent, snapshot}` | Explicitly capture the inspected pending Research closure. |
 | `_harness/children/follow-up` | `{sessionId, outcomes}` | Explicitly record completed required parent follow-up for exact delivered receipt IDs. |
@@ -45,7 +46,13 @@ JSON-RPC ID does not authorize another execution or a new assignment payload.
 ## Responses
 
 Coordination operations return `{coordination, execution, result}`, using null for
-fields not supplied by that operation. Drain returns `{stopped}`; guidance adoption
+fields not supplied by that operation. Execution Stop additionally advertises
+`harness/executionStop: true` and returns `{coordination, executions}`: the fenced
+scope's coordination and visited execution IDs, not a completed-effects or
+settlement assertion. It does not expose controller tokens. Missing required
+ownership is an error rather than a successful empty Stop. See
+[ownership-scoped Stop](../managed-dispatch.md#ownership-scoped-stop).
+Drain returns `{stopped}`; guidance adoption
 returns `{intent, snapshot}`, where `snapshot` is the exact inspected available
 hash. Missing coordination or receipt is null, not a
 fabricated child, successful completion or zero-work assertion. Corrupt storage
@@ -110,8 +117,8 @@ stdio close and provides the [child inspector](../frontend/conversations.md#mana
 `_harness/conversation/view` accepts `{sessionId}` and returns ordinary safe history
 without recovery or a second controller for active-child viewing. A missing
 terminal receipt remains null even when an interrupted execution is Unknown;
-this does not fabricate a report or prove no effects occurred. Cross-process
-owned-subtree cancellation and complete restart arbitration remain follow-up
-integration, not capabilities implied by a successful child read. Closing Harness does not authorize execution while
+this does not fabricate a report or prove no effects occurred. Durable ownership-scoped Stop is distinct from a successful child read;
+complete restart arbitration, child input and later-run continuation remain
+follow-up integration. Closing Harness does not authorize execution while
 closed or automatic inference after reopening. Preserve held/unknown work for
 explicit inspection and the appropriate Resume gate.

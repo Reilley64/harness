@@ -931,6 +931,22 @@ export function connectAgent() {
     return pending;
   }
 
+  async function stopExecution(id: string): Promise<void> {
+    const initialized = await initialize();
+    if (initialized._meta?.["harness/executionStop"] !== true)
+      throw new PresentationError("Durable execution Stop is unavailable.");
+    const result = await childRequest(
+      "_harness/execution/stop",
+      { sessionId: id },
+      undefined,
+      true,
+    );
+    if (!parseChildren(result))
+      throw new PresentationError(
+        "Missing durable execution Stop acknowledgement.",
+      );
+  }
+
   async function cancelReply(id: string): Promise<void> {
     const reply = replies.get(id);
     if (reply) {
@@ -1038,6 +1054,7 @@ export function connectAgent() {
     loadConversation,
     createMessage,
     workspace,
+    stopExecution,
     cancelReply,
     steer,
     close,

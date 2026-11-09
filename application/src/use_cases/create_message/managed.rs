@@ -1,6 +1,7 @@
 use super::Dependencies;
 use super::Error;
 use crate::error_context::ErrorContext;
+use crate::ports::ReadCoordination;
 use crate::ports::UpdateCoordination;
 use crate::turn_control::SteeringRequest;
 use crate::use_cases::read_children;
@@ -122,6 +123,66 @@ pub(super) async fn claim(
         .await
         .map_err(Error::caused_by)?;
     Ok(Some(Lease { controller, run_id }))
+}
+
+pub(super) async fn monitor(
+    read: &ReadCoordination,
+    conversation_id: String,
+    run_id: String,
+) -> Result<(), Error> {
+    let mut admitted = false;
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        let state = read
+            .call(conversation_id.clone())
+            .await
+            .map_err(Error::caused_by)?;
+        match state {
+            Some(state) if state.run_id.as_deref() == Some(run_id.as_str()) => {
+                admitted = true;
+                if state.gate == domain::CoordinationGate::Stopped {
+                    return Ok(());
+                }
+                if state.gate != domain::CoordinationGate::Open {
+                    return Err(Error::caused_by(
+                        "Execution gate closed; results remain retained without continuation",
+                    ));
+                }
+            }
+            _ if admitted => {
+                return Err(Error::caused_by(
+                    "Controlling execution disappeared or changed; inspect without replay",
+                ));
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(super) async fn admit(
+    d: &Dependencies,
+    conversation_id: &str,
+    lease: Option<&Lease>,
+) -> Result<(), Error> {
+    let Some(lease) = lease else { return Ok(()) };
+    let state = d
+        .read_coordination
+        .call(conversation_id.into())
+        .await
+        .map_err(Error::caused_by)?
+        .ok_or_else(|| {
+            Error::caused_by("Required execution coordination is missing before tool admission")
+        })?;
+    if state.gate != domain::CoordinationGate::Open
+        || state.controller.as_deref() != Some(lease.controller.as_str())
+        || state.run_id.as_deref() != Some(lease.run_id.as_str())
+        || !state.authority_complete
+    {
+        return Err(Error::caused_by(
+            "Execution is stopped, gated or has a different controller; no new tool admitted",
+        ));
+    }
+    Ok(())
 }
 
 async fn transition(

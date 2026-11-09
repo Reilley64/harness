@@ -19,7 +19,8 @@ Tools remain trusted OS-user operations, not a sandbox or role permission matrix
 owns native interaction; the model-facing controls use ordinary tool panels.
 The stock inspector opens existing Research history read-only and exposes fixed
 joins, backgrounding, source reports, scoped Stop and pending guidance adoption.
-This is not the later growing-map or general execution-subtree integration.
+The growing map remains separate. [Ownership-scoped Stop](#ownership-scoped-stop)
+is available without adding nested dispatch, child input or a new controller.
 
 ## Admission and immutable assignment facts
 
@@ -118,6 +119,42 @@ while owned children remain outstanding; it is not settlement. The owning run
 waits without inference and resumes for eligible results or accepted steering.
 Closed coordination gates retain outcomes without permitting a new model call.
 
+## Ownership-scoped Stop
+
+`delete_execution` accepts a selected conversation and an optional exact owned
+execution. It persists the selected Stop fence before cancelling local tokens or
+walking descendants. `_harness/execution/stop` exposes it to ordinary ACP clients;
+the existing child Stop control uses the same operation. The native selected-agent
+Stop uses this durable control even while idle with background children. Setup and
+unassociated pilot prompts retain their existing session cancellation path.
+
+Traversal follows retained `ChildExecution` ownership, not creator arrows, join
+membership, report text or the parent's latest run. Background children and
+children captured by earlier runs are included; unrelated siblings are not. Each
+visited coordination is fenced before its children are visited. Claims discovered
+during the read remain inspectable rather than being replayed. Missing/corrupt
+required ownership or a cycle returns an actionable failure; already-written
+fences are not rolled back and the client must inspect the retained sources.
+A conversation whose ownership has not yet been admitted cannot acknowledge a
+durable subtree Stop; pending local prompt cancellation remains available.
+
+Stop is monotonic for the affected executions. A terminal receipt does not prevent
+fencing its retained ownership, and neither receipt status, delivery nor completed
+follow-up is rewritten. A late real receipt remains admissible. An active parent
+observes its durable gate while waiting on a model or tool; new tool admission
+checks the controlling gate again. Stopping a running tool requests its existing
+cancellation/cleanup behavior, not rollback or an exactly-once guarantee.
+Finalization or recovery cannot replace a Stop with an open, input or Unknown
+gate on the same controlling execution. A stopped interrupted parent cannot
+Resume the old run: inspect/acknowledge without inference, then use a later human
+instruction. A later parent run cannot clear old child Stop fences.
+
+This source path does not introduce Research-to-Research dispatch, typed child
+input/approval controls or general later-run child continuation. Those remaining
+HARNESS-30 contracts and actual multiprocess/kill qualification are still required;
+source traversal alone is not evidence of a running multilevel subtree. Accepted
+HARNESS-29 evidence does not qualify these new behavior paths.
+
 ## Current work and retrieval
 
 Before an eligible parent generation, the application reconstructs a current-work
@@ -176,9 +213,9 @@ old effect replay. A missing report remains unresolved, not settled.
 Exact-key orphan inspection retains Unknown facts without rechecking a new worker
 selection or launching a future. Active parent wait loops observe cross-process
 receipts and wake at safe boundaries, not through inference polling. There is no
-always-on scheduler or execution while closed. Full subtree/later-run/input and
-approval integration, complete idle-process arbitration and the composed native
-map remain HARNESS-30/31/42 work, not claims implied by these available controls.
+always-on scheduler or execution while closed. Later-run/input and approval integration, complete restart/idle-process
+arbitration and the composed native map remain HARNESS-30/31/42 work, not claims
+implied by ownership-scoped Stop or these available controls.
 
 Controlled development probes exercise real Rust workers and tool writes across
 competing backend processes, fixed joins/backgrounding, parent input boundaries,

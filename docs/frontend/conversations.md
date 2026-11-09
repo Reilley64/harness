@@ -162,6 +162,7 @@ brief described by [ACP](../acp/children.md). These controls remain available
 during parent work without cancelling/resending it. Exit waits for pending child
 operations and owned backend draining before closing stdio.
 
+Child Stop traverses [retained execution ownership](../managed-dispatch.md#ownership-scoped-stop).
 This inspector is not general child steering/input, durable child drafts, a
 growing creation-arrow map, managed Implementer workspaces or complete subtree
 recovery. [Managed dispatch](../managed-dispatch.md) owns runtime authority,
@@ -202,9 +203,15 @@ mounted behind the map to retain its anchor and unsent drafts are untouched.
 
 Escape closes a picker, Stop confirmation or authentication flow, or navigates
 between conversation and map; it never stops a run. Use `/stop` or Ctrl+X on the
-map for selected-run Stop confirmation. Y/Enter confirms; Escape/N closes without
-cancelling. Confirmation explains that completed effects remain and uncertainty
-is not rollback. Ctrl+X inside the editor cuts its current logical line, not the
+map for selected-scope Stop confirmation. Y/Enter confirms; Escape/N closes without
+cancelling. For managed agents, the confirmation identifies the owned execution
+subtree including background descendants, excluding siblings; the hook requests
+[durable ownership-scoped Stop](../managed-dispatch.md#ownership-scoped-stop)
+before acknowledgement. It also works while the selected parent is idle.
+Setup and unassociated pilot conversations retain selected-run cancellation.
+A failed durable fence is visible even if local cancellation succeeds; no empty
+subtree acknowledgement is invented. Confirmation explains that completed effects
+remain and uncertainty is not rollback. Ctrl+X inside the editor cuts its current logical line, not the
 run. ACP cancellation remains available without adding a human approval gate
 to backend/tool authority.
 

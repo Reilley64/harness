@@ -4,6 +4,7 @@ mod children;
 mod conversations;
 mod decisions;
 mod dependencies;
+mod executions;
 mod guidance;
 mod mcp;
 mod projection;
@@ -75,6 +76,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         read_children,
         update_children,
         create_dispatch,
+        delete_execution,
         delete_executions,
         update_research_guidance,
         read_decision,
@@ -114,6 +116,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
     let new_sessions = sessions.clone();
     let loaded_sessions = sessions.clone();
     let prompted_sessions = sessions.clone();
+    let execution_sessions = sessions.clone();
     let steering_sessions = sessions.clone();
     let steering_history = read_conversation.clone();
     let projection_history = read_conversation.clone();
@@ -144,6 +147,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/nativeDecider".into(), serde_json::json!(true)),
                     ("harness/setup".into(), serde_json::json!(true)),
                     ("harness/children".into(), serde_json::json!(true)),
+                    ("harness/executionStop".into(), serde_json::json!(true)),
                 ]
                 .into_iter()
                 .collect();
@@ -159,6 +163,31 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 )
             },
             agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: executions::Request, responder, connection| {
+                let d = delete_execution.clone();
+                let sessions = execution_sessions.clone();
+                connection.spawn(async move {
+                    let selected_conversation = request.execution_id.is_none();
+                    let result = application::use_cases::delete_execution::call(
+                        d,
+                        request.session_id.clone(),
+                        request.execution_id,
+                        tokio_util::sync::CancellationToken::new(),
+                    ).await;
+                    if selected_conversation {
+                        sessions.cancel(&request.session_id);
+                    }
+                    match result {
+                        Ok(output) => responder.respond(executions::Response {
+                            coordination: children::summary(&output.coordination),
+                            executions: output.executions,
+                        }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |request: children::AdoptRequest, responder, connection| {

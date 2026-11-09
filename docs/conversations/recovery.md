@@ -132,8 +132,10 @@ reconciliation or an exactly-once remote-effect guarantee.
 Agent/run metadata commits in the same bounded atomic conversation replacement
 as its messages and tool checkpoints. The existing per-conversation process lock
 also serializes repository creation and execution; concurrent owners are rejected.
-This leaf recovery path does not own managed child wake/restart or subtree
-expansion. Approved handoff records a separate CoS and its creator, not execution
+This leaf recovery path does not own managed child wake/restart. A durable
+[ownership-scoped Stop](../managed-dispatch.md#ownership-scoped-stop) cannot be
+reopened by same-run Resume; inspect/acknowledge first, preserving old execution
+fences before a later human instruction. Approved handoff records a separate CoS and its creator, not execution
 ownership. [Managed dispatch](../managed-dispatch.md#compatibility-and-recovery-limits)
 owns the current child-execution boundary; complete subtree and later-run recovery
 remain separate integration.
