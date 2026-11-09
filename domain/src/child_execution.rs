@@ -35,6 +35,7 @@ pub struct ChildExecution {
     pub controller: String,
     pub status: ChildExecutionStatus,
     pub stop_requested: bool,
+    pub resume_required: bool,
 
     pub outcome: Option<ChildOutcome>,
 
@@ -182,6 +183,7 @@ impl ChildExecution {
             ]
             .iter()
             .any(|id| id.is_empty() || id.len() > 128)
+            || self.resume_required && self.status != ChildExecutionStatus::Unknown
             || self.routed != self.work_id.is_some()
             || self.work_id.is_some() != self.work_version.is_some()
             || self.work_id.is_some() != self.work_intent.is_some()
@@ -238,7 +240,8 @@ impl ChildExecution {
             }
             None if self.delivered_to.is_some()
                 || (self.status.terminal()
-                    && !(self.status == ChildExecutionStatus::Unknown && self.stop_requested)) =>
+                    && !(self.status == ChildExecutionStatus::Unknown
+                        && (self.stop_requested || self.resume_required))) =>
             {
                 return Err("Terminal execution or delivery is missing its durable receipt");
             }

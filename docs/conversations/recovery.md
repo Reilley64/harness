@@ -120,7 +120,10 @@ Resume. Read/load/start never dispatch inference or tools. An ordinary prompt
 cannot bypass the gate. `/resume` uses the public Resume operation, preserving the
 same run/reply and saved model while continuing only from recorded provider items
 and honest results. It keeps generation/execution budgets across recovery and
-never re-executes pending/interrupted calls.
+never re-executes pending/interrupted calls. If the saved last checkpoint already
+contains a successful typed human-input request, explicit Resume restores that
+request without inference instead of generating through it. Only the subsequent
+matching typed answer begins a later run; the question is not silently dropped.
 
 Unknown tool outcomes block direct continuation. `/resume inspect` explicitly
 acknowledges the interruption **without inference**, allowing a new human
@@ -137,8 +140,8 @@ This leaf recovery path does not own managed child wake/restart. A durable
 reopened by same-run Resume; inspect/acknowledge first, preserving old execution
 fences before a later human instruction. Approved handoff records a separate CoS and its creator, not execution
 ownership. [Managed dispatch](../managed-dispatch.md#compatibility-and-recovery-limits)
-owns the current child-execution boundary; complete subtree and later-run recovery
-remain separate integration.
+owns the current child-execution boundary; typed later-run and child Resume controls are owned by managed dispatch; their
+complete composed qualification remains a separate evidence obligation.
 
 ## Fresh-session model preference
 

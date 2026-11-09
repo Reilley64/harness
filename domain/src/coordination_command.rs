@@ -2,6 +2,7 @@ use crate::CapturedJoin;
 use crate::ChildExecution;
 use crate::ChildOutcome;
 use crate::CoordinationGate;
+use crate::ScopeAmendment;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoordinationCommand {
@@ -10,9 +11,23 @@ pub enum CoordinationCommand {
         execution_id: String,
         text: String,
     },
+    RequestScope(ScopeAmendment),
+    ApproveScope {
+        id: String,
+        version: String,
+        approval_id: String,
+    },
+    ResumeChild {
+        execution_id: String,
+    },
     AnswerChild {
         execution_id: String,
         request_run: String,
+        approval_id: Option<String>,
+    },
+    AdmitDescendantAction {
+        execution_id: String,
+        controller: String,
     },
     AdmitChildAction {
         execution_id: String,
@@ -53,6 +68,11 @@ pub enum CoordinationCommand {
     Acquire {
         agent_id: String,
 
+        controller: String,
+        run_id: String,
+    },
+    ResumeInputParent {
+        agent_id: String,
         controller: String,
         run_id: String,
     },

@@ -287,6 +287,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             controller: value.controller,
             status: status(&value.status)?,
             stop_requested: value.stop_requested,
+            resume_required: false,
             outcome: value
                 .outcome
                 .map(|value| {

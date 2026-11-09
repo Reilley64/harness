@@ -33,6 +33,7 @@ pub async fn read(
         .find(|child| child.intent == research.intent)
         .ok_or("Research execution claim is missing")?;
     if child.stop_requested
+        || child.resume_required
         || child.parent_agent_id != research.parent_agent_id
         || child.agent_id != id
         || child.assignment_id != research.assignment_id

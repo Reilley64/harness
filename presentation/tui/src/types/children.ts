@@ -16,6 +16,7 @@ export type ChildExecution = {
   instructions: string;
   status: string;
   stopRequested: boolean;
+  resumeRequired: boolean;
 
   outcomeId: string | null;
   deliveredTo: string | null;
@@ -40,6 +41,16 @@ export type ChildInstruction = {
   appliedReply: string | null;
 };
 
+export type ScopeAmendment = {
+  id: string;
+  executionId: string;
+  version: string;
+  text: string;
+  replaces: string | null;
+  supersedesRun: string | null;
+  approvedBy: string | null;
+};
+
 export type Children = {
   agentId: string;
   conversationId: string;
@@ -54,6 +65,7 @@ export type Children = {
   children: ChildExecution[];
   joins: CapturedJoin[];
   instructions: ChildInstruction[];
+  scopes: ScopeAmendment[];
 };
 
 export type ChildResult = {

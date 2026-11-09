@@ -12,6 +12,7 @@ use crate::ResearchAssignment;
 use crate::Run;
 use crate::RunStatus;
 use crate::SteeringInstruction;
+use crate::Tool;
 use crate::ToolCall;
 use crate::ToolStatus;
 use crate::UsageSummary;
@@ -231,6 +232,40 @@ impl Conversation {
             });
         }
         Ok(())
+    }
+
+    pub fn resume_input(&mut self) -> Result<bool, &'static str> {
+        let Some(reply) = self.messages.last_mut() else {
+            return Ok(false);
+        };
+        if !self.resume_required
+            || reply.status != MessageStatus::Interrupted
+            || !reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
+                call.name == Tool::RequestHumanInput.as_str()
+                    && call.status == ToolStatus::Succeeded
+            })
+        {
+            return Ok(false);
+        }
+        if reply
+            .steps
+            .iter()
+            .flat_map(|step| &step.calls)
+            .any(|call| call.status == ToolStatus::Unknown)
+        {
+            return Err("Uncertain effects require inspection before answering recovered input");
+        }
+        let run = self
+            .runs
+            .last_mut()
+            .ok_or("Recovered input has no durable requesting run")?;
+        if run.reply_id != reply.id || run.status != RunStatus::Interrupted {
+            return Err("Recovered input does not match its interrupted run");
+        }
+        reply.status = MessageStatus::Incomplete;
+        run.status = RunStatus::NeedsHuman;
+        self.resume_required = false;
+        Ok(true)
     }
 
     pub fn resume(&mut self) -> Result<(), &'static str> {

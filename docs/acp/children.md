@@ -17,6 +17,8 @@ Fields are camelCase and unknown fields are rejected.
 | `_harness/children/result` | `{sessionId, executionId}` | Read that parent's bounded source-linked receipt. |
 | `_harness/children/dispatch` | `{sessionId, revision, intent, routed, role, task, constraints, toolContext, contextTokens}` | Admit or reuse a Research execution and return before long child completion. |
 | `_harness/children/steer` | `{sessionId, executionId, id, text}` | Durably order a targeted human instruction for an existing active owned child. |
+| `_harness/children/scope/request` | `{sessionId, executionId, id, text, replaces?, supersedesRun?}` | Persist a targeted scope version and pause its actual ownership subtree pending approval. |
+| `_harness/children/scope/approve` | `{sessionId, id, version, approvalId}` | Approve only the latest exact scope version, without satisfying unrelated gates. |
 | `_harness/children/join` | `{sessionId, id, mode, executions}` | Capture a fixed `any`/`all` set on the parent's active logical run. |
 | `_harness/children/background` | `{sessionId, id}` | Release that captured join without restarting children. |
 | `_harness/children/stop` | `{sessionId, executionId}` | Stop this parent's exact execution and its retained owned descendants, not siblings. |
@@ -54,6 +56,25 @@ targeted updates and child reports cannot substitute for this operation.
 Child execution summaries expose `priorReceipts`, including source run/reply and
 separate delivery/follow-up fields; full history remains in the source conversation.
 
+## Exact scope approval
+
+Scope request/approval return `{scope, continuationStarted}`.
+Scope has `id`, `executionId`, `version`, `text`, nullable `replaces`,
+`supersedesRun` and `approvedBy`. Request, version, approval and predecessor
+identities are canonical UUIDs. Criteria are nonblank, at most 8192 UTF-8 bytes.
+The backend assigns the immutable version and reuses an exact repeated request.
+Every later version explicitly replaces the latest request. An obsolete human
+question must be superseded by its exact run, not ordinary update prose.
+
+Read exposes the complete retained `scopes` array, including superseded requests.
+Approval identifies the exact latest request/version. `continuationStarted`
+describes an owned later-run future admitted for an explicitly superseded input;
+it is not a settlement, no-effect or completed-inference claim. An already active
+controller consumes the approved ordered instruction without a replacement future.
+Missing ownership and Stop/Resume gates remain errors, not inferred permission.
+[Managed dispatch](../managed-dispatch.md#exact-execution-scope-amendments) owns
+runtime semantics and the root-work authority boundary.
+
 ## Targeted instruction acknowledgement
 
 `_harness/children/steer` takes the owning parent's session, exact execution and
@@ -88,7 +109,7 @@ requests use `-32602`.
 `execution` has `intent`, `assignmentId`, `agentId`, `executionId`, `creatorId`,
 `parentConversationId`, `parentRunId`, `parentRevision`, nullable `workId`/`workVersion`, `role`, `providerId`,
 `modelId`, nullable `effort`, `instructions`, `routed`, `status`, nullable
-`outcomeId`, `deliveredTo`, `followUpCompletedBy`, `stopRequested`, and a `source` conversation URI.
+`outcomeId`, `deliveredTo`, `followUpCompletedBy`, `stopRequested`, `resumeRequired`, and a `source` conversation URI.
 Status is `held`, `running`, `completed`, `needs_human`, `failed`, `stopped` or
 `unknown`. Creation lineage is separate from actual Stop ownership.
 
@@ -144,7 +165,7 @@ stdio close and provides the [child inspector](../frontend/conversations.md#mana
 without recovery or a second controller for active-child viewing. A missing
 terminal receipt remains null even when an interrupted execution is Unknown;
 this does not fabricate a report or prove no effects occurred. Durable ownership-scoped Stop is distinct from a successful child read;
-complete restart arbitration, child input and later-run continuation remain
-follow-up integration. Closing Harness does not authorize execution while
+typed child input, scope approval and later-run continuation use the controls
+above; complete restart qualification remains a separate obligation. Closing Harness does not authorize execution while
 closed or automatic inference after reopening. Preserve held/unknown work for
 explicit inspection and the appropriate Resume gate.

@@ -37,6 +37,7 @@ struct State {
 
 struct Execution {
     parent_id: String,
+    execution_id: String,
     cancellation: CancellationToken,
     task: tokio::task::JoinHandle<Result<(), Error>>,
 }
@@ -49,17 +50,40 @@ impl ChildRuntime {
         operation: PortFuture<Result<(), Error>>,
         cancellation: CancellationToken,
     ) -> Result<(), StartError> {
+        self.start_run(
+            parent_id,
+            execution_id.clone(),
+            execution_id,
+            operation,
+            cancellation,
+        )
+    }
+
+    pub fn start_run(
+        &self,
+        parent_id: String,
+        execution_id: String,
+        run_key: String,
+        operation: PortFuture<Result<(), Error>>,
+        cancellation: CancellationToken,
+    ) -> Result<(), StartError> {
         let mut state = self.state.lock();
         if state.closing {
             return Err(StartError::Closing);
         }
-        if state.tasks.contains_key(&execution_id) {
+        if state.tasks.contains_key(&run_key)
+            || state
+                .tasks
+                .values()
+                .any(|task| task.execution_id == execution_id && !task.task.is_finished())
+        {
             return Err(StartError::AlreadyOwned);
         }
         state.tasks.insert(
-            execution_id,
+            run_key,
             Execution {
                 parent_id,
+                execution_id,
                 cancellation,
                 task: tokio::spawn(operation),
             },
@@ -68,7 +92,13 @@ impl ChildRuntime {
     }
 
     pub fn cancel(&self, execution_id: &str) {
-        if let Some(execution) = self.state.lock().tasks.get(execution_id) {
+        for execution in self
+            .state
+            .lock()
+            .tasks
+            .values()
+            .filter(|execution| execution.execution_id == execution_id)
+        {
             execution.cancellation.cancel();
         }
     }
@@ -79,7 +109,7 @@ impl ChildRuntime {
             .tasks
             .iter()
             .filter(|(_, execution)| !execution.task.is_finished())
-            .map(|(id, execution)| (execution.parent_id.clone(), id.clone()))
+            .map(|(_, execution)| (execution.parent_id.clone(), execution.execution_id.clone()))
             .collect()
     }
 

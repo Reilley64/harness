@@ -7,6 +7,7 @@ mod error;
 mod instructions;
 mod managed;
 mod output;
+mod receipts;
 
 use crate::coordination_recovery;
 use crate::model_access;
@@ -45,6 +46,7 @@ pub async fn call(
         id,
         Some(content),
         None,
+        None,
         selection,
         present_turn_event,
         steering,
@@ -68,6 +70,7 @@ pub(crate) async fn resume(
         None,
         None,
         None,
+        None,
         present_turn_event,
         steering,
         workspace,
@@ -80,6 +83,7 @@ pub(crate) async fn answer(
     dependencies: Dependencies,
     id: String,
     request_run: String,
+    approval_id: Option<String>,
     content: String,
     present_turn_event: PresentTurnEvent,
     steering: tokio::sync::mpsc::Receiver<SteeringRequest>,
@@ -91,6 +95,7 @@ pub(crate) async fn answer(
         id,
         Some(content),
         Some(request_run),
+        approval_id,
         None,
         present_turn_event,
         steering,
@@ -105,6 +110,7 @@ async fn coordinate(
     id: String,
     content: Option<String>,
     answer_run: Option<String>,
+    scope_approval: Option<String>,
     selection: Option<domain::ModelSelection>,
     present_turn_event: PresentTurnEvent,
     mut steering: tokio::sync::mpsc::Receiver<SteeringRequest>,
@@ -138,6 +144,38 @@ async fn coordinate(
         .await
         .map_err(Error::caused_by)?;
         checkpoint(&dependencies, &mut conversation).await?;
+    }
+    let recovering_research = content.is_none() && conversation.research.is_some();
+    if content.is_none() && conversation.resume_input().map_err(Error::caused_by)? {
+        if let Some(research) = &conversation.research {
+            dependencies
+                .update_coordination
+                .call(
+                    research.parent_id.clone(),
+                    domain::CoordinationCommand::ResumeChild {
+                        execution_id: research.execution_id.clone(),
+                    },
+                    None,
+                    cancellation.clone(),
+                )
+                .await
+                .map_err(Error::caused_by)?;
+        }
+        coordination_recovery::resume_input(
+            &dependencies.read_coordination,
+            &dependencies.update_coordination,
+            &conversation,
+        )
+        .await
+        .map_err(Error::caused_by)?;
+        checkpoint(&dependencies, &mut conversation).await?;
+        if recovering_research {
+            receipts::persist(&dependencies, &conversation).await?;
+        }
+        return Ok(Output {
+            conversation,
+            tool_errors: Vec::new(),
+        });
     }
     if content.is_some() && conversation.resume_required {
         return Err(Error::caused_by(
@@ -177,7 +215,7 @@ async fn coordinate(
     research_access::read(
         &dependencies.read_coordination,
         &dependencies.read_work,
-        if answer_run.is_some() {
+        if answer_run.is_some() || recovering_research {
             None
         } else {
             conversation.research.as_ref()
@@ -315,6 +353,20 @@ async fn coordinate(
             .map_err(Error::caused_by)?;
     } else {
         conversation.resume().map_err(Error::caused_by)?;
+        if let Some(research) = &conversation.research {
+            dependencies
+                .update_coordination
+                .call(
+                    research.parent_id.clone(),
+                    domain::CoordinationCommand::ResumeChild {
+                        execution_id: research.execution_id.clone(),
+                    },
+                    None,
+                    cancellation.clone(),
+                )
+                .await
+                .map_err(Error::caused_by)?;
+        }
         coordination_recovery::resume(
             &dependencies.read_coordination,
             &dependencies.update_coordination,
@@ -336,6 +388,7 @@ async fn coordinate(
                 domain::CoordinationCommand::AnswerChild {
                     execution_id: research.execution_id.clone(),
                     request_run,
+                    approval_id: scope_approval,
                 },
                 None,
                 cancellation.clone(),
@@ -386,12 +439,23 @@ async fn coordinate(
         );
         tokio::pin!(result);
         if managed_parent {
-            let monitor = managed::monitor(
-                &dependencies.read_coordination,
-                monitored_conversation,
-                monitored_run
-                    .ok_or_else(|| Error::caused_by("Managed execution has no logical run"))?,
-            );
+            let run_id = monitored_run
+                .ok_or_else(|| Error::caused_by("Managed execution has no logical run"))?;
+            let monitor = async {
+                let own = managed::monitor(
+                    &dependencies.read_coordination,
+                    monitored_conversation,
+                    run_id,
+                );
+                if let Some(research) = monitored_research {
+                    tokio::select! {
+                        control = own => control,
+                        control = research_access::monitor(&dependencies.read_coordination, research) => control.map_err(Error::caused_by),
+                    }
+                } else {
+                    own.await
+                }
+            };
             tokio::pin!(monitor);
             tokio::select! {
                 outcome = &mut result => outcome,
@@ -441,7 +505,11 @@ async fn coordinate(
             .finish_reply(buffer.lock().clone(), status)
             .map_err(Error::caused_by)?;
         checkpoint(&dependencies, &mut conversation).await?;
-        managed::release(&dependencies, &conversation, status).await
+        managed::release(&dependencies, &conversation, status).await?;
+        if recovering_research {
+            receipts::persist(&dependencies, &conversation).await?;
+        }
+        Ok::<_, Error>(())
     }
     .await;
     if let Err(error) = finalization {
@@ -631,6 +699,7 @@ async fn run(
             cancellation,
         )
         .await?;
+        instructions::project(dependencies, conversation).await?;
         research_access::read(
             &dependencies.read_coordination,
             &dependencies.read_work,
@@ -663,7 +732,23 @@ async fn run(
         }
         let finalizing =
             step_number + 1 == domain::MAX_MODEL_STEPS || executions >= domain::MAX_TOOL_EXECUTIONS;
-        instructions::admit(dependencies, research.as_ref(), cancellation).await?;
+        if !instructions::admit(
+            dependencies,
+            &conversation.id,
+            research.as_ref(),
+            tool_errors,
+            cancellation,
+        )
+        .await?
+        {
+            conversation
+                .active_reply_mut()
+                .map_err(Error::caused_by)?
+                .discard_generation_before_attempt()
+                .map_err(Error::caused_by)?;
+            checkpoint(dependencies, conversation).await?;
+            continue;
+        }
         let step_token = cancellation.child_token();
         let future = create.call(
             conversation.clone(),
@@ -798,6 +883,23 @@ async fn run(
                         .read_tool_invocation
                         .call(tool, call.arguments.clone())
                 });
+            let fenced = if matches!(&invocation, Some(Ok(_)))
+                && !steered
+                && !finalizing
+                && !cancellation.is_cancelled()
+            {
+                !instructions::admit(
+                    dependencies,
+                    &conversation.id,
+                    research.as_ref(),
+                    tool_errors,
+                    cancellation,
+                )
+                .await?
+            } else {
+                false
+            };
+            steered |= fenced;
             let result;
             if cancellation.is_cancelled()
                 || steered
@@ -812,7 +914,6 @@ async fn run(
                     truncated: false,
                 };
             } else if let Some(Ok(invocation)) = invocation {
-                instructions::admit(dependencies, research.as_ref(), cancellation).await?;
                 executions += 1;
                 call.start().map_err(Error::caused_by)?;
                 conversation

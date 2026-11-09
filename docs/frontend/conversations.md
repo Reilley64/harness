@@ -173,6 +173,20 @@ implements this control.
 answers that exact retained child request through the typed backend interface.
 `/answer {"requestRun":"<input run>","text":"<answer>"}` answers the selected
 durable agent. Answers start later runs, not replacement agents or assignments.
+`/children scope {"executionId":"<owned execution>","id":"<request UUID>","text":"<criteria>","replaces":null,"supersedesRun":null}`
+persists a targeted amendment. Replace null with the exact predecessor and obsolete
+input-run identities when applicable; prose cannot silently supersede them.
+The acknowledgement shows its assigned exact version.
+`/children approve {"id":"<request UUID>","version":"<exact version>","approvalId":"<approval UUID>"}`
+is the separate trusted approval control. Inspect first; stale versions fail.
+V in the child inspector pages the full criteria and approval identities;
+Left/Right there selects retained scope versions. Escape navigates only.
+Commands use the existing rejected-draft queue, so delayed acknowledgements cannot
+erase a newer draft or another agent's editor.
+
+`/children resume <execution UUID>` explicitly resumes an eligible recovered
+child after its owner has been explicitly resumed. Stop and Unknown tool outcomes
+cannot be cleared by this command. Recovered children show a Resume-required flag.
 Rejected answers retain editor text. Inspector Stop remains available while an
 answer is executing; Escape still navigates without cancelling it.
 

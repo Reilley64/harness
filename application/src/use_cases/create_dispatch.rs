@@ -146,11 +146,13 @@ async fn dispatch(
         .filter(|agent| {
             matches!(
                 agent.role,
-                domain::AgentRole::Griller | domain::AgentRole::ChiefOfStaff
+                domain::AgentRole::Griller
+                    | domain::AgentRole::ChiefOfStaff
+                    | domain::AgentRole::Research
             )
         })
         .ok_or_else(|| {
-            Error::caused_by("Research must be dispatched by its actual Griller or Chief of Staff")
+            Error::caused_by("Research requires its actual permitted execution owner; creation lineage alone is not authority")
         })?;
     if parent.revision != parent_revision || parent.resume_required {
         return Err(Error::caused_by(
@@ -206,7 +208,44 @@ async fn dispatch(
             decision.parent_revision,
         )
     } else {
-        if agent.role != domain::AgentRole::Griller {
+        if agent.role == domain::AgentRole::Research {
+            let research = parent
+                .research
+                .as_ref()
+                .ok_or_else(|| Error::caused_by("Research has no retained execution owner"))?;
+            let owner = d
+                .read_coordination
+                .call(research.parent_id.clone())
+                .await
+                .map_err(Error::caused_by)?
+                .ok_or_else(|| {
+                    Error::caused_by("Research ownership is missing before descendant dispatch")
+                })?;
+            let claim = owner
+                .children
+                .iter()
+                .find(|child| child.execution_id == research.execution_id)
+                .ok_or_else(|| {
+                    Error::caused_by("Research execution is missing before descendant dispatch")
+                })?;
+            if claim.work_id.is_some() {
+                return Err(Error::caused_by(
+                    "Approved CoS Research cannot infer descendant approval; dispatch from the approved coordinator",
+                ));
+            }
+            research_access::read(
+                &d.read_coordination,
+                &d.read_work,
+                parent.research.as_ref(),
+                &parent.id,
+                &parent.model,
+                parent.effort,
+                &parent.provider_connection_id,
+                parent.selected_instructions.as_deref(),
+            )
+            .await
+            .map_err(Error::caused_by)?;
+        } else if agent.role != domain::AgentRole::Griller {
             return Err(Error::caused_by(
                 "Chief of Staff Research requires its prepared native selection",
             ));
@@ -344,6 +383,7 @@ async fn dispatch(
         controller: uuid::Uuid::new_v4().to_string(),
         status: domain::ChildExecutionStatus::Held,
         stop_requested: false,
+        resume_required: false,
 
         outcome: None,
 

@@ -21,7 +21,87 @@ pub async fn call(
     workspace: std::path::PathBuf,
     cancellation: CancellationToken,
 ) -> Result<Output, Error> {
-    let d = dependencies.into().worker;
+    answer(
+        dependencies.into(),
+        id,
+        request_run,
+        None,
+        content,
+        present,
+        steering,
+        workspace,
+        cancellation,
+    )
+    .await
+}
+
+pub(crate) async fn approved_scope(
+    dependencies: Dependencies,
+    id: String,
+    scope_id: String,
+    version: String,
+    approval_id: String,
+    workspace: std::path::PathBuf,
+    cancellation: CancellationToken,
+) -> Result<Output, Error> {
+    let d = &dependencies.worker;
+    let conversation = d
+        .read_conversation
+        .call(id.clone())
+        .await
+        .map_err(Error::caused_by)?;
+    let research = conversation
+        .research
+        .as_ref()
+        .ok_or_else(|| Error::caused_by("Scope approval requires retained Research ownership"))?;
+    let state = d
+        .read_coordination
+        .call(research.parent_id.clone())
+        .await
+        .map_err(Error::caused_by)?
+        .ok_or_else(|| Error::caused_by("Scope approval lost its durable ownership"))?;
+    let scope = state
+        .scope(&research.execution_id)
+        .filter(|scope| {
+            scope.id == scope_id
+                && scope.version == version
+                && scope.approved_by.as_deref() == Some(approval_id.as_str())
+        })
+        .ok_or_else(|| Error::caused_by("Scope approval is superseded or no longer exact"))?;
+    let request_run = scope.supersedes_run.clone().ok_or_else(|| {
+        Error::caused_by("Scope approval cannot implicitly answer a human question")
+    })?;
+    let content = format!(
+        "Trusted human approval {} explicitly superseded input run {} for exact assignment scope version {}. Scope request {}. New criteria: {}",
+        approval_id, request_run, version, scope_id, scope.text
+    );
+    let (_sender, steering) = tokio::sync::mpsc::channel(32);
+    answer(
+        dependencies,
+        id,
+        request_run,
+        Some(approval_id),
+        content,
+        PresentTurnEvent::new(|_| Ok(())),
+        steering,
+        workspace,
+        cancellation,
+    )
+    .await
+}
+
+async fn answer(
+    dependencies: Dependencies,
+    id: String,
+    request_run: String,
+    approval_id: Option<String>,
+    content: String,
+    present: PresentTurnEvent,
+    steering: tokio::sync::mpsc::Receiver<SteeringRequest>,
+    workspace: std::path::PathBuf,
+    cancellation: CancellationToken,
+) -> Result<Output, Error> {
+    let d = dependencies.worker;
     let conversation = d
         .read_conversation
         .call(id.clone())
@@ -32,6 +112,7 @@ pub async fn call(
             d,
             id,
             request_run,
+            approval_id,
             content,
             present,
             steering,
@@ -66,11 +147,22 @@ pub async fn call(
             "Answer does not match the retained human-input receipt",
         ));
     }
+    if let Some(scope) = state.scope(&research.execution_id) {
+        if scope.approved_by.is_none()
+            || (scope.supersedes_run.as_deref() == Some(request_run.as_str())
+                && scope.approved_by != approval_id)
+        {
+            return Err(Error::caused_by(
+                "Only matching exact-version approval can supersede this input; an answer cannot clear scope approval",
+            ));
+        }
+    }
     let controller = child.controller.clone();
     let result = create_message::answer(
         d.clone(),
         id.clone(),
         request_run,
+        approval_id,
         content,
         present,
         steering,

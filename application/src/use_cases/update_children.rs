@@ -37,7 +37,9 @@ pub async fn call(
         || conversation.agent.as_ref().is_none_or(|agent| {
             !matches!(
                 agent.role,
-                domain::AgentRole::ChiefOfStaff | domain::AgentRole::Griller
+                domain::AgentRole::ChiefOfStaff
+                    | domain::AgentRole::Griller
+                    | domain::AgentRole::Research
             )
         })
     {

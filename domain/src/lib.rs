@@ -15,6 +15,8 @@ pub use child_receipt::ChildReceipt;
 mod coordination;
 mod coordination_command;
 mod coordination_gate;
+mod scope_amendment;
+pub use scope_amendment::ScopeAmendment;
 mod join_mode;
 pub use captured_join::CapturedJoin;
 pub use child_execution::ChildExecution;

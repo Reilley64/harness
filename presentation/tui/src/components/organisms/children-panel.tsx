@@ -23,11 +23,23 @@ export function ChildrenPanel({
   ) => void;
 }) {
   const [pages, setPages] = useState(new Map<string, number>());
-  const resultKey = state.result?.execution.executionId ?? "";
+  const resultKey =
+    state.scopeView?.id ?? state.result?.execution.executionId ?? "";
   const resultLines = useMemo(() => {
     const counts = new Map<string, number>();
     return wrapAnsi(
-      state.result?.receipt?.untrustedSummary ??
+      (state.scopeView
+        ? [
+            `Human scope request ${state.scopeView.id}`,
+            `Exact version ${state.scopeView.version}`,
+            `Execution ${state.scopeView.executionId}`,
+            `Approval ${state.scopeView.approvedBy ?? "REQUIRED"}`,
+            `Replaces ${state.scopeView.replaces ?? "none"}`,
+            `Supersedes input run ${state.scopeView.supersedesRun ?? "none"}`,
+            "",
+            state.scopeView.text,
+          ].join("\n")
+        : state.result?.receipt?.untrustedSummary) ??
         "No terminal receipt yet. Inspect the source without inference.",
       Math.max(1, columns - 2),
       { hard: true, trim: false },
@@ -38,7 +50,7 @@ export function ChildrenPanel({
         counts.set(text, occurrence + 1);
         return { id: JSON.stringify([text, occurrence]), text };
       });
-  }, [state.result, columns]);
+  }, [state.result, state.scopeView, columns]);
   const resultHeight = Math.max(1, rows - 10);
   const resultOffset = Math.min(
     pages.get(resultKey) ?? 0,
@@ -46,7 +58,8 @@ export function ChildrenPanel({
   );
   useInput(
     (_input, key) => {
-      if (key.eventType === "release" || !state.result) return;
+      if (key.eventType === "release" || (!state.result && !state.scopeView))
+        return;
       if (key.upArrow || key.downArrow || key.pageUp || key.pageDown) {
         const delta =
           (key.upArrow || key.pageUp ? -1 : 1) *
@@ -64,7 +77,7 @@ export function ChildrenPanel({
         });
       }
     },
-    { isActive: !!state.result && !state.confirmation },
+    { isActive: (!!state.result || !!state.scopeView) && !state.confirmation },
   );
   const children = state.state?.children ?? [];
   const selected = children.findIndex(
@@ -105,7 +118,23 @@ export function ChildrenPanel({
           confirm · N/Esc keep running
         </TerminalText>
       )}
-      {state.guidance ? (
+      {state.scopeView ? (
+        <>
+          <TerminalText>
+            Trusted human scope · exact-version approval history
+          </TerminalText>
+          {resultLines
+            .slice(resultOffset, resultOffset + resultHeight)
+            .map((line) => (
+              <TerminalText key={`${resultKey}:${line.id}`}>
+                {line.text || " "}
+              </TerminalText>
+            ))}
+          <TerminalText>
+            Esc inspector · Left/Right scope history · PgUp/PgDn criteria
+          </TerminalText>
+        </>
+      ) : state.guidance ? (
         <>
           <TerminalText>
             Research closure for a new intent. V explicitly adopts available
@@ -154,7 +183,7 @@ export function ChildrenPanel({
         <>
           <TerminalText>
             ↑↓ select · Space join member · Enter active history · O report · R
-            refresh · X Stop · Esc close
+            refresh · V exact scope/history · X Stop · Esc close
           </TerminalText>
           <TerminalText>
             A capture any · L capture all · J cycle join · B background named
@@ -166,7 +195,7 @@ export function ChildrenPanel({
               wrap="truncate-end"
               color={child.executionId === state.selected ? "cyan" : undefined}
             >
-              {`${child.executionId === state.selected ? "›" : " "} ${state.members.has(child.executionId) ? "[x]" : "[ ]"} Research ${child.agentId} ${child.status}${child.stopRequested && !child.outcomeId ? " / stopping" : ""} · ${child.providerId}/${child.modelId}${child.effort ? ` · ${child.effort}` : ""}`}
+              {`${child.executionId === state.selected ? "›" : " "} ${state.members.has(child.executionId) ? "[x]" : "[ ]"} Research ${child.agentId} ${child.status}${child.resumeRequired ? " / Resume required" : ""}${child.stopRequested && !child.outcomeId ? " / stopping" : ""} · ${child.providerId}/${child.modelId}${child.effort ? ` · ${child.effort}` : ""}`}
             </TerminalText>
           ))}
           {state.child && (

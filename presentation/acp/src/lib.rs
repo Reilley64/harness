@@ -77,6 +77,8 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         update_children,
         create_dispatch,
         create_instruction,
+        create_scope,
+        update_scope,
         delete_execution,
         delete_executions,
         update_research_guidance,
@@ -193,6 +195,30 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     }
                 })
             }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ScopeRequest, responder, connection| {
+                let d = create_scope.clone();
+                connection.spawn(async move {
+                    match application::use_cases::create_scope::call(d, request.session_id, request.execution_id, request.id, request.text, request.replaces, request.supersedes_run, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::ScopeResponse { scope: children::scope(&output.scope), continuation_started: false }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ApproveScopeRequest, responder, connection| {
+                let d = update_scope.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_scope::call(d, request.session_id, request.id, request.version, request.approval_id, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::ScopeResponse { scope: children::scope(&output.scope), continuation_started: output.started }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |request: children::SteerRequest, responder, connection| {

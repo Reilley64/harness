@@ -9,6 +9,10 @@ Independent children use independent conversation execution guards. They do not
 use T3 agents, a simulated event producer or a fabricated workspace.
 
 Griller may delegate scoped Research with exact-parent model/thinking inheritance.
+Unapproved inherited Research can explicitly delegate scoped Research through the
+same claims and public controls. Its coordination owns those descendants across
+background/input/later-run boundaries. Approved CoS Research cannot infer a new
+approval owner for nested dispatch; that remains a coordinator-owned operation.
 An approved Chief of Staff uses its prepared, settled native selection or recorded
 exact-parent fallback. The native Decider remains a separate typed operation.
 Implementer execution is unavailable until managed assignment workspaces exist;
@@ -179,6 +183,54 @@ three may not carry the new histories; their absent histories mean no recorded
 later-run receipts. Immutable format-two claims and conversation schema seven
 remain unchanged. No older format is written after a later receipt is retained.
 
+## Exact execution-scope amendments
+
+`create_scope` proposes an immutable amendment for one exact owned execution.
+Its 8 KiB criteria, request UUID, distinct version UUID and explicit predecessor
+are retained before acknowledgement. A replacement must name the latest request;
+it cannot silently discard an earlier pending approval. Superseding an obsolete
+human-input request additionally requires its exact requesting run. The old
+question and source receipt remain inspectable, but neither an answer nor a
+targeted update can clear the new approval gate.
+
+`update_scope` is the trusted exact-version approval operation, separate from
+model tools, parent prose and result delivery. Only the latest request/version
+can receive an approval UUID; conflicting or stale approvals fail. An active
+controller checkpoints the approved criteria as an ordered human instruction.
+If approval explicitly supersedes an ended input run, an owned backend future
+starts a later run on the same agent. Competing futures still arbitrate through
+the ordinary conversation guard; no accepted assignment is re-dispatched.
+A lost acknowledgement requires inspection/reuse of the same identities, not an
+assumed new approval or an automatic retry of an effect.
+
+The gate follows actual execution ownership below the selected execution.
+Unrelated siblings continue. Already admitted effects may finish; stale unsent
+actions are skipped, and no new model/tool action is admitted while approval is
+pending. Current-work and ordinary status reads retain results and incomplete
+follow-up throughout the gate. Approval is not follow-up settlement or an external
+effect reconciliation.
+
+Before admission, descendants check each retained ownership boundary in order.
+Locks cover only the short durable transition, never the effect itself. Missing,
+cyclic or more-than-256-hop ancestry blocks actionably without inferring creator
+ownership or dropping facts. This bounded ancestry inspection is not a worker
+slot limit. Approved criteria and their source/version enter the bounded worker
+context; required authority cannot be truncated to fit.
+
+These amendments supplement the selected assignment's original captured authority.
+They do not rewrite its exact dispatch payload, immutable guidance, selected pair
+or published root-work approval. Root-work publication/approval remains owned by
+[approved work](approved-work.md); a child amendment cannot approve a changed root
+document or grant an Implementer workspace, merge or unrestricted tool authority.
+
+Coordination with amendments writes format six, requiring scope history,
+instruction/recovery arrays and explicit child history/Resume facts. Formats two
+through five remain readable only with their exact historical field sets.
+Amendments are never removed to downmigrate a record. Immutable claim format two,
+conversation schemas six/seven and native decision schema one are unchanged.
+The current-work bound can visibly block oversized retained scope history rather
+than deleting original criteria or treating missing facts as an empty scope.
+
 ## Ownership-scoped Stop
 
 `delete_execution` accepts a selected conversation and an optional exact owned
@@ -209,9 +261,8 @@ gate on the same controlling execution. A stopped interrupted parent cannot
 Resume the old run: inspect/acknowledge without inference, then use a later human
 instruction. A later parent run cannot clear old child Stop fences.
 
-This source path does not introduce Research-to-Research dispatch, typed child
-input/approval controls or general later-run child continuation. Those remaining
-HARNESS-30 contracts and actual multiprocess/kill qualification are still required;
+Typed input and inherited Research descendants use the same retained ownership.
+Scope approval/supersession use the typed controls above; full composed crash qualification remains required;
 source traversal alone is not evidence of a running multilevel subtree. Accepted
 HARNESS-29 evidence does not qualify these new behavior paths.
 
@@ -262,10 +313,17 @@ missing durable agent-versus-conversation identity or downmigrating them.
 A held or running claim is not proof that a request was unsent. PID death or an
 expired heartbeat cannot authorize replay. Reopening does not launch an accepted
 child again. Normal leaf recovery retains uncertain effects and requires explicit
-Resume. Recovery of a controlling parent gates continuation and durably fences
-unfinished Research as Unknown without inventing a terminal report for a dead
-worker. A late actual worker receipt can still attach its known source facts.
-Known receipts, delivery and incomplete follow-up survive separately. Only
+Resume. Recovery of a controlling parent gates continuation and records unfinished
+Research as Unknown with a separate explicit-Resume requirement, without inventing
+a terminal report for a dead worker. This recovery marker is not a monotonic Stop.
+Known Stop fences remain unchanged and cannot be cleared by Resume. A late actual worker receipt can still attach its known source facts.
+Known receipts, delivery and incomplete follow-up survive separately. An explicit child Resume is admitted only under its conversation execution guard,
+after ordinary recovery has established honest tool statuses. Unknown tool effects
+still block continuation; no mutation is replayed. The child retains its accepted
+agent, assignment, pair and instructions and writes its own source-linked receipt.
+Competing Resume operations contend for the same conversation guard. Coordination
+format five requires explicit recovery history and per-child Resume fields; formats
+two through four remain strict and do not infer these new facts. Only
 explicit same-run Resume admits a new parent controller; acknowledging uncertain
 work instead fences the old scope and enables a later human instruction, not an
 old effect replay. A missing report remains unresolved, not settled.
@@ -273,9 +331,10 @@ old effect replay. A missing report remains unresolved, not settled.
 Exact-key orphan inspection retains Unknown facts without rechecking a new worker
 selection or launching a future. Active parent wait loops observe cross-process
 receipts and wake at safe boundaries, not through inference polling. There is no
-always-on scheduler or execution while closed. Later-run/input and approval integration, complete restart/idle-process
-arbitration and the composed native map remain HARNESS-30/31/42 work, not claims
-implied by ownership-scoped Stop or these available controls.
+always-on scheduler or execution while closed. Later-run/input and exact assignment-scope approval use the controls above.
+Complete restart/idle-process qualification and the composed native map remain
+separate evidence obligations; available source paths do not imply that every
+HARNESS-30/31/42 verification family has passed.
 
 Controlled development probes exercise real Rust workers and tool writes across
 competing backend processes, fixed joins/backgrounding, parent input boundaries,

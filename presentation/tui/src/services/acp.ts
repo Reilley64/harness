@@ -32,6 +32,7 @@ import {
   parseChildResult,
   parseChildren,
   parseExecution,
+  parseScopeAmendment,
 } from "./children.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
 import { parseDeciders, parseDecision } from "./decisions.js";
@@ -419,6 +420,32 @@ export function connectAgent() {
       ),
     );
   }
+  async function changeScope(
+    operation: "request" | "approve",
+    sessionId: string,
+    args: Record<string, unknown>,
+  ) {
+    const value = await childRequest(
+      `_harness/children/scope/${operation}`,
+      { ...args, sessionId },
+      undefined,
+      true,
+    );
+    if (!value || typeof value !== "object" || !("scope" in value))
+      throw new PresentationError("Invalid durable scope response.");
+    return parseScopeAmendment(value.scope);
+  }
+
+  async function resumeChild(sessionId: string) {
+    await viewConversation(sessionId);
+    return childRequest(
+      "_harness/agent/resume",
+      { sessionId },
+      undefined,
+      true,
+    );
+  }
+
   async function answerAgent(
     sessionId: string,
     requestRun: string,
@@ -1076,6 +1103,8 @@ export function connectAgent() {
     dispatchChild,
     steerChild,
     answerAgent,
+    resumeChild,
+    changeScope,
     adoptResearch,
     viewConversation,
     updateMcp,

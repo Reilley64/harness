@@ -308,11 +308,11 @@ export function HarnessScreen({
           typeof args.text !== "string"
         )
           throw new Error("Expected answer JSON with requestRun and text.");
-        void children
-          .answer(null, args.requestRun, args.text)
-          .then((accepted) => {
-            if (accepted) draft.change("");
-          });
+        const requestRun = args.requestRun;
+        const text = args.text;
+        draft.submit(value, async () => ({
+          accepted: !!(await children.answer(null, requestRun, text)),
+        }));
       } catch (error) {
         setNotice(errorMessage(error));
       }
@@ -320,6 +320,37 @@ export function HarnessScreen({
     }
     if (command === "/children" || command.startsWith("/children ")) {
       setMap(false);
+      if (
+        command.startsWith("/children scope ") ||
+        command.startsWith("/children approve ")
+      ) {
+        const operation = command.startsWith("/children scope ")
+          ? "request"
+          : "approve";
+        const prefix =
+          operation === "request" ? "/children scope " : "/children approve ";
+        try {
+          const args: unknown = JSON.parse(command.slice(prefix.length));
+          if (!args || typeof args !== "object" || Array.isArray(args))
+            throw new Error("Expected an exact scope command JSON object.");
+          draft.submit(value, async () => ({
+            accepted: !!(await children.scope(
+              operation,
+              args as Record<string, unknown>,
+            )),
+          }));
+        } catch (error) {
+          setNotice(errorMessage(error));
+        }
+        return;
+      }
+      if (command.startsWith("/children resume ")) {
+        const executionId = command.slice("/children resume ".length);
+        draft.submit(value, async () => ({
+          accepted: !!(await children.resume(executionId)),
+        }));
+        return;
+      }
       if (command.startsWith("/children answer ")) {
         try {
           const args: unknown = JSON.parse(
@@ -338,11 +369,12 @@ export function HarnessScreen({
             throw new Error(
               "Expected input-answer JSON with executionId, requestRun and text.",
             );
-          void children
-            .answer(args.executionId, args.requestRun, args.text)
-            .then((accepted) => {
-              if (accepted) draft.change("");
-            });
+          const executionId = args.executionId;
+          const requestRun = args.requestRun;
+          const text = args.text;
+          draft.submit(value, async () => ({
+            accepted: !!(await children.answer(executionId, requestRun, text)),
+          }));
         } catch (error) {
           setNotice(errorMessage(error));
         }
@@ -364,9 +396,11 @@ export function HarnessScreen({
             throw new Error(
               "Expected child instruction JSON with executionId and text.",
             );
-          void children.steer(args.executionId, args.text).then((accepted) => {
-            if (accepted) draft.change("");
-          });
+          const executionId = args.executionId;
+          const text = args.text;
+          draft.submit(value, async () => ({
+            accepted: !!(await children.steer(executionId, text)),
+          }));
         } catch (error) {
           setNotice(errorMessage(error));
         }

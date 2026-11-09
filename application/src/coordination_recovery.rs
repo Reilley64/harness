@@ -13,7 +13,9 @@ pub(crate) async fn pause(
         || conversation.agent.as_ref().is_none_or(|agent| {
             !matches!(
                 agent.role,
-                domain::AgentRole::Griller | domain::AgentRole::ChiefOfStaff
+                domain::AgentRole::Griller
+                    | domain::AgentRole::ChiefOfStaff
+                    | domain::AgentRole::Research
             )
         })
     {
@@ -77,6 +79,46 @@ pub(crate) async fn resume(
                     .clone()
                     .ok_or("Recovered parent has no controlling identity")?,
                 run_id: run.id.clone(),
+            },
+            Some(state.revision),
+            CancellationToken::new(),
+        )
+        .await?;
+    Ok(())
+}
+
+pub(crate) async fn resume_input(
+    read: &ReadCoordination,
+    update: &UpdateCoordination,
+    conversation: &domain::Conversation,
+) -> Result<(), Error> {
+    let Some(state) = read.call(conversation.id.clone()).await? else {
+        return Ok(());
+    };
+    if state.gate != domain::CoordinationGate::ResumeRequired {
+        return Err("Recovered input cannot bypass its exact Resume gate or Stop".into());
+    }
+    update
+        .call(
+            conversation.id.clone(),
+            domain::CoordinationCommand::ResumeInputParent {
+                agent_id: conversation
+                    .agent
+                    .as_ref()
+                    .ok_or("Recovered input has no durable agent")?
+                    .id
+                    .0
+                    .clone(),
+                controller: state
+                    .controller
+                    .clone()
+                    .ok_or("Recovered input has no controlling identity")?,
+                run_id: conversation
+                    .runs
+                    .last()
+                    .ok_or("Recovered input has no durable run")?
+                    .id
+                    .clone(),
             },
             Some(state.revision),
             CancellationToken::new(),

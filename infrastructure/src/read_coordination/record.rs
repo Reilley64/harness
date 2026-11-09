@@ -20,6 +20,21 @@ pub(super) struct Record {
     children: Vec<ChildRecord>,
     joins: Vec<JoinRecord>,
     instructions: Option<Vec<ChildInstructionRecord>>,
+    recovered: Option<Vec<String>>,
+    scopes: Option<Vec<ScopeRecord>>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScopeRecord {
+    id: String,
+    execution_id: String,
+    version: String,
+    text: String,
+
+    replaces: Option<String>,
+    supersedes_run: Option<String>,
+    approved_by: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -63,6 +78,7 @@ struct ChildRecord {
     controller: String,
     status: String,
     stop_requested: bool,
+    resume_required: Option<bool>,
 
     outcome: Option<OutcomeRecord>,
 
@@ -319,6 +335,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             controller: value.controller,
             status: status(&value.status)?,
             stop_requested: value.stop_requested,
+            resume_required: value.resume_required.unwrap_or(false),
             outcome: value
                 .outcome
                 .map(|value| {
@@ -367,16 +384,21 @@ impl TryFrom<Record> for domain::Coordination {
     fn try_from(value: Record) -> Result<Self, Error> {
         if !matches!(
             (value.format, value.instructions.is_some()),
-            (2, false) | (3, true) | (4, true)
-        ) || value
-            .children
-            .iter()
-            .any(|child| child.history.is_some() != (value.format == 4))
-        {
+            (2, false) | (3, true) | (4, true) | (5, true) | (6, true)
+        ) || value.children.iter().any(|child| {
+            child.history.is_some() != (value.format >= 4)
+                || child.resume_required.is_some() != (value.format >= 5)
+        }) {
             return Err(
                 "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
                     .into(),
             );
+        }
+        if value.recovered.is_some() != (value.format >= 5) {
+            return Err("Recovered ownership facts are incomplete or incompatible".into());
+        }
+        if value.scopes.is_some() != (value.format == 6) {
+            return Err("Scope authority facts are incomplete or incompatible".into());
         }
         conversations::validate_id(&value.conversation_id)?;
         conversations::validate_id(&value.agent_id)?;
@@ -397,6 +419,32 @@ impl TryFrom<Record> for domain::Coordination {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
+            recovered: value.recovered.unwrap_or_default(),
+            scopes: value
+                .scopes
+                .unwrap_or_default()
+                .into_iter()
+                .map(|scope| {
+                    for id in [&scope.id, &scope.execution_id, &scope.version] {
+                        conversations::validate_id(id)?;
+                    }
+                    for id in [&scope.replaces, &scope.supersedes_run, &scope.approved_by]
+                        .into_iter()
+                        .flatten()
+                    {
+                        conversations::validate_id(id)?;
+                    }
+                    Ok::<_, Error>(domain::ScopeAmendment {
+                        id: scope.id,
+                        execution_id: scope.execution_id,
+                        version: scope.version,
+                        text: scope.text,
+                        replaces: scope.replaces,
+                        supersedes_run: scope.supersedes_run,
+                        approved_by: scope.approved_by,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
             instructions: value
                 .instructions
                 .unwrap_or_default()

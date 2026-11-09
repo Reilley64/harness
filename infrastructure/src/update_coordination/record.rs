@@ -118,6 +118,23 @@ pub(super) struct Record {
     joins: Vec<JoinRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     instructions: Option<Vec<ChildInstructionRecord>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovered: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scopes: Option<Vec<ScopeRecord>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ScopeRecord {
+    id: String,
+    execution_id: String,
+    version: String,
+    text: String,
+
+    replaces: Option<String>,
+    supersedes_run: Option<String>,
+    approved_by: Option<String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -161,6 +178,8 @@ struct ChildRecord {
     controller: String,
     status: String,
     stop_requested: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resume_required: Option<bool>,
 
     outcome: Option<OutcomeRecord>,
 
@@ -507,6 +526,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             controller: value.controller,
             status: status(&value.status)?,
             stop_requested: value.stop_requested,
+            resume_required: value.resume_required.unwrap_or(false),
             outcome: value
                 .outcome
                 .map(|value| {
@@ -581,6 +601,7 @@ impl From<domain::ChildExecution> for ChildRecord {
             controller: value.controller,
             status: status_name(value.status),
             stop_requested: value.stop_requested,
+            resume_required: None,
             outcome: value.outcome.map(|value| OutcomeRecord {
                 id: value.id,
                 status: status_name(value.status),
@@ -620,16 +641,21 @@ impl TryFrom<Record> for domain::Coordination {
     fn try_from(value: Record) -> Result<Self, Error> {
         if !matches!(
             (value.format, value.instructions.is_some()),
-            (2, false) | (3, true) | (4, true)
-        ) || value
-            .children
-            .iter()
-            .any(|child| child.history.is_some() != (value.format == 4))
-        {
+            (2, false) | (3, true) | (4, true) | (5, true) | (6, true)
+        ) || value.children.iter().any(|child| {
+            child.history.is_some() != (value.format >= 4)
+                || child.resume_required.is_some() != (value.format >= 5)
+        }) {
             return Err(
                 "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
                     .into(),
             );
+        }
+        if value.recovered.is_some() != (value.format >= 5) {
+            return Err("Recovered ownership facts are incomplete or incompatible".into());
+        }
+        if value.scopes.is_some() != (value.format == 6) {
+            return Err("Scope authority facts are incomplete or incompatible".into());
         }
         conversations::validate_id(&value.conversation_id)?;
         conversations::validate_id(&value.agent_id)?;
@@ -650,6 +676,32 @@ impl TryFrom<Record> for domain::Coordination {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
+            recovered: value.recovered.unwrap_or_default(),
+            scopes: value
+                .scopes
+                .unwrap_or_default()
+                .into_iter()
+                .map(|scope| {
+                    for id in [&scope.id, &scope.execution_id, &scope.version] {
+                        conversations::validate_id(id)?;
+                    }
+                    for id in [&scope.replaces, &scope.supersedes_run, &scope.approved_by]
+                        .into_iter()
+                        .flatten()
+                    {
+                        conversations::validate_id(id)?;
+                    }
+                    Ok::<_, Error>(domain::ScopeAmendment {
+                        id: scope.id,
+                        execution_id: scope.execution_id,
+                        version: scope.version,
+                        text: scope.text,
+                        replaces: scope.replaces,
+                        supersedes_run: scope.supersedes_run,
+                        approved_by: scope.approved_by,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
             instructions: value
                 .instructions
                 .unwrap_or_default()
@@ -703,9 +755,15 @@ impl TryFrom<Record> for domain::Coordination {
 
 impl From<domain::Coordination> for Record {
     fn from(value: domain::Coordination) -> Self {
-        let later_runs = value.children.iter().any(|child| !child.history.is_empty());
+        let scoped = !value.scopes.is_empty();
+        let recovered = scoped || !value.recovered.is_empty();
+        let later_runs = recovered || value.children.iter().any(|child| !child.history.is_empty());
         Self {
-            format: if later_runs {
+            format: if scoped {
+                6
+            } else if recovered {
+                5
+            } else if later_runs {
                 4
             } else if value.instructions.is_empty() {
                 2
@@ -728,6 +786,22 @@ impl From<domain::Coordination> for Record {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
+            recovered: recovered.then_some(value.recovered),
+            scopes: scoped.then(|| {
+                value
+                    .scopes
+                    .into_iter()
+                    .map(|scope| ScopeRecord {
+                        id: scope.id,
+                        execution_id: scope.execution_id,
+                        version: scope.version,
+                        text: scope.text,
+                        replaces: scope.replaces,
+                        supersedes_run: scope.supersedes_run,
+                        approved_by: scope.approved_by,
+                    })
+                    .collect()
+            }),
             instructions: (later_runs || !value.instructions.is_empty()).then(|| {
                 value
                     .instructions
@@ -746,7 +820,11 @@ impl From<domain::Coordination> for Record {
                 .children
                 .into_iter()
                 .map(|child| {
+                    let resume_required = child.resume_required;
                     let mut record = ChildRecord::from(child);
+                    if recovered {
+                        record.resume_required = Some(resume_required);
+                    }
                     if later_runs && record.history.is_none() {
                         record.history = Some(Vec::new());
                     }

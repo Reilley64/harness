@@ -5,6 +5,7 @@ use crate::ChildInstruction;
 use crate::ChildReceipt;
 use crate::CoordinationCommand;
 use crate::CoordinationGate;
+use crate::ScopeAmendment;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Coordination {
@@ -21,6 +22,8 @@ pub struct Coordination {
     pub children: Vec<ChildExecution>,
     pub joins: Vec<CapturedJoin>,
     pub instructions: Vec<ChildInstruction>,
+    pub recovered: Vec<String>,
+    pub scopes: Vec<ScopeAmendment>,
 }
 
 impl Coordination {
@@ -39,6 +42,8 @@ impl Coordination {
             children: Vec::new(),
             joins: Vec::new(),
             instructions: Vec::new(),
+            recovered: Vec::new(),
+            scopes: Vec::new(),
         }
     }
 
@@ -60,6 +65,8 @@ impl Coordination {
             || self.children.len() > 256
             || self.joins.len() > 256
             || self.instructions.len() > 256
+            || self.recovered.len() > 256
+            || self.scopes.len() > 256
         {
             return Err(
                 "Coordination facts are missing or exceed bounded storage; inspect retained work",
@@ -67,6 +74,9 @@ impl Coordination {
         }
         for (index, child) in self.children.iter().enumerate() {
             child.validate()?;
+            if child.resume_required && !self.recovered.contains(&child.execution_id) {
+                return Err("Child recovery gate lacks its retained recovery identity");
+            }
             if child.parent_id != self.conversation_id
                 || child.parent_agent_id != self.agent_id
                 || self.children[..index].iter().any(|prior| {
@@ -82,6 +92,35 @@ impl Coordination {
                 })
             {
                 return Err("Child identity is duplicated or belongs to another parent");
+            }
+        }
+        for (index, scope) in self.scopes.iter().enumerate() {
+            scope.validate()?;
+            if !self
+                .children
+                .iter()
+                .any(|child| child.execution_id == scope.execution_id)
+                || self.scopes[..index]
+                    .iter()
+                    .any(|prior| prior.id == scope.id || prior.version == scope.version)
+                || scope.replaces.as_deref()
+                    != self.scopes[..index]
+                        .iter()
+                        .rev()
+                        .find(|prior| prior.execution_id == scope.execution_id)
+                        .map(|prior| prior.id.as_str())
+            {
+                return Err("Scope amendment history has conflicting ownership or supersession");
+            }
+        }
+        for (index, execution) in self.recovered.iter().enumerate() {
+            if self.recovered[..index].contains(execution)
+                || !self
+                    .children
+                    .iter()
+                    .any(|child| &child.execution_id == execution)
+            {
+                return Err("Recovered ownership is duplicated or missing");
             }
         }
         for (index, child) in self.children.iter().enumerate() {
@@ -131,11 +170,28 @@ impl Coordination {
         Ok(())
     }
 
+    pub fn scope(&self, execution_id: &str) -> Option<&ScopeAmendment> {
+        self.scopes
+            .iter()
+            .rev()
+            .find(|scope| scope.execution_id == execution_id)
+    }
+
     pub fn settled(&self) -> bool {
         self.authority_complete
             && self.controller.is_none()
+            && self
+                .scopes
+                .iter()
+                .filter(|scope| {
+                    self.scope(&scope.execution_id)
+                        .is_some_and(|latest| latest.id == scope.id)
+                })
+                .all(|scope| scope.approved_by.is_some())
             && self.children.iter().all(|child| {
-                child.outcome.is_some()
+                child.status != ChildExecutionStatus::NeedsHuman
+                    && !child.resume_required
+                    && child.outcome.is_some()
                     && child.follow_up_completed_by.is_some()
                     && child
                         .history
@@ -152,6 +208,173 @@ impl Coordination {
             if !join.ready(&self.children)? {
                 return Ok(false);
             }
+        }
+        Ok(true)
+    }
+
+    fn request_scope(&mut self, scope: ScopeAmendment) -> Result<bool, &'static str> {
+        scope.validate()?;
+        if let Some(prior) = self.scopes.iter().find(|prior| prior.id == scope.id) {
+            return if prior.execution_id == scope.execution_id
+                && prior.text == scope.text
+                && prior.replaces == scope.replaces
+                && prior.supersedes_run == scope.supersedes_run
+            {
+                Ok(false)
+            } else {
+                Err("Scope request identity is already bound to different exact criteria")
+            };
+        }
+        let child = self
+            .children
+            .iter()
+            .find(|child| child.execution_id == scope.execution_id)
+            .ok_or("Scope amendment has no execution owner")?;
+        if !self.authority_complete
+            || !matches!(
+                self.gate,
+                CoordinationGate::Open | CoordinationGate::NeedsHuman
+            )
+            || child.stop_requested
+            || child.resume_required
+            || scope.approved_by.is_some()
+            || !matches!(
+                child.status,
+                ChildExecutionStatus::Running | ChildExecutionStatus::NeedsHuman
+            )
+            || self
+                .instructions
+                .iter()
+                .any(|instruction| instruction.id == scope.id)
+        {
+            return Err(
+                "Affected execution is stopped, recovered, terminal or lacks scope authority",
+            );
+        }
+        if child.status == ChildExecutionStatus::NeedsHuman {
+            if scope.supersedes_run.is_none()
+                || scope.supersedes_run.as_deref()
+                    != child
+                        .outcome
+                        .as_ref()
+                        .and_then(|outcome| outcome.run_id.as_deref())
+            {
+                return Err(
+                    "Obsolete input must be explicitly superseded by its exact requesting run",
+                );
+            }
+        } else if scope.supersedes_run.is_some() {
+            return Err("Active scope amendment cannot silently supersede another input request");
+        }
+        self.scopes.push(scope);
+        Ok(true)
+    }
+
+    fn approve_scope(
+        &mut self,
+        id: String,
+        version: String,
+        approval_id: String,
+    ) -> Result<bool, &'static str> {
+        let index = self
+            .scopes
+            .iter()
+            .position(|scope| scope.id == id)
+            .ok_or("Scope request is missing")?;
+        let scope = &self.scopes[index];
+        if self
+            .scope(&scope.execution_id)
+            .is_none_or(|current| current.id != id)
+            || scope.version != version
+        {
+            return Err("Only the latest exact scope version can be approved");
+        }
+        if let Some(prior) = &scope.approved_by {
+            return if prior == &approval_id {
+                Ok(false)
+            } else {
+                Err("Scope version is already bound to another approval identity")
+            };
+        }
+        let child = self
+            .children
+            .iter()
+            .find(|child| child.execution_id == scope.execution_id)
+            .ok_or("Scope approval lost its execution owner")?;
+        if child.stop_requested
+            || child.resume_required
+            || !self.authority_complete
+            || !matches!(
+                self.gate,
+                CoordinationGate::Open | CoordinationGate::NeedsHuman
+            )
+        {
+            return Err("Scope approval cannot clear Stop, recovery or incomplete ownership");
+        }
+        if child.status == ChildExecutionStatus::Running {
+            if self
+                .instructions
+                .iter()
+                .filter(|instruction| instruction.execution_id == child.execution_id)
+                .count()
+                >= 64
+            {
+                return Err(
+                    "Instruction capacity is full; scope approval cannot drop prior accepted instructions",
+                );
+            }
+            self.instructions.push(ChildInstruction {
+                id: scope.id.clone(),
+                execution_id: scope.execution_id.clone(),
+                order: self.instructions.len() as u64 + 1,
+                text: format!(
+                    "Trusted human approval {} for exact assignment scope version {}. Criteria: {}",
+                    approval_id, scope.version, scope.text
+                ),
+                applied_run: None,
+                applied_reply: None,
+            });
+        }
+        self.scopes[index].approved_by = Some(approval_id);
+        Ok(true)
+    }
+
+    fn admit_child_action(
+        &self,
+        execution_id: &str,
+        controller: &str,
+        descendant: bool,
+    ) -> Result<bool, &'static str> {
+        let child = self
+            .children
+            .iter()
+            .find(|child| child.execution_id == execution_id)
+            .ok_or("Child action has no durable execution owner")?;
+        let status = child.status == ChildExecutionStatus::Running
+            || descendant
+                && matches!(
+                    child.status,
+                    ChildExecutionStatus::NeedsHuman | ChildExecutionStatus::Completed
+                );
+        if !self.authority_complete
+            || !matches!(
+                self.gate,
+                CoordinationGate::Open | CoordinationGate::NeedsHuman
+            )
+            || child.controller != controller
+            || child.stop_requested
+            || child.resume_required
+            || !status
+            || self
+                .scope(execution_id)
+                .is_some_and(|scope| scope.approved_by.is_none())
+            || self.instructions.iter().any(|instruction| {
+                instruction.execution_id == execution_id && instruction.applied_run.is_none()
+            })
+        {
+            return Err(
+                "Child action is fenced by ownership, Stop, recovery, scope approval or unapplied human instructions",
+            );
         }
         Ok(true)
     }
@@ -176,11 +399,26 @@ impl Coordination {
 
     fn transition(&mut self, command: CoordinationCommand) -> Result<bool, &'static str> {
         match command {
+            CoordinationCommand::RequestScope(scope) => return self.request_scope(scope),
+            CoordinationCommand::ApproveScope {
+                id,
+                version,
+                approval_id,
+            } => return self.approve_scope(id, version, approval_id),
             CoordinationCommand::SteerChild {
                 id,
                 execution_id,
                 text,
             } => {
+                if self
+                    .scope(&execution_id)
+                    .is_some_and(|scope| scope.approved_by.is_none())
+                    || self.scopes.iter().any(|scope| scope.id == id)
+                {
+                    return Err(
+                        "Only the matching exact-version approval can satisfy this scope gate",
+                    );
+                }
                 if let Some(prior) = self.instructions.iter().find(|prior| prior.id == id) {
                     return if prior.execution_id == execution_id && prior.text == text {
                         Ok(false)
@@ -199,6 +437,7 @@ impl Coordination {
                         CoordinationGate::Open | CoordinationGate::NeedsHuman
                     )
                     || child.stop_requested
+                    || child.resume_required
                     || child.status != ChildExecutionStatus::Running
                     || self
                         .instructions
@@ -220,10 +459,48 @@ impl Coordination {
                     applied_reply: None,
                 });
             }
+            CoordinationCommand::ResumeChild { execution_id } => {
+                let child = self
+                    .children
+                    .iter_mut()
+                    .find(|child| child.execution_id == execution_id)
+                    .ok_or("Recovered child execution is missing")?;
+                if !self.authority_complete
+                    || !matches!(
+                        self.gate,
+                        CoordinationGate::Open | CoordinationGate::NeedsHuman
+                    )
+                    || child.stop_requested
+                    || !child.resume_required
+                    || child.status != ChildExecutionStatus::Unknown
+                    || child.outcome.is_some()
+                {
+                    return Err(
+                        "Only a recovered, explicitly resumed child may continue; Stop and uncertain results remain fenced",
+                    );
+                }
+                child.resume_required = false;
+                child.status = ChildExecutionStatus::Running;
+            }
             CoordinationCommand::AnswerChild {
                 execution_id,
                 request_run,
+                approval_id,
             } => {
+                if let Some(scope) = self.scope(&execution_id) {
+                    if scope.approved_by.is_none()
+                        || (scope.supersedes_run.as_deref() == Some(request_run.as_str())
+                            && scope.approved_by != approval_id)
+                    {
+                        return Err(
+                            "Only exact-version approval can supersede this obsolete input; updates and answers cannot clear scope approval",
+                        );
+                    }
+                } else if approval_id.is_some() {
+                    return Err(
+                        "Answer supplied an approval identity without retained scope authority",
+                    );
+                }
                 let child = self
                     .children
                     .iter_mut()
@@ -239,6 +516,7 @@ impl Coordination {
                         CoordinationGate::Open | CoordinationGate::NeedsHuman
                     )
                     || child.stop_requested
+                    || child.resume_required
                     || child.status != ChildExecutionStatus::NeedsHuman
                     || outcome.run_id.as_deref() != Some(request_run.as_str())
                     || child.history.len() >= 64
@@ -257,30 +535,11 @@ impl Coordination {
             CoordinationCommand::AdmitChildAction {
                 execution_id,
                 controller,
-            } => {
-                let child = self
-                    .children
-                    .iter()
-                    .find(|child| child.execution_id == execution_id)
-                    .ok_or("Child action has no durable execution owner")?;
-                if !self.authority_complete
-                    || !matches!(
-                        self.gate,
-                        CoordinationGate::Open | CoordinationGate::NeedsHuman
-                    )
-                    || child.controller != controller
-                    || child.stop_requested
-                    || child.status != ChildExecutionStatus::Running
-                    || self.instructions.iter().any(|instruction| {
-                        instruction.execution_id == execution_id
-                            && instruction.applied_run.is_none()
-                    })
-                {
-                    return Err(
-                        "Child action is fenced by a gate or an unapplied human instruction",
-                    );
-                }
-            }
+            } => return self.admit_child_action(&execution_id, &controller, false),
+            CoordinationCommand::AdmitDescendantAction {
+                execution_id,
+                controller,
+            } => return self.admit_child_action(&execution_id, &controller, true),
             CoordinationCommand::ApplyChildInstruction {
                 id,
                 controller,
@@ -406,6 +665,7 @@ impl Coordination {
                     return Ok(false);
                 }
                 child.status = ChildExecutionStatus::Unknown;
+                child.resume_required = false;
                 child.stop_requested = true;
             }
             CoordinationCommand::StopChild { execution_id } => {
@@ -461,6 +721,7 @@ impl Coordination {
                     return Err("Execution cannot receive another terminal outcome");
                 }
                 child.status = outcome.status;
+                child.resume_required = false;
                 child.outcome = Some(outcome);
             }
             CoordinationCommand::Join(join) => {
@@ -536,6 +797,25 @@ impl Coordination {
                 if self.gate != CoordinationGate::Stopped {
                     self.gate = CoordinationGate::NeedsHuman;
                 }
+                self.controller = None;
+                self.run_id = None;
+                self.waiting = false;
+            }
+            CoordinationCommand::ResumeInputParent {
+                agent_id,
+                controller,
+                run_id,
+            } => {
+                self.controls(&controller, &run_id)?;
+                if agent_id != self.agent_id
+                    || self.gate != CoordinationGate::ResumeRequired
+                    || !self.authority_complete
+                {
+                    return Err(
+                        "Recovered human input requires its exact Resume gate; Stop cannot be cleared",
+                    );
+                }
+                self.gate = CoordinationGate::NeedsHuman;
                 self.controller = None;
                 self.run_id = None;
                 self.waiting = false;
@@ -655,7 +935,10 @@ impl Coordination {
                     for child in &mut self.children {
                         if child.outcome.is_none() {
                             child.status = ChildExecutionStatus::Unknown;
-                            child.stop_requested = true;
+                            child.resume_required = true;
+                            if !self.recovered.contains(&child.execution_id) {
+                                self.recovered.push(child.execution_id.clone());
+                            }
                         }
                     }
                 }

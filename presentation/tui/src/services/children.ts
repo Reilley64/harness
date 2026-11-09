@@ -3,6 +3,7 @@ import type {
   ChildInstruction,
   ChildResult,
   Children,
+  ScopeAmendment,
 } from "../types/children.js";
 import { PresentationError } from "./errors.js";
 
@@ -69,6 +70,7 @@ export function parseExecution(value: unknown): ChildExecution {
     instructions: text(v.instructions),
     status,
     stopRequested: flag(v.stopRequested),
+    resumeRequired: flag(v.resumeRequired),
     outcomeId: optional(v.outcomeId),
     deliveredTo: optional(v.deliveredTo),
     followUpCompletedBy: optional(v.followUpCompletedBy),
@@ -85,6 +87,24 @@ export function parseChildInstruction(value: unknown): ChildInstruction {
     text: text(v.text),
     appliedRun: optional(v.appliedRun),
     appliedReply: optional(v.appliedReply),
+  };
+}
+
+export function parseScopeAmendment(value: unknown): ScopeAmendment {
+  const v = object(value);
+  const body = text(v.text);
+  if (new TextEncoder().encode(body).length > 8192)
+    throw new PresentationError(
+      "Scope criteria exceed the bounded human request.",
+    );
+  return {
+    id: text(v.id),
+    executionId: text(v.executionId),
+    version: text(v.version),
+    text: body,
+    replaces: optional(v.replaces),
+    supersedesRun: optional(v.supersedesRun),
+    approvedBy: optional(v.approvedBy),
   };
 }
 
@@ -109,6 +129,7 @@ export function parseChildren(value: unknown): Children | null {
     settled: flag(state.settled),
     children: list(state.children).map(parseExecution),
     instructions: list(state.instructions).map(parseChildInstruction),
+    scopes: list(state.scopes).map(parseScopeAmendment),
     joins: list(state.joins).map((item) => {
       const j = object(item);
       if (j.mode !== "any" && j.mode !== "all")

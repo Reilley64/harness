@@ -167,6 +167,48 @@ pub(crate) struct AnswerRequest {
     pub text: String,
 }
 
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcRequest,
+)]
+#[request(method="_harness/children/scope/request",response=ScopeResponse)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ScopeRequest {
+    pub session_id: String,
+    pub execution_id: String,
+    pub id: String,
+    pub text: String,
+    pub replaces: Option<String>,
+    pub supersedes_run: Option<String>,
+}
+
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcRequest,
+)]
+#[request(method="_harness/children/scope/approve",response=ScopeResponse)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ApproveScopeRequest {
+    pub session_id: String,
+    pub id: String,
+    pub version: String,
+    pub approval_id: String,
+}
+
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScopeResponse {
+    pub scope: serde_json::Value,
+    pub continuation_started: bool,
+}
+
+pub(crate) fn scope(value: &domain::ScopeAmendment) -> serde_json::Value {
+    serde_json::json!({
+        "id": value.id, "executionId": value.execution_id, "version": value.version, "text": value.text,
+        "replaces": value.replaces, "supersedesRun": value.supersedes_run, "approvedBy": value.approved_by,
+    })
+}
+
 pub(crate) fn instruction(value: &domain::ChildInstruction) -> serde_json::Value {
     serde_json::json!({
         "id": value.id, "executionId": value.execution_id, "order": value.order, "text": value.text,
@@ -194,6 +236,7 @@ pub(crate) fn execution(child: &domain::ChildExecution) -> serde_json::Value {
         "routed": child.routed,
         "status": status(child.status),
         "stopRequested": child.stop_requested,
+        "resumeRequired": child.resume_required,
         "outcomeId": child.outcome.as_ref().map(|outcome| &outcome.id),
         "deliveredTo": child.delivered_to,
         "followUpCompletedBy": child.follow_up_completed_by,
@@ -213,6 +256,7 @@ pub(crate) fn summary(state: &domain::Coordination) -> serde_json::Value {
         "status": match state.gate { domain::CoordinationGate::Open => if state.waiting { "waiting" } else if state.controller.is_some() { "running" } else { "ready" }, domain::CoordinationGate::NeedsHuman => "needs_human", domain::CoordinationGate::Approval => "approval", domain::CoordinationGate::Stopped => "stopped", domain::CoordinationGate::ResumeRequired => "resume_required", domain::CoordinationGate::Unknown => "unknown" },
         "settled": state.settled(),
         "instructions": state.instructions.iter().map(instruction).collect::<Vec<_>>(),
+        "scopes": state.scopes.iter().map(scope).collect::<Vec<_>>(),
         "children": state.children.iter().map(execution).collect::<Vec<_>>(),
         "joins": state.joins.iter().map(|join| serde_json::json!({ "id": join.id, "runId": join.run_id, "mode": match join.mode { domain::JoinMode::Any => "any", domain::JoinMode::All => "all" }, "executions": join.executions, "backgrounded": join.backgrounded })).collect::<Vec<_>>(),
     })

@@ -18,7 +18,9 @@ pub(super) fn parent(conversation: &domain::Conversation) -> bool {
     conversation.agent.as_ref().is_some_and(|agent| {
         matches!(
             agent.role,
-            domain::AgentRole::ChiefOfStaff | domain::AgentRole::Griller
+            domain::AgentRole::ChiefOfStaff
+                | domain::AgentRole::Griller
+                | domain::AgentRole::Research
         )
     })
 }
@@ -293,6 +295,9 @@ pub(super) async fn wait(
         if cancellation.is_cancelled() {
             return Ok(false);
         }
+        super::instructions::wait(d, conversation, cancellation).await?;
+        let newly_steered =
+            super::instructions::synchronize(d, conversation, buffer, cancellation).await?;
         let state = d
             .read_coordination
             .call(conversation.id.clone())
@@ -307,6 +312,9 @@ pub(super) async fn wait(
             ));
         }
         let eligible = state.eligible(&lease.run_id).map_err(Error::caused_by)?;
+        if after_response && eligible && newly_steered {
+            return Ok(true);
+        }
         if !after_response && eligible {
             return Ok(false);
         }
