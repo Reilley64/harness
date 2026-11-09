@@ -1,4 +1,5 @@
 pub mod create_agent;
+pub mod create_answer;
 pub mod create_assignment;
 pub mod create_conversation;
 pub mod create_dispatch;

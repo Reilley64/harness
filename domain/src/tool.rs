@@ -9,6 +9,7 @@ pub enum Tool {
     Grep,
     AstSearch,
     WebSearch,
+    RequestHumanInput,
     PublishWork,
     PrepareAssignment,
     DispatchResearch,
@@ -22,7 +23,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Read,
         Self::Bash,
         Self::Edit,
@@ -32,6 +33,7 @@ impl Tool {
         Self::Grep,
         Self::AstSearch,
         Self::WebSearch,
+        Self::RequestHumanInput,
         Self::PublishWork,
         Self::PrepareAssignment,
         Self::DispatchResearch,
@@ -55,6 +57,7 @@ impl Tool {
             Self::Grep => "grep",
             Self::AstSearch => "ast_search",
             Self::WebSearch => "web_search",
+            Self::RequestHumanInput => "request_human_input",
             Self::PublishWork => "publish_work",
             Self::PrepareAssignment => "prepare_assignment",
             Self::DispatchResearch => "dispatch_research",
@@ -78,6 +81,7 @@ impl Tool {
             Self::Bash
                 | Self::Edit
                 | Self::Write
+                | Self::RequestHumanInput
                 | Self::PublishWork
                 | Self::PrepareAssignment
                 | Self::DispatchResearch

@@ -44,6 +44,16 @@ The JSON-RPC `id` correlates one request/response. The explicit intent, child,
 assignment, execution, parent run and join IDs correlate durable work; a new
 JSON-RPC ID does not authorize another execution or a new assignment payload.
 
+## Typed human answer
+
+`_harness/agent/answer` takes `{sessionId, requestRun, text}` and returns the
+ordinary streamed prompt response. Inspect/open the existing conversation first;
+it must be registered in this connection. The exact requesting run must still
+need human input. A fresh run begins on that same durable agent. Parent messages,
+targeted updates and child reports cannot substitute for this operation.
+Child execution summaries expose `priorReceipts`, including source run/reply and
+separate delivery/follow-up fields; full history remains in the source conversation.
+
 ## Targeted instruction acknowledgement
 
 `_harness/children/steer` takes the owning parent's session, exact execution and

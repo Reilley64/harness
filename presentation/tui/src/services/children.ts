@@ -79,8 +79,12 @@ export function parseExecution(value: unknown): ChildExecution {
 export function parseChildInstruction(value: unknown): ChildInstruction {
   const v = object(value);
   return {
-    id: text(v.id), executionId: text(v.executionId), order: integer(v.order), text: text(v.text),
-    appliedRun: optional(v.appliedRun), appliedReply: optional(v.appliedReply),
+    id: text(v.id),
+    executionId: text(v.executionId),
+    order: integer(v.order),
+    text: text(v.text),
+    appliedRun: optional(v.appliedRun),
+    appliedReply: optional(v.appliedReply),
   };
 }
 

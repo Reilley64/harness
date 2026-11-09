@@ -17,6 +17,7 @@ second model loop.
 | `grep` | `ReadTextMatches` | `read_text_matches` |
 | `ast_search` | `ReadCodeMatches` | `read_code_matches` |
 | `web_search` | `ReadWebSearch` | `read_web_search` |
+| `request_human_input` | `RequestHumanInput` | ordinary tool checkpoint, then application run finalization; [typed answer](managed-dispatch.md#typed-human-input-and-later-runs) |
 | `publish_work` | `PublishWork` | `read_work_proposal` + application `create_work` |
 | `prepare_assignment` | `PrepareAssignment` | application `create_assignment` + `update_decision` |
 | Managed Research tools | `DispatchResearch`, `ControlChildren`, `ReadChildren`, `ReadChildResult` | application `create_dispatch`, `update_children`, `read_children`; [runtime and retrieval](managed-dispatch.md) |

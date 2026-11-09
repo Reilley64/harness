@@ -34,7 +34,7 @@ pub struct Dependencies {
     pub(crate) read_provider_connection: ReadProviderConnection,
     pub(crate) read_conversation: ReadConversation,
     pub(crate) read_instructions: ports::ReadInstructions,
-    pub(super) lock_conversation: LockConversation,
+    pub(crate) lock_conversation: LockConversation,
     pub(super) update_conversation: UpdateConversation,
     pub(crate) read_models: ReadModels,
     pub(crate) create_model_step_factory: CreateModelStepFactory,

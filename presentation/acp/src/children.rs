@@ -156,6 +156,17 @@ pub(crate) struct SteerResponse {
     pub effective_boundary: String,
 }
 
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcRequest,
+)]
+#[request(method="_harness/agent/answer",response=agent_client_protocol::v1::schema::PromptResponse)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AnswerRequest {
+    pub session_id: String,
+    pub request_run: String,
+    pub text: String,
+}
+
 pub(crate) fn instruction(value: &domain::ChildInstruction) -> serde_json::Value {
     serde_json::json!({
         "id": value.id, "executionId": value.execution_id, "order": value.order, "text": value.text,
@@ -186,6 +197,7 @@ pub(crate) fn execution(child: &domain::ChildExecution) -> serde_json::Value {
         "outcomeId": child.outcome.as_ref().map(|outcome| &outcome.id),
         "deliveredTo": child.delivered_to,
         "followUpCompletedBy": child.follow_up_completed_by,
+        "priorReceipts": child.history.iter().map(|receipt| serde_json::json!({ "id": receipt.outcome.id, "status": status(receipt.outcome.status), "runId": receipt.outcome.run_id, "replyId": receipt.outcome.reply_id, "deliveredTo": receipt.delivered_to, "followUpCompletedBy": receipt.follow_up_completed_by })).collect::<Vec<_>>(),
         "source": format!("harness://conversations/{}", child.agent_id),
     })
 }

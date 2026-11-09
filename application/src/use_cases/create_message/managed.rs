@@ -238,8 +238,9 @@ pub(super) async fn prepare(
             outcomes: state
                 .children
                 .iter()
-                .filter(|child| child.delivered_to.is_none())
-                .filter_map(|child| child.outcome.as_ref().map(|outcome| outcome.id.clone()))
+                .flat_map(|child| child.receipts())
+                .filter(|(_, delivered, _)| delivered.is_none())
+                .map(|(outcome, _, _)| outcome.id.clone())
                 .collect(),
         };
         let (revision, command, view) = tokio::task::spawn_blocking(move || {
@@ -309,26 +310,30 @@ pub(super) async fn wait(
         if !after_response && eligible {
             return Ok(false);
         }
-        let required = state
-            .children
-            .iter()
-            .any(|child| child.follow_up_completed_by.is_none());
+        let required = state.children.iter().any(|child| {
+            child.outcome.is_none()
+                || child
+                    .receipts()
+                    .any(|(_, _, completed)| completed.is_none())
+        });
         if after_response && !required {
             return Ok(false);
         }
         if eligible
-            && state
-                .children
-                .iter()
-                .any(|child| child.outcome.is_some() && child.delivered_to.is_none())
+            && state.children.iter().any(|child| {
+                child
+                    .receipts()
+                    .any(|(_, delivered, _)| delivered.is_none())
+            })
         {
             return Ok(true);
         }
         if after_response
-            && state
-                .children
-                .iter()
-                .any(|child| child.delivered_to.is_some() && child.follow_up_completed_by.is_none())
+            && state.children.iter().any(|child| {
+                child
+                    .receipts()
+                    .any(|(_, delivered, completed)| delivered.is_some() && completed.is_none())
+            })
         {
             return Ok(false);
         }

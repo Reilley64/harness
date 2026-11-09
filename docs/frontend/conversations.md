@@ -169,8 +169,15 @@ accepted/applied instructions for the selected child. Rejected commands retain
 their editor text. No cancellation/resend, assignment restart or later-run enqueue
 implements this control.
 
+`/children answer {"executionId":"<owned execution>","requestRun":"<input run>","text":"<answer>"}`
+answers that exact retained child request through the typed backend interface.
+`/answer {"requestRun":"<input run>","text":"<answer>"}` answers the selected
+durable agent. Answers start later runs, not replacement agents or assignments.
+Rejected answers retain editor text. Inspector Stop remains available while an
+answer is executing; Escape still navigates without cancelling it.
+
 Child Stop traverses [retained execution ownership](../managed-dispatch.md#ownership-scoped-stop).
-This inspector does not provide general typed child input, durable child drafts, a
+This inspector does not provide durable child drafts, a
 growing creation-arrow map, managed Implementer workspaces or complete subtree
 recovery. [Managed dispatch](../managed-dispatch.md) owns runtime authority,
 recovery, limits and diagnostic retention.

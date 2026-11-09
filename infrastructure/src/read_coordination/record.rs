@@ -68,6 +68,15 @@ struct ChildRecord {
 
     delivered_to: Option<String>,
     follow_up_completed_by: Option<String>,
+    history: Option<Vec<ReceiptRecord>>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptRecord {
+    outcome: OutcomeRecord,
+    delivered_to: Option<String>,
+    follow_up_completed_by: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -326,6 +335,27 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
                 .transpose()?,
             delivered_to: value.delivered_to,
             follow_up_completed_by: value.follow_up_completed_by,
+            history: value
+                .history
+                .unwrap_or_default()
+                .into_iter()
+                .map(|receipt| {
+                    let value = receipt.outcome;
+                    Ok::<_, Error>(domain::ChildReceipt {
+                        outcome: domain::ChildOutcome {
+                            id: value.id,
+                            status: status(&value.status)?,
+                            conversation_id: value.conversation_id,
+                            run_id: value.run_id,
+                            reply_id: value.reply_id,
+                            summary: value.summary,
+                            artifacts: value.artifacts,
+                        },
+                        delivered_to: receipt.delivered_to,
+                        follow_up_completed_by: receipt.follow_up_completed_by,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
         };
         child.validate()?;
         Ok(child)
@@ -337,8 +367,12 @@ impl TryFrom<Record> for domain::Coordination {
     fn try_from(value: Record) -> Result<Self, Error> {
         if !matches!(
             (value.format, value.instructions.is_some()),
-            (2, false) | (3, true)
-        ) {
+            (2, false) | (3, true) | (4, true)
+        ) || value
+            .children
+            .iter()
+            .any(|child| child.history.is_some() != (value.format == 4))
+        {
             return Err(
                 "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
                     .into(),

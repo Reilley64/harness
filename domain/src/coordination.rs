@@ -2,6 +2,7 @@ use crate::CapturedJoin;
 use crate::ChildExecution;
 use crate::ChildExecutionStatus;
 use crate::ChildInstruction;
+use crate::ChildReceipt;
 use crate::CoordinationCommand;
 use crate::CoordinationGate;
 
@@ -83,6 +84,17 @@ impl Coordination {
                 return Err("Child identity is duplicated or belongs to another parent");
             }
         }
+        for (index, child) in self.children.iter().enumerate() {
+            if child.receipts().any(|(outcome, _, _)| {
+                self.children[..index].iter().any(|prior| {
+                    prior
+                        .receipts()
+                        .any(|(receipt, _, _)| receipt.id == outcome.id)
+                })
+            }) {
+                return Err("Receipt identity is duplicated across execution owners");
+            }
+        }
         for (index, instruction) in self.instructions.iter().enumerate() {
             instruction.validate()?;
             if instruction.order != index as u64 + 1
@@ -122,10 +134,14 @@ impl Coordination {
     pub fn settled(&self) -> bool {
         self.authority_complete
             && self.controller.is_none()
-            && self
-                .children
-                .iter()
-                .all(|child| child.outcome.is_some() && child.follow_up_completed_by.is_some())
+            && self.children.iter().all(|child| {
+                child.outcome.is_some()
+                    && child.follow_up_completed_by.is_some()
+                    && child
+                        .history
+                        .iter()
+                        .all(|receipt| receipt.follow_up_completed_by.is_some())
+            })
     }
 
     pub fn eligible(&self, run_id: &str) -> Result<bool, &'static str> {
@@ -203,6 +219,40 @@ impl Coordination {
                     applied_run: None,
                     applied_reply: None,
                 });
+            }
+            CoordinationCommand::AnswerChild {
+                execution_id,
+                request_run,
+            } => {
+                let child = self
+                    .children
+                    .iter_mut()
+                    .find(|child| child.execution_id == execution_id)
+                    .ok_or("Human answer does not name an owned execution")?;
+                let outcome = child
+                    .outcome
+                    .as_ref()
+                    .ok_or("Human input request has no durable receipt")?;
+                if !self.authority_complete
+                    || !matches!(
+                        self.gate,
+                        CoordinationGate::Open | CoordinationGate::NeedsHuman
+                    )
+                    || child.stop_requested
+                    || child.status != ChildExecutionStatus::NeedsHuman
+                    || outcome.run_id.as_deref() != Some(request_run.as_str())
+                    || child.history.len() >= 64
+                {
+                    return Err(
+                        "Answer does not match the pending human-input run, or execution is gated",
+                    );
+                }
+                child.history.push(ChildReceipt {
+                    outcome: child.outcome.take().ok_or("Input receipt disappeared")?,
+                    delivered_to: child.delivered_to.take(),
+                    follow_up_completed_by: child.follow_up_completed_by.take(),
+                });
+                child.status = ChildExecutionStatus::Running;
             }
             CoordinationCommand::AdmitChildAction {
                 execution_id,
@@ -534,17 +584,9 @@ impl Coordination {
                     let child = self
                         .children
                         .iter_mut()
-                        .find(|child| {
-                            child
-                                .outcome
-                                .as_ref()
-                                .is_some_and(|outcome| outcome.id == id)
-                        })
+                        .find(|child| child.receipts().any(|(outcome, _, _)| outcome.id == id))
                         .ok_or("Required outcome receipt is unavailable; inspect coordination")?;
-                    if child.delivered_to.is_none() {
-                        child.delivered_to = Some(run_id.clone());
-                        changed = true;
-                    }
+                    changed |= child.deliver(&id, &run_id)?;
                 }
                 return Ok(changed);
             }
@@ -562,20 +604,9 @@ impl Coordination {
                     let child = self
                         .children
                         .iter_mut()
-                        .find(|child| {
-                            child
-                                .outcome
-                                .as_ref()
-                                .is_some_and(|outcome| outcome.id == id)
-                        })
+                        .find(|child| child.receipts().any(|(outcome, _, _)| outcome.id == id))
                         .ok_or("Required outcome receipt is unavailable")?;
-                    if child.delivered_to.is_none() {
-                        return Err("Receipt alone is not delivery or completed follow-up");
-                    }
-                    if child.follow_up_completed_by.is_none() {
-                        child.follow_up_completed_by = Some(run_id.clone());
-                        changed = true;
-                    }
+                    changed |= child.complete_follow_up(&id, &run_id)?;
                 }
                 return Ok(changed);
             }

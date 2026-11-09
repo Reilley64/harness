@@ -111,6 +111,10 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
     let sessions = conversations::Sessions::default();
     let agent_sessions = sessions.clone();
     let read_agent_sessions = sessions.clone();
+    let answer_sessions = sessions.clone();
+    let view_sessions = sessions.clone();
+    let answer_history = read_conversation.clone();
+    let answer_dependencies = create_message.clone();
     let resume_sessions = sessions.clone();
     let resume_history = read_conversation.clone();
     let resume_dependencies = create_message.clone();
@@ -241,13 +245,31 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         .on_receive_request(
             async move |request: children::ViewRequest, responder, connection| {
                 let d = viewing_children.clone();
+                let sessions = view_sessions.clone();
                 connection.spawn(async move {
                     match application::use_cases::read_conversation::inspect(d, request.session_id).await {
-                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Ok(output) => {
+                            if let Some(workspace) = &output.conversation.workspace {
+                                sessions.register(&output.conversation.id, workspace.clone());
+                            }
+                            responder.respond(agents::response(&output.conversation))
+                        }
                         Err(error) => responder.respond_with_error(conversations::error(error)),
                     }
                 })
             }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::AnswerRequest, responder, connection| {
+                let prompt = PromptRequest::new(
+                    request.session_id,
+                    vec![agent_client_protocol::v1::schema::ContentBlock::Text(
+                        agent_client_protocol::v1::schema::TextContent::new(request.text),
+                    )],
+                );
+                prompt::receive(prompt, responder, connection, answer_dependencies.clone(), answer_history.clone(), answer_sessions.clone(), false, Some(request.request_run))
+            },
+            agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |request: children::ReadRequest, responder, connection| {
@@ -671,6 +693,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     projection_history.clone(),
                     prompted_sessions.clone(),
                     false,
+                    None,
                 )
             },
             agent_client_protocol::on_receive_request!(),
@@ -881,6 +904,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     resume_history.clone(),
                     resume_sessions.clone(),
                     true,
+                    None,
                 )
             },
             agent_client_protocol::on_receive_request!(),

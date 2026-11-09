@@ -166,6 +166,16 @@ struct ChildRecord {
 
     delivered_to: Option<String>,
     follow_up_completed_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    history: Option<Vec<ReceiptRecord>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptRecord {
+    outcome: OutcomeRecord,
+    delivered_to: Option<String>,
+    follow_up_completed_by: Option<String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -513,6 +523,27 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
                 .transpose()?,
             delivered_to: value.delivered_to,
             follow_up_completed_by: value.follow_up_completed_by,
+            history: value
+                .history
+                .unwrap_or_default()
+                .into_iter()
+                .map(|receipt| {
+                    let value = receipt.outcome;
+                    Ok::<_, Error>(domain::ChildReceipt {
+                        outcome: domain::ChildOutcome {
+                            id: value.id,
+                            status: status(&value.status)?,
+                            conversation_id: value.conversation_id,
+                            run_id: value.run_id,
+                            reply_id: value.reply_id,
+                            summary: value.summary,
+                            artifacts: value.artifacts,
+                        },
+                        delivered_to: receipt.delivered_to,
+                        follow_up_completed_by: receipt.follow_up_completed_by,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
         };
         child.validate()?;
         Ok(child)
@@ -561,6 +592,25 @@ impl From<domain::ChildExecution> for ChildRecord {
             }),
             delivered_to: value.delivered_to,
             follow_up_completed_by: value.follow_up_completed_by,
+            history: (!value.history.is_empty()).then(|| {
+                value
+                    .history
+                    .into_iter()
+                    .map(|receipt| ReceiptRecord {
+                        outcome: OutcomeRecord {
+                            id: receipt.outcome.id,
+                            status: status_name(receipt.outcome.status),
+                            conversation_id: receipt.outcome.conversation_id,
+                            run_id: receipt.outcome.run_id,
+                            reply_id: receipt.outcome.reply_id,
+                            summary: receipt.outcome.summary,
+                            artifacts: receipt.outcome.artifacts,
+                        },
+                        delivered_to: receipt.delivered_to,
+                        follow_up_completed_by: receipt.follow_up_completed_by,
+                    })
+                    .collect()
+            }),
         }
     }
 }
@@ -570,8 +620,12 @@ impl TryFrom<Record> for domain::Coordination {
     fn try_from(value: Record) -> Result<Self, Error> {
         if !matches!(
             (value.format, value.instructions.is_some()),
-            (2, false) | (3, true)
-        ) {
+            (2, false) | (3, true) | (4, true)
+        ) || value
+            .children
+            .iter()
+            .any(|child| child.history.is_some() != (value.format == 4))
+        {
             return Err(
                 "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
                     .into(),
@@ -649,8 +703,15 @@ impl TryFrom<Record> for domain::Coordination {
 
 impl From<domain::Coordination> for Record {
     fn from(value: domain::Coordination) -> Self {
+        let later_runs = value.children.iter().any(|child| !child.history.is_empty());
         Self {
-            format: if value.instructions.is_empty() { 2 } else { 3 },
+            format: if later_runs {
+                4
+            } else if value.instructions.is_empty() {
+                2
+            } else {
+                3
+            },
             conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
@@ -667,7 +728,7 @@ impl From<domain::Coordination> for Record {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
-            instructions: (!value.instructions.is_empty()).then(|| {
+            instructions: (later_runs || !value.instructions.is_empty()).then(|| {
                 value
                     .instructions
                     .into_iter()
@@ -681,7 +742,17 @@ impl From<domain::Coordination> for Record {
                     })
                     .collect()
             }),
-            children: value.children.into_iter().map(Into::into).collect(),
+            children: value
+                .children
+                .into_iter()
+                .map(|child| {
+                    let mut record = ChildRecord::from(child);
+                    if later_runs && record.history.is_none() {
+                        record.history = Some(Vec::new());
+                    }
+                    record
+                })
+                .collect(),
             joins: value
                 .joins
                 .into_iter()

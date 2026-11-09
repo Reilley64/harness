@@ -2,6 +2,7 @@ use crate::ApprovedWork;
 use crate::AssignmentBrief;
 use crate::ChildExecutionStatus;
 use crate::ChildOutcome;
+use crate::ChildReceipt;
 use crate::DecisionCandidate;
 use crate::InstructionSnapshot;
 use crate::ModelSelection;
@@ -39,9 +40,80 @@ pub struct ChildExecution {
 
     pub delivered_to: Option<String>,
     pub follow_up_completed_by: Option<String>,
+    pub history: Vec<ChildReceipt>,
 }
 
 impl ChildExecution {
+    pub fn receipts(&self) -> impl Iterator<Item = (&ChildOutcome, Option<&str>, Option<&str>)> {
+        self.history
+            .iter()
+            .map(|receipt| {
+                (
+                    &receipt.outcome,
+                    receipt.delivered_to.as_deref(),
+                    receipt.follow_up_completed_by.as_deref(),
+                )
+            })
+            .chain(self.outcome.iter().map(|outcome| {
+                (
+                    outcome,
+                    self.delivered_to.as_deref(),
+                    self.follow_up_completed_by.as_deref(),
+                )
+            }))
+    }
+
+    pub fn deliver(&mut self, outcome_id: &str, run_id: &str) -> Result<bool, &'static str> {
+        let delivered = if self
+            .outcome
+            .as_ref()
+            .is_some_and(|outcome| outcome.id == outcome_id)
+        {
+            &mut self.delivered_to
+        } else {
+            &mut self
+                .history
+                .iter_mut()
+                .find(|receipt| receipt.outcome.id == outcome_id)
+                .ok_or("Required retained receipt is unavailable")?
+                .delivered_to
+        };
+        if delivered.is_some() {
+            return Ok(false);
+        }
+        *delivered = Some(run_id.into());
+        Ok(true)
+    }
+
+    pub fn complete_follow_up(
+        &mut self,
+        outcome_id: &str,
+        run_id: &str,
+    ) -> Result<bool, &'static str> {
+        let (delivered, completed) = if self
+            .outcome
+            .as_ref()
+            .is_some_and(|outcome| outcome.id == outcome_id)
+        {
+            (&self.delivered_to, &mut self.follow_up_completed_by)
+        } else {
+            let receipt = self
+                .history
+                .iter_mut()
+                .find(|receipt| receipt.outcome.id == outcome_id)
+                .ok_or("Required retained receipt is unavailable")?;
+            (&receipt.delivered_to, &mut receipt.follow_up_completed_by)
+        };
+        if delivered.is_none() {
+            return Err("Receipt alone is not delivery or completed follow-up");
+        }
+        if completed.is_some() {
+            return Ok(false);
+        }
+        *completed = Some(run_id.into());
+        Ok(true)
+    }
+
     pub fn authorize_work(&self, work: &ApprovedWork) -> Result<(), &'static str> {
         if self.work_id.as_deref() != Some(work.id.as_str()) {
             return Err("Research work differs from its accepted authority");
@@ -139,6 +211,23 @@ impl ChildExecution {
                 || self.selected.connection_id != self.parent_connection_id)
         {
             return Err("Unrouted Research must retain its exact actual-parent pair");
+        }
+        if self.history.len() > 64 {
+            return Err("Child run history is full; retained receipts cannot be dropped");
+        }
+        for (index, receipt) in self.history.iter().enumerate() {
+            receipt.validate()?;
+            if receipt.outcome.conversation_id != self.agent_id
+                || self.history[..index]
+                    .iter()
+                    .any(|prior| prior.outcome.id == receipt.outcome.id)
+                || self
+                    .outcome
+                    .as_ref()
+                    .is_some_and(|outcome| outcome.id == receipt.outcome.id)
+            {
+                return Err("Child run receipt identity is duplicated or has a different owner");
+            }
         }
         match &self.outcome {
             Some(outcome) => {

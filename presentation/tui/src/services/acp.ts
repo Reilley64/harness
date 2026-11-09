@@ -27,7 +27,12 @@ import {
   parseProviderConnection,
   validAuthorizationUrl,
 } from "./authorization.js";
-import { parseChildInstruction, parseChildResult, parseChildren, parseExecution } from "./children.js";
+import {
+  parseChildInstruction,
+  parseChildResult,
+  parseChildren,
+  parseExecution,
+} from "./children.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
 import { parseDeciders, parseDecision } from "./decisions.js";
 import { PresentationError } from "./errors.js";
@@ -414,6 +419,20 @@ export function connectAgent() {
       ),
     );
   }
+  async function answerAgent(
+    sessionId: string,
+    requestRun: string,
+    text: string,
+  ) {
+    await viewConversation(sessionId);
+    return childRequest(
+      "_harness/agent/answer",
+      { sessionId, requestRun, text },
+      undefined,
+      true,
+    );
+  }
+
   async function steerChild(
     sessionId: string,
     executionId: string,
@@ -421,11 +440,25 @@ export function connectAgent() {
     text: string,
   ) {
     const value = await childRequest(
-      "_harness/children/steer", { sessionId, executionId, id, text }, undefined, true,
+      "_harness/children/steer",
+      { sessionId, executionId, id, text },
+      undefined,
+      true,
     );
-    if (!value || typeof value !== "object" || !("instruction" in value) || !("effectiveBoundary" in value) || typeof value.effectiveBoundary !== "string")
-      throw new PresentationError("Invalid durable child instruction acknowledgement.");
-    return { instruction: parseChildInstruction(value.instruction), effectiveBoundary: value.effectiveBoundary };
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("instruction" in value) ||
+      !("effectiveBoundary" in value) ||
+      typeof value.effectiveBoundary !== "string"
+    )
+      throw new PresentationError(
+        "Invalid durable child instruction acknowledgement.",
+      );
+    return {
+      instruction: parseChildInstruction(value.instruction),
+      effectiveBoundary: value.effectiveBoundary,
+    };
   }
 
   async function dispatchChild(
@@ -1042,6 +1075,7 @@ export function connectAgent() {
     controlChildren,
     dispatchChild,
     steerChild,
+    answerAgent,
     adoptResearch,
     viewConversation,
     updateMcp,

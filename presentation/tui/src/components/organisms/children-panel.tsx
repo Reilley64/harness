@@ -96,7 +96,9 @@ export function ChildrenPanel({
         <TerminalText>Reading / committing child control…</TerminalText>
       )}
       {state.error && <TerminalText color="red">{state.error}</TerminalText>}
-      {state.acknowledgement && <TerminalText>{state.acknowledgement}</TerminalText>}
+      {state.acknowledgement && (
+        <TerminalText>{state.acknowledgement}</TerminalText>
+      )}
       {state.confirmation && (
         <TerminalText color="yellow">
           Stop this exact child execution? Completed effects remain. Y/Enter
@@ -170,11 +172,18 @@ export function ChildrenPanel({
           {state.child && (
             <TerminalText wrap="truncate-end">{`Assignment ${state.child.assignmentId} · execution ${state.child.executionId} · creator ${state.child.creatorId}`}</TerminalText>
           )}
-          {state.child && state.state?.instructions.filter((instruction) => instruction.executionId === state.child?.executionId).slice(-3).map((instruction) => (
-            <TerminalText key={instruction.id} wrap="truncate-end">
-              {`Human #${instruction.order} · ${instruction.appliedRun ? `checkpointed run ${instruction.appliedRun}` : "accepted, next safe boundary"} · ${instruction.text}`}
-            </TerminalText>
-          ))}
+          {state.child &&
+            state.state?.instructions
+              .filter(
+                (instruction) =>
+                  instruction.executionId === state.child?.executionId,
+              )
+              .slice(-3)
+              .map((instruction) => (
+                <TerminalText key={instruction.id} wrap="truncate-end">
+                  {`Human #${instruction.order} · ${instruction.appliedRun ? `checkpointed run ${instruction.appliedRun}` : "accepted, next safe boundary"} · ${instruction.text}`}
+                </TerminalText>
+              ))}
           {state.captured && (
             <TerminalText wrap="truncate-end">{`Join ${state.captured.id}: ${state.captured.mode} [${state.captured.executions.join(", ")}] ${state.captured.backgrounded ? "backgrounded" : "captured"}`}</TerminalText>
           )}

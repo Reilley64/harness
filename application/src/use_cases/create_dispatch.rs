@@ -349,6 +349,7 @@ async fn dispatch(
 
         delivered_to: None,
         follow_up_completed_by: None,
+        history: Vec::new(),
     };
     let response = d
         .update_coordination

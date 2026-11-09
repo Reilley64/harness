@@ -151,6 +151,34 @@ targeted instructions, not inferred authority. Format three cannot omit the
 array, format two cannot carry it, and older executables reject the new format.
 Conversation schemas and immutable claim format two are unchanged.
 
+## Typed human input and later runs
+
+`request_human_input` stores a bounded question in the ordinary checkpointed tool
+result, then ends the current run without further inference. Remaining unstarted
+batch calls are stopped by normal finalization. A partial child outcome is a
+NeedsHuman receipt, not completion or sibling cancellation.
+
+`create_answer` / `_harness/agent/answer` requires the exact requesting run and
+the same durable conversation. The conversation execution guard arbitrates
+competing answers. Ordinary Research prompts and updates cannot satisfy this
+gate; neither receipt delivery nor parent follow-up clears it. The answer
+starts a fresh run using the accepted assignment, pair and guidance. It does not
+create another durable agent or re-dispatch the assignment.
+
+Prior receipts retain their source run/reply, delivery and follow-up separately.
+The latest receipt uses the later run UUID; the original execution and ownership
+remain stable. Captured joins retain the original execution's terminal boundary;
+answering an input does not silently recapture a wait. All retained receipts enter
+current-work projection and require independent follow-up disposition. Stop
+continues to follow retained ownership and is observed during later-run inference
+and tools.
+
+Coordination containing later-run receipts writes format four, requiring an
+instruction array and an explicit history array on every child. Formats two and
+three may not carry the new histories; their absent histories mean no recorded
+later-run receipts. Immutable format-two claims and conversation schema seven
+remain unchanged. No older format is written after a later receipt is retained.
+
 ## Ownership-scoped Stop
 
 `delete_execution` accepts a selected conversation and an optional exact owned

@@ -8,6 +8,7 @@ use crate::read_directory;
 use crate::read_file;
 use crate::read_paths;
 use crate::read_text_matches;
+use crate::read_tool_invocation::human_input;
 use crate::read_web_search;
 use crate::read_work_proposal;
 use crate::update_coordination;
@@ -31,6 +32,7 @@ pub(crate) fn definitions(tools: &[domain::Tool]) -> serde_json::Value {
                 domain::Tool::Grep => read_text_matches::definition(),
                 domain::Tool::AstSearch => read_code_matches::definition(),
                 domain::Tool::WebSearch => read_web_search::definition(),
+                domain::Tool::RequestHumanInput => human_input::definition(),
                 domain::Tool::PublishWork => read_work_proposal::definition(),
                 domain::Tool::PrepareAssignment => update_decision::definition(),
                 domain::Tool::DispatchResearch => create_research::definition(),

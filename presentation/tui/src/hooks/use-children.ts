@@ -2,7 +2,7 @@ import type { Key } from "ink";
 import { usePaste } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../services/acp.js";
-import { errorMessage } from "../services/errors.js";
+import { errorMessage, PresentationError } from "../services/errors.js";
 import type { ChildResult, Children } from "../types/children.js";
 import type { Conversation } from "../types/conversation.js";
 import type { Guidance } from "../types/guidance.js";
@@ -123,13 +123,46 @@ export function useChildren(agent: Agent, parentId?: string) {
     )
       await refresh();
   }
+  async function answer(
+    executionId: string | null,
+    requestRun: string,
+    text: string,
+  ) {
+    setVisible(true);
+    setAcknowledgement(null);
+    return run(async (id) => {
+      let targetId = id;
+      if (executionId) {
+        const snapshot = await agent.readChildren(id);
+        const target = snapshot?.children.find(
+          (child) => child.executionId === executionId,
+        );
+        if (!target)
+          throw new PresentationError(
+            "The input request is not owned by this parent.",
+          );
+        targetId = target.agentId;
+      }
+      await agent.answerAgent(targetId, requestRun, text);
+      setAcknowledgement(
+        "The typed answer continued the same durable agent in a later run; inspect the retained source and receipt.",
+      );
+    });
+  }
   async function steer(executionId: string, text: string) {
     const instructionId = crypto.randomUUID();
     setVisible(true);
     setAcknowledgement(null);
     return run(async (id) => {
-      const accepted = await agent.steerChild(id, executionId, instructionId, text);
-      setAcknowledgement(`Instruction ${accepted.instruction.id}, durable order ${accepted.instruction.order}. ${accepted.effectiveBoundary}`);
+      const accepted = await agent.steerChild(
+        id,
+        executionId,
+        instructionId,
+        text,
+      );
+      setAcknowledgement(
+        `Instruction ${accepted.instruction.id}, durable order ${accepted.instruction.order}. ${accepted.effectiveBoundary}`,
+      );
     });
   }
   const child = state?.children.find((c) => c.executionId === selected);
@@ -208,7 +241,7 @@ export function useChildren(agent: Agent, parentId?: string) {
       } else close();
       return;
     }
-    if (busy) return;
+    if (busy && value !== "x" && !confirmation) return;
     if (confirmation) {
       if (value === "y" || key.return) {
         setConfirmation(false);
@@ -295,6 +328,7 @@ export function useChildren(agent: Agent, parentId?: string) {
     inspectGuidance,
     dispatch,
     steer,
+    answer,
     acknowledgement,
     close,
   };

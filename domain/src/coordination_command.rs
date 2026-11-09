@@ -10,6 +10,10 @@ pub enum CoordinationCommand {
         execution_id: String,
         text: String,
     },
+    AnswerChild {
+        execution_id: String,
+        request_run: String,
+    },
     AdmitChildAction {
         execution_id: String,
         controller: String,

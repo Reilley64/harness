@@ -51,6 +51,32 @@ pub async fn read(
     authorize(work, child).await
 }
 
+pub(crate) async fn monitor(
+    coordination: &ports::ReadCoordination,
+    research: domain::ResearchAssignment,
+) -> Result<(), Error> {
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let state = coordination
+            .call(research.parent_id.clone())
+            .await?
+            .ok_or("Research ownership disappeared; inspect without replay")?;
+        let child = state
+            .children
+            .iter()
+            .find(|child| child.execution_id == research.execution_id)
+            .ok_or("Research execution disappeared; inspect without replay")?;
+        if child.stop_requested
+            || !matches!(
+                state.gate,
+                domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman
+            )
+        {
+            return Ok(());
+        }
+    }
+}
+
 pub(crate) async fn authorize(
     work: &ports::ReadWork,
     child: &domain::ChildExecution,
