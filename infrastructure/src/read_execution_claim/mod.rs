@@ -34,9 +34,12 @@ pub fn read_execution_claim(
                 match storage::lock(&lock_path).await {
                     Ok(guard) => break guard,
                     Err(error)
-                        if error.source().is_some_and(|source| {
-                            source.downcast_ref::<std::fs::TryLockError>().is_some()
-                        }) =>
+                        if error
+                            .source()
+                            .and_then(|source| source.downcast_ref::<std::fs::TryLockError>())
+                            .is_some_and(|cause| {
+                                matches!(cause, std::fs::TryLockError::WouldBlock)
+                            }) =>
                     {
                         tokio::select! {
                             _ = cancellation.cancelled() => return Err("Execution claim inspection stopped".into()),

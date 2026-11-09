@@ -19,6 +19,7 @@ second model loop.
 | `web_search` | `ReadWebSearch` | `read_web_search` |
 | `publish_work` | `PublishWork` | `read_work_proposal` + application `create_work` |
 | `prepare_assignment` | `PrepareAssignment` | application `create_assignment` + `update_decision` |
+| Managed Research tools | `DispatchResearch`, `ControlChildren`, `ReadChildren`, `ReadChildResult` | application `create_dispatch`, `update_children`, `read_children`; [runtime and retrieval](managed-dispatch.md) |
 | `mcp_configuration` | `McpConfiguration` | `update_mcp_configuration` |
 | `mcp_call` | `McpCall` | `create_mcp_call` |
 
@@ -32,8 +33,11 @@ execution for text-only operation. AST search is advertised only when
 `ast-grep --version` reports exactly `ast-grep 0.51.0`. Trusted configured stdio and Streamable HTTP
 MCP servers use the same durable tool loop; see [MCP connections](mcp-connections.md)
 for native configuration, protected trust, discovery and shared cleanup, and
-[HTTP/OAuth](mcp-http-auth.md) for supported authentication and qualification limits. There are no plugins, managed child dispatch,
-browser automation, PTYs, persistent shells or managed background jobs. Trusted exact-version
+[HTTP/OAuth](mcp-http-auth.md) for supported authentication and qualification limits.
+[Managed Research](managed-dispatch.md) adds dispatch, fixed joins, backgrounding,
+status and source-linked result tools; Implementers require managed workspaces.
+There are no plugins, browser automation, PTYs, persistent shells or general-purpose
+background process jobs. Trusted exact-version
 [approved handoff](approved-work.md) can create a separate conversational CoS;
 model tools cannot grant human approval.
 

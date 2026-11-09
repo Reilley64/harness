@@ -1,7 +1,4 @@
 use super::Error;
-fn complete() -> bool {
-    true
-}
 use crate::conversations;
 use crate::instructions;
 
@@ -12,7 +9,6 @@ pub(super) struct Record {
     conversation_id: String,
     agent_id: String,
     revision: u64,
-    #[serde(default = "complete")]
     authority_complete: bool,
 
     gate: String,
@@ -53,7 +49,6 @@ struct ChildRecord {
 
     controller: String,
     status: String,
-    #[serde(default)]
     stop_requested: bool,
 
     outcome: Option<OutcomeRecord>,

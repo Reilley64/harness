@@ -51,7 +51,6 @@ struct ChildRecord {
 
     controller: String,
     status: String,
-    #[serde(default)]
     stop_requested: bool,
 
     outcome: Option<OutcomeRecord>,

@@ -56,7 +56,9 @@ format-two record containing the distinct durable agent and conversation IDs,
 bounded at 4 MiB, with at most 256 retained children and 256 captured joins. These
 are storage bounds, not concurrency slots; exceeding required capacity blocks
 rather than dropping authority. The matching read/update adapters own independent
-records. Private no-follow process locks cover only short read/transition/replace
+records. Current-format authority and Stop facts are required, including immutable
+claim Stop fields; omission is rejected, never defaulted into permission.
+Private no-follow process locks cover only short read/transition/replace
 operations. Bounded conversion/validation/encoding runs on blocking workers; no
 model or tool future runs under a storage lock.
 
@@ -114,7 +116,9 @@ Closed coordination gates retain outcomes without permitting a new model call.
 
 Before an eligible parent generation, the application reconstructs a current-work
 view from durable child/assignment/execution identities, status/gates, fixed joins,
-receipt/source references and required follow-up. It contains no child transcript
+receipt/source references and required follow-up. A child's durable Stop fence is
+explicit even while its status remains Running and its terminal receipt is pending.
+It contains no child transcript
 copy or child-authored authority. The view is bounded at 64 KiB; missing or
 oversized required facts block inference actionably instead of being truncated.
 It is request context, not an unlocked conversation-file control channel, durable
