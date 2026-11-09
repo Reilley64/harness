@@ -6,34 +6,41 @@ use crate::CoordinationGate;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Coordination {
+    pub conversation_id: String,
     pub agent_id: String,
     pub revision: u64,
 
     pub gate: CoordinationGate,
     pub controller: Option<String>,
     pub run_id: Option<String>,
+    pub waiting: bool,
 
     pub children: Vec<ChildExecution>,
     pub joins: Vec<CapturedJoin>,
 }
 
 impl Coordination {
-    pub fn new(agent_id: String) -> Self {
+    pub fn new(conversation_id: String, agent_id: String) -> Self {
         Self {
+            conversation_id,
             agent_id,
             revision: 0,
             gate: CoordinationGate::Open,
             controller: None,
             run_id: None,
+            waiting: false,
             children: Vec::new(),
             joins: Vec::new(),
         }
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.agent_id.is_empty()
+        if self.conversation_id.is_empty()
+            || self.conversation_id.len() > 128
+            || self.agent_id.is_empty()
             || self.agent_id.len() > 128
             || self.controller.is_some() != self.run_id.is_some()
+            || self.waiting && self.controller.is_none()
             || self
                 .controller
                 .as_ref()
@@ -51,7 +58,8 @@ impl Coordination {
         }
         for (index, child) in self.children.iter().enumerate() {
             child.validate()?;
-            if child.parent_id != self.agent_id
+            if child.parent_id != self.conversation_id
+                || child.parent_agent_id != self.agent_id
                 || self.children[..index].iter().any(|prior| {
                     prior.intent == child.intent
                         || prior.assignment_id == child.assignment_id
@@ -142,6 +150,8 @@ impl Coordination {
                     };
                 }
                 if self.gate != CoordinationGate::Open
+                    || self.controller.is_none()
+                    || self.run_id.as_deref() != Some(child.parent_run_id.as_str())
                     || child.status != ChildExecutionStatus::Held
                     || child.outcome.is_some()
                     || child.delivered_to.is_some()
@@ -151,11 +161,37 @@ impl Coordination {
                 }
                 self.children.push(*child);
             }
+            CoordinationCommand::RetainClaim(child) => {
+                if let Some(prior) = self
+                    .children
+                    .iter()
+                    .find(|prior| prior.intent == child.intent)
+                {
+                    return if prior.same_assignment(&child) {
+                        Ok(false)
+                    } else {
+                        Err("Retained claim conflicts with its accepted payload")
+                    };
+                }
+                if child.status != ChildExecutionStatus::Unknown
+                    || child.outcome.is_none()
+                    || child.delivered_to.is_some()
+                    || child.follow_up_completed_by.is_some()
+                {
+                    return Err(
+                        "Held-claim reconciliation must retain an undelivered Unknown receipt without replay",
+                    );
+                }
+                self.children.push(*child);
+            }
             CoordinationCommand::Start {
                 execution_id,
                 controller,
             } => {
-                if self.gate != CoordinationGate::Open {
+                if !matches!(
+                    self.gate,
+                    CoordinationGate::Open | CoordinationGate::NeedsHuman
+                ) {
                     return Err("Child start is gated; retain the claim without replay");
                 }
                 let child = self
@@ -202,7 +238,7 @@ impl Coordination {
             }
             CoordinationCommand::Join(join) => {
                 if let Some(prior) = self.joins.iter().find(|prior| prior.id == join.id) {
-                    return if prior == &join {
+                    return if prior.same_intent(&join) {
                         Ok(false)
                     } else {
                         Err("Join key is already bound to a fixed execution set")
@@ -227,7 +263,14 @@ impl Coordination {
                 }
                 join.backgrounded = true;
             }
-            CoordinationCommand::Acquire { controller, run_id } => {
+            CoordinationCommand::Acquire {
+                agent_id,
+                controller,
+                run_id,
+            } => {
+                if agent_id != self.agent_id {
+                    return Err("Controlling execution belongs to a different durable agent");
+                }
                 if self.gate != CoordinationGate::Open {
                     return Err("Parent execution is gated; inspect without inference");
                 }
@@ -241,6 +284,16 @@ impl Coordination {
                 self.controller = Some(controller);
                 self.run_id = Some(run_id);
             }
+            CoordinationCommand::Wait { controller, run_id } => {
+                self.controls(&controller, &run_id)?;
+                if self.gate != CoordinationGate::Open {
+                    return Err("A closed gate cannot begin a delegated wait");
+                }
+                if self.waiting {
+                    return Ok(false);
+                }
+                self.waiting = true;
+            }
             CoordinationCommand::Deliver {
                 controller,
                 run_id,
@@ -250,7 +303,8 @@ impl Coordination {
                 if !self.eligible(&run_id)? {
                     return Err("Parent delivery is gated or captured join remains pending");
                 }
-                let mut changed = false;
+                let mut changed = self.waiting;
+                self.waiting = false;
                 for id in outcomes {
                     let child = self
                         .children
@@ -304,8 +358,34 @@ impl Coordination {
                 self.controls(&controller, &run_id)?;
                 self.controller = None;
                 self.run_id = None;
+                self.waiting = false;
             }
-            CoordinationCommand::Gate { gate } => {
+            CoordinationCommand::Gate {
+                gate,
+                controller,
+                run_id,
+            } => {
+                if gate == CoordinationGate::Open {
+                    if controller.is_some()
+                        || run_id.is_some()
+                        || self.controller.is_some()
+                        || !matches!(
+                            self.gate,
+                            CoordinationGate::Open | CoordinationGate::NeedsHuman
+                        )
+                    {
+                        return Err(
+                            "Opening a parent gate requires a fresh eligible prompt admission",
+                        );
+                    }
+                } else {
+                    self.controls(
+                        controller
+                            .as_deref()
+                            .ok_or("Closing gate controller is missing")?,
+                        run_id.as_deref().ok_or("Closing gate run is missing")?,
+                    )?;
+                }
                 if self.gate == gate {
                     return Ok(false);
                 }

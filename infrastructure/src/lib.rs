@@ -25,6 +25,7 @@ pub mod read_coordination;
 pub mod read_decider;
 pub mod read_decision;
 pub mod read_directory;
+pub mod read_execution_claim;
 pub mod read_file;
 pub mod read_instructions;
 pub mod read_model_allowlist;

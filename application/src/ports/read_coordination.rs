@@ -5,4 +5,4 @@ use crate::ports::PortFuture;
 #[display("failed to read coordination")]
 pub struct ReadCoordinationError;
 
-port! { pub ReadCoordination(agent_id: String,) -> PortFuture<Result<Option<domain::Coordination>, ReadCoordinationError>>; }
+port! { pub ReadCoordination(conversation_id: String,) -> PortFuture<Result<Option<domain::Coordination>, ReadCoordinationError>>; }

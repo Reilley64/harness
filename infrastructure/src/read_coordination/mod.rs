@@ -31,7 +31,7 @@ pub fn read_coordination(
             tokio::task::spawn_blocking(move || {
                 let coordination: domain::Coordination =
                     serde_json::from_slice::<Record>(&bytes)?.try_into()?;
-                if coordination.agent_id != id {
+                if coordination.conversation_id != id {
                     return Err("Coordination identity differs from its file".into());
                 }
                 Ok(Some(coordination))

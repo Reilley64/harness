@@ -6,6 +6,7 @@ use crate::instructions;
 #[serde(deny_unknown_fields)]
 pub(super) struct Record {
     format: u32,
+    conversation_id: String,
     agent_id: String,
     revision: u64,
 
@@ -13,6 +14,7 @@ pub(super) struct Record {
 
     controller: Option<String>,
     run_id: Option<String>,
+    waiting: bool,
 
     children: Vec<ChildRecord>,
     joins: Vec<JoinRecord>,
@@ -27,6 +29,7 @@ struct ChildRecord {
     execution_id: String,
 
     parent_id: String,
+    parent_agent_id: String,
     parent_run_id: String,
     parent_revision: u64,
 
@@ -254,6 +257,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             &value.agent_id,
             &value.execution_id,
             &value.parent_id,
+            &value.parent_agent_id,
             &value.parent_run_id,
             &value.controller,
         ] {
@@ -265,6 +269,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             agent_id: value.agent_id,
             execution_id: value.execution_id,
             parent_id: value.parent_id,
+            parent_agent_id: value.parent_agent_id,
             parent_run_id: value.parent_run_id,
             parent_revision: value.parent_revision,
             parent_selection: value.parent_selection.try_into()?,
@@ -311,14 +316,16 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
 impl TryFrom<Record> for domain::Coordination {
     type Error = Error;
     fn try_from(value: Record) -> Result<Self, Error> {
-        if value.format != 1 {
+        if value.format != 2 {
             return Err(
                 "Unsupported coordination format; preserve records and use a compatible executable"
                     .into(),
             );
         }
+        conversations::validate_id(&value.conversation_id)?;
         conversations::validate_id(&value.agent_id)?;
         let coordination = Self {
+            conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
             gate: match value.gate.as_str() {
@@ -332,6 +339,7 @@ impl TryFrom<Record> for domain::Coordination {
             },
             controller: value.controller,
             run_id: value.run_id,
+            waiting: value.waiting,
             children: value
                 .children
                 .into_iter()

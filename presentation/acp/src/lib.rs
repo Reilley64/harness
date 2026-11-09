@@ -161,7 +161,19 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 let d = read_children.clone();
                 connection.spawn(async move {
                     match application::use_cases::read_children::call(d, request.session_id).await {
-                        Ok(output) => responder.respond(children::Response { coordination: output.coordination.as_ref().map(children::summary), execution: None, result: None }),
+                        Ok(output) => {
+                            let response = tokio::task::spawn_blocking(move || {
+                                let mut coordination = output.coordination.as_ref().map(children::summary);
+                                if let Some(coordination) = &mut coordination {
+                                    coordination["sessionRevision"] = serde_json::json!(output.session_revision);
+                                }
+                                children::Response { coordination, execution: None, result: None }
+                            }).await;
+                            match response {
+                                Ok(response) => responder.respond(response),
+                                Err(error) => responder.respond_with_error(conversations::error(error)),
+                            }
+                        }
                         Err(error) => responder.respond_with_error(conversations::error(error)),
                     }
                 })

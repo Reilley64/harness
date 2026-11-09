@@ -136,6 +136,7 @@ pub(super) struct Record {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ResearchRecord {
     parent_id: String,
+    parent_agent_id: String,
     intent: String,
 
     assignment_id: String,
@@ -189,6 +190,7 @@ impl From<domain::Conversation> for Record {
             },
             research: conversation.research.map(|value| ResearchRecord {
                 parent_id: value.parent_id,
+                parent_agent_id: value.parent_agent_id,
                 intent: value.intent,
                 assignment_id: value.assignment_id,
                 execution_id: value.execution_id,
@@ -641,6 +643,7 @@ impl TryFrom<Record> for domain::Conversation {
         }
         let research = dto.research.map(|value| domain::ResearchAssignment {
             parent_id: value.parent_id,
+            parent_agent_id: value.parent_agent_id,
             intent: value.intent,
             assignment_id: value.assignment_id,
             execution_id: value.execution_id,
@@ -656,13 +659,15 @@ impl TryFrom<Record> for domain::Conversation {
         if let Some(research) = &research {
             for id in [
                 &research.parent_id,
+                &research.parent_agent_id,
                 &research.intent,
                 &research.assignment_id,
                 &research.execution_id,
             ] {
                 conversations::validate_id(id)?;
             }
-            if research.parent_id == dto.id
+            if agent.as_ref().is_none_or(|agent| agent.id.0 != dto.id)
+                || research.parent_id == dto.id
                 || instruction_snapshots
                     .iter()
                     .any(|snapshot| snapshot.phase != "research")

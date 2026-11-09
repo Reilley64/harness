@@ -14,6 +14,13 @@ pub struct CapturedJoin {
 }
 
 impl CapturedJoin {
+    pub fn same_intent(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.run_id == other.run_id
+            && self.mode == other.mode
+            && self.executions == other.executions
+    }
+
     pub fn ready(&self, children: &[ChildExecution]) -> Result<bool, &'static str> {
         let mut completed = 0;
         for id in &self.executions {

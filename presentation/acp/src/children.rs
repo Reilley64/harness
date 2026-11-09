@@ -86,7 +86,8 @@ pub(crate) fn execution(child: &domain::ChildExecution) -> serde_json::Value {
         "assignmentId": child.assignment_id,
         "agentId": child.agent_id,
         "executionId": child.execution_id,
-        "creatorId": child.parent_id,
+        "creatorId": child.parent_agent_id,
+        "parentConversationId": child.parent_id,
         "parentRunId": child.parent_run_id,
         "parentRevision": child.parent_revision,
         "workId": child.work_id,
@@ -108,9 +109,11 @@ pub(crate) fn execution(child: &domain::ChildExecution) -> serde_json::Value {
 pub(crate) fn summary(state: &domain::Coordination) -> serde_json::Value {
     serde_json::json!({
         "agentId": state.agent_id,
+        "conversationId": state.conversation_id,
         "revision": state.revision,
         "gate": match state.gate { domain::CoordinationGate::Open => "open", domain::CoordinationGate::NeedsHuman => "needs_human", domain::CoordinationGate::Approval => "approval", domain::CoordinationGate::Stopped => "stopped", domain::CoordinationGate::ResumeRequired => "resume_required", domain::CoordinationGate::Unknown => "unknown" },
         "runId": state.run_id,
+        "status": match state.gate { domain::CoordinationGate::Open => if state.waiting { "waiting" } else if state.controller.is_some() { "running" } else { "ready" }, domain::CoordinationGate::NeedsHuman => "needs_human", domain::CoordinationGate::Approval => "approval", domain::CoordinationGate::Stopped => "stopped", domain::CoordinationGate::ResumeRequired => "resume_required", domain::CoordinationGate::Unknown => "unknown" },
         "settled": state.settled(),
         "children": state.children.iter().map(execution).collect::<Vec<_>>(),
         "joins": state.joins.iter().map(|join| serde_json::json!({ "id": join.id, "runId": join.run_id, "mode": match join.mode { domain::JoinMode::Any => "any", domain::JoinMode::All => "all" }, "executions": join.executions, "backgrounded": join.backgrounded })).collect::<Vec<_>>(),

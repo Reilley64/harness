@@ -866,7 +866,7 @@ async fn execute(
         Ok(match invocation {
             domain::ToolInvocation::DispatchResearch(brief, routed) => {
                 let output = create_dispatch::call(create_dispatch::Dependencies { worker: dependencies.clone() }, sender_id.into(), parent_revision, brief, routed, cancellation).await?;
-                domain::ToolResult::success(format!("ACCEPTED child {} assignment {} execution {} intent {} status {:?}. Reused: {}. Research continues independently; inspect read_children, join_children, background_children or read_child_result. Receipt and response are not parent settlement.", output.execution.agent_id, output.execution.assignment_id, output.execution.execution_id, output.execution.intent, output.execution.status, !output.accepted))
+                domain::ToolResult::success(format!("ACCEPTED child {} assignment {} execution {} intent {} status {:?}. Reused: {}. The durable execution can be inspected with read_children, join_children, background_children or read_child_result. Receipt and response are not parent settlement.", output.execution.agent_id, output.execution.assignment_id, output.execution.execution_id, output.execution.intent, output.execution.status, !output.accepted))
             }
             domain::ToolInvocation::ControlChildren(control) => {
                 let output = update_children::call(update_children::Dependencies {
@@ -877,7 +877,7 @@ async fn execute(
                 domain::ToolResult::success(format!("Durable child control accepted at coordination revision {}. Child execution identities and progress are unchanged.", output.coordination.revision))
             }
             domain::ToolInvocation::ReadChildren => {
-                let output = read_children::call(read_children::Dependencies { read_coordination: dependencies.read_coordination.clone() }, sender_id.into()).await?;
+                let output = read_children::call(read_children::Dependencies { read_coordination: dependencies.read_coordination.clone(), read_conversation: dependencies.read_conversation.clone() }, sender_id.into()).await?;
                 domain::ToolResult::success(output.current_work.unwrap_or_else(|| "No accepted child work.".into()))
             }
             domain::ToolInvocation::ReadChildResult(execution_id) => {

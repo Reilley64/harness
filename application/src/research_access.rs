@@ -32,7 +32,8 @@ pub async fn read(
         .iter()
         .find(|child| child.intent == research.intent)
         .ok_or("Research execution claim is missing")?;
-    if child.agent_id != id
+    if child.parent_agent_id != research.parent_agent_id
+        || child.agent_id != id
         || child.assignment_id != research.assignment_id
         || child.execution_id != research.execution_id
         || child.status != domain::ChildExecutionStatus::Running
@@ -45,28 +46,19 @@ pub async fn read(
     {
         return Err("Research selection, execution or captured guidance changed; inspect without replacement".into());
     }
+    authorize(work, child).await
+}
+
+pub(crate) async fn authorize(
+    work: &ports::ReadWork,
+    child: &domain::ChildExecution,
+) -> Result<(), Error> {
     if let Some(work_id) = &child.work_id {
         let work = work
             .call(work_id.clone())
             .await?
             .ok_or("Approved Research work is unavailable")?;
-        let approval = work.authorize(
-            child
-                .work_intent
-                .as_deref()
-                .ok_or("Research approval intent is missing")?,
-            child
-                .work_version
-                .as_deref()
-                .ok_or("Research work version is missing")?,
-        )?;
-        if approval.coordinator_id != child.parent_id
-            || Some(approval.approved_at) != child.approved_at
-        {
-            return Err(
-                "Research approval differs from the exact accepted parent authority".into(),
-            );
-        }
+        child.authorize_work(&work)?;
     }
     Ok(())
 }

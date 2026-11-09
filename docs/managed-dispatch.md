@@ -46,7 +46,8 @@ an adoption workflow. Active instruction snapshots never change automatically.
 
 ## Claims, joins and receipts
 
-`APP_DATA_PATH/coordination/<agent UUID>.json` is an independent format-one record,
+`APP_DATA_PATH/coordination/<parent conversation UUID>.json` is an independent
+format-two record containing the distinct durable agent and conversation IDs,
 bounded at 4 MiB, with at most 256 retained children and 256 captured joins. These
 are storage bounds, not concurrency slots; exceeding required capacity blocks
 rather than dropping authority. The matching read/update adapters own independent
@@ -62,7 +63,7 @@ it is never treated as proof of unsent work or silently replayed.
 
 Claims persist before a real child future starts. Each child has a stable
 controlling execution identity. Parent coordination has its own controller/run
-association. Transitions validate ownership and advance the durable revision.
+association and records Waiting before suspension and Running before generation. Transitions validate ownership and advance the durable revision.
 Same-key receipt retries are deduplicated; changed outcomes conflict. Distinct
 child claims and receipts apply to fresh locked state rather than overwriting a
 stale whole-record snapshot. There is no repository-wide scheduler or fleet cap.
@@ -75,6 +76,11 @@ children. Tool acknowledgement is checkpointed before the runtime suspends the
 same parent run. No long provider tool-result wait or inference polling implements
 the join. Suspended time is excluded from the parent's active-turn deadline;
 individual model/tool limits and the normal generation budget remain in force.
+
+Research execution cancellation is independent of a completed parent prompt's
+transport lifetime. A parent NeedsHuman boundary does not cancel unaffected
+children. Live workers observe the durable parent Stop gate without provider
+polling; already-known completed reports and uncertain effects remain distinct.
 
 A child outcome is written independently while the parent is busy. Receipt,
 delivery to a parent run and required follow-up completion are separate facts.
@@ -112,21 +118,26 @@ provenance. Existing Setup/Griller/CoS mutations continue to write schema six;
 versions one through six, private continuation, canonical ownership, usage,
 instruction snapshots and exact approved-work authority remain readable.
 Older executables reject schema-seven Research records rather than inventing a
-legacy association or destructively downmigrating them. Coordination format one
+legacy association or destructively downmigrating them. Coordination format two
 is additive; no existing provider, preference, decision or approved-work records
-are rewritten by its creation. The native decision record remains schema one.
+are rewritten by its creation. The native decision record remains schema one. Earlier unaccepted development
+coordination/claim format-one records are rejected unchanged rather than inferring
+missing durable agent-versus-conversation identity or downmigrating them.
 
 A held or running claim is not proof that a request was unsent. PID death or an
 expired heartbeat cannot authorize replay. Reopening does not launch an accepted
 child again. Normal leaf recovery retains uncertain effects and requires explicit
-Resume. Complete held-claim reconciliation, cross-process wake/restart integration,
-subtree Stop and later-run/input integration are not implemented by this candidate;
+Resume. Exact-key orphan inspection retains an Unknown receipt without rechecking a new
+worker selection or launching a future. Complete claim discovery/reconciliation,
+cross-process wake/restart integration, subtree Stop and later-run/input
+integration are not implemented by this candidate;
 HARNESS-30 owns their remaining composition. The available parent wait loop is
 not evidence that all idle-process/restart wake arbitration has been completed.
 
-The initial controlled development probe exercises real Rust A/tool-write/held
-inference, a useful parent response and B before A finishes, current-work request
-capture and separate receipt/delivery/follow-up. It substitutes only loopback
-catalog/provider responses and synthetic provider credentials. It is not final
-qualification, CoS/native-routing coverage, multiprocess arbitration, SDK/Ink
-launcher evidence, live quality, paid access or whole-MVP acceptance.
+Controlled development probes exercise real Rust workers and tool writes across
+competing backend processes, fixed joins/backgrounding, parent input boundaries,
+exact-key orphan inspection and separate receipt/delivery/follow-up. Only loopback
+catalog/provider responses and synthetic credentials are substituted. These are
+not final qualification, CoS/native-routing coverage, full restart/wake
+arbitration, SDK/Ink launcher evidence, live quality, paid access or whole-MVP
+acceptance.

@@ -1,3 +1,4 @@
+use crate::ApprovedWork;
 use crate::AssignmentBrief;
 use crate::ChildExecutionStatus;
 use crate::ChildOutcome;
@@ -13,6 +14,7 @@ pub struct ChildExecution {
     pub execution_id: String,
 
     pub parent_id: String,
+    pub parent_agent_id: String,
     pub parent_run_id: String,
     pub parent_revision: u64,
 
@@ -39,12 +41,40 @@ pub struct ChildExecution {
 }
 
 impl ChildExecution {
+    pub fn authorize_work(&self, work: &ApprovedWork) -> Result<(), &'static str> {
+        if self.work_id.as_deref() != Some(work.id.as_str()) {
+            return Err("Research work differs from its accepted authority");
+        }
+        let approval = work.authorize(
+            self.work_intent
+                .as_deref()
+                .ok_or("Research approval intent is missing")?,
+            self.work_version
+                .as_deref()
+                .ok_or("Research work version is missing")?,
+        )?;
+        if approval.coordinator_id != self.parent_id
+            || Some(approval.approved_at) != self.approved_at
+        {
+            return Err("Research approval differs from the exact accepted parent authority");
+        }
+        Ok(())
+    }
+
+    pub fn matches_request(&self, parent_id: &str, brief: &AssignmentBrief, routed: bool) -> bool {
+        self.parent_id == parent_id
+            && self.intent == brief.intent
+            && self.brief == *brief
+            && self.routed == routed
+    }
+
     pub fn same_assignment(&self, other: &Self) -> bool {
         self.intent == other.intent
             && self.assignment_id == other.assignment_id
             && self.agent_id == other.agent_id
             && self.execution_id == other.execution_id
             && self.parent_id == other.parent_id
+            && self.parent_agent_id == other.parent_agent_id
             && self.parent_run_id == other.parent_run_id
             && self.parent_revision == other.parent_revision
             && self.parent_selection == other.parent_selection
@@ -72,6 +102,7 @@ impl ChildExecution {
                 &self.agent_id,
                 &self.execution_id,
                 &self.parent_id,
+                &self.parent_agent_id,
                 &self.parent_run_id,
                 &self.parent_connection_id,
                 &self.controller,

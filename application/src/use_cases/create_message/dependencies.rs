@@ -16,6 +16,7 @@ use crate::ports::UpdateModelSelection;
 pub struct Dependencies {
     pub(crate) create_research: ports::CreateResearch,
     pub(crate) read_coordination: ports::ReadCoordination,
+    pub(crate) read_execution_claim: ports::ReadExecutionClaim,
     pub(crate) update_coordination: ports::UpdateCoordination,
     pub(crate) read_decision: ports::ReadDecision,
 

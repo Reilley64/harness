@@ -1,5 +1,6 @@
 use super::Dependencies;
 use super::Error;
+use crate::error_context::ErrorContext;
 use crate::ports::UpdateCoordination;
 use crate::turn_control::SteeringRequest;
 use crate::use_cases::read_children;
@@ -49,6 +50,8 @@ pub(super) async fn claim(
                 conversation.id.clone(),
                 domain::CoordinationCommand::Gate {
                     gate: domain::CoordinationGate::Open,
+                    controller: None,
+                    run_id: None,
                 },
                 coordination.as_ref().map(|state| state.revision),
                 cancellation.clone(),
@@ -56,6 +59,28 @@ pub(super) async fn claim(
             .await
             .map_err(Error::caused_by)?;
         coordination = Some(response.coordination);
+    }
+    if coordination.is_none()
+        && conversation
+            .messages
+            .iter()
+            .flat_map(|message| &message.steps)
+            .flat_map(|step| &step.calls)
+            .any(|call| {
+                call.name == domain::Tool::DispatchResearch.as_str()
+                    && !matches!(
+                        call.status,
+                        domain::ToolStatus::Draft
+                            | domain::ToolStatus::Requested
+                            | domain::ToolStatus::Invalid
+                            | domain::ToolStatus::Skipped
+                    )
+            })
+    {
+        return Err(Error::caused_by(ErrorContext::caused_by(
+            "Required child coordination is missing. Retain and inspect the durable execution claims before continuing; no empty child view was substituted.",
+            "Conversation records an admitted managed dispatch without its coordination authority",
+        )));
     }
     let controller = coordination
         .as_ref()
@@ -66,6 +91,13 @@ pub(super) async fn claim(
         .call(
             conversation.id.clone(),
             domain::CoordinationCommand::Acquire {
+                agent_id: conversation
+                    .agent
+                    .as_ref()
+                    .ok_or_else(|| Error::caused_by("Parent agent identity is missing"))?
+                    .id
+                    .0
+                    .clone(),
                 controller: controller.clone(),
                 run_id: run_id.clone(),
             },
@@ -85,7 +117,7 @@ async fn transition(
 ) -> Result<domain::Coordination, Error> {
     Ok(update
         .call(
-            state.agent_id.clone(),
+            state.conversation_id.clone(),
             command,
             Some(state.revision),
             cancellation.clone(),
@@ -219,6 +251,18 @@ pub(super) async fn wait(
         {
             return Ok(false);
         }
+        if !state.waiting {
+            transition(
+                &d.update_coordination,
+                &state,
+                domain::CoordinationCommand::Wait {
+                    controller: lease.controller.clone(),
+                    run_id: lease.run_id.clone(),
+                },
+                cancellation,
+            )
+            .await?;
+        }
         tokio::select! {
             _ = cancellation.cancelled() => return Ok(false),
             Some(request) = steering.recv() => {
@@ -269,7 +313,11 @@ pub(super) async fn release(
     let state = transition(
         &d.update_coordination,
         &state,
-        domain::CoordinationCommand::Gate { gate },
+        domain::CoordinationCommand::Gate {
+            gate,
+            controller: Some(controller.clone()),
+            run_id: Some(run_id.clone()),
+        },
         &token,
     )
     .await?;

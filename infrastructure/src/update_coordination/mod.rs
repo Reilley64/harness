@@ -120,41 +120,47 @@ pub fn update_coordination(
             let (response, encoded) = tokio::task::spawn_blocking(move || {
                 let mut coordination: domain::Coordination = match bytes {
                     Some(bytes) => serde_json::from_slice::<Record>(&bytes)?.try_into()?,
-                    None => domain::Coordination::new(id.clone()),
+                    None => {
+                        let agent_id = match &command {
+                            domain::CoordinationCommand::Acquire { agent_id, .. } => agent_id.clone(),
+                            domain::CoordinationCommand::RetainClaim(child) => child.parent_agent_id.clone(),
+                            _ => return Err::<_, Error>("Parent coordination must first be admitted by its actual active execution".into()),
+                        };
+                        let mut coordination = domain::Coordination::new(id.clone(), agent_id);
+                        if matches!(&command, domain::CoordinationCommand::RetainClaim(_)) { coordination.gate = domain::CoordinationGate::Unknown; }
+                        coordination
+                    }
                 };
-                if coordination.agent_id != id {
+                if coordination.conversation_id != id {
                     return Err::<_, Error>("Coordination identity differs from its file".into());
                 }
                 let expected = (coordination.revision != 0).then_some(coordination.revision);
-                let independent = matches!(&command, domain::CoordinationCommand::Dispatch(_) | domain::CoordinationCommand::Start { .. } | domain::CoordinationCommand::Receive { .. } | domain::CoordinationCommand::CompleteFollowUp { .. } | domain::CoordinationCommand::Release { .. });
+                let independent = matches!(&command, domain::CoordinationCommand::Dispatch(_) | domain::CoordinationCommand::Start { .. } | domain::CoordinationCommand::Receive { .. } | domain::CoordinationCommand::CompleteFollowUp { .. } | domain::CoordinationCommand::Release { .. } | domain::CoordinationCommand::Wait { .. } | domain::CoordinationCommand::Gate { .. } | domain::CoordinationCommand::RetainClaim(_));
                 if matches!(&command, domain::CoordinationCommand::Deliver { .. }) && revision != expected {
                     return Err(RevisionConflict::caused_by("Current-work delivery revision changed before admission").into());
                 }
-                let dispatch = match &command {
-                    domain::CoordinationCommand::Dispatch(child) => Some((child.execution_id.clone(), child.controller.clone(), child.agent_id.clone())),
-                    _ => None,
-                };
-                let changed = coordination.apply(command)?;
-                let claimed = changed && fresh_intent && dispatch.is_some();
-                if !changed {
-                    return Ok((CoordinationResponse { coordination, changed, claimed }, None));
-                }
-                if let Some((execution_id, controller, conversation_id)) = dispatch
-                    && !fresh_intent
-                {
-                    coordination.apply(domain::CoordinationCommand::Receive {
-                        execution_id: execution_id.clone(),
-                        controller,
-                        outcome: domain::ChildOutcome {
-                            id: execution_id,
+                let command = match command {
+                    domain::CoordinationCommand::Dispatch(mut child)
+                        if !fresh_intent && !coordination.children.iter().any(|prior| prior.intent == child.intent) => {
+                        child.status = domain::ChildExecutionStatus::Unknown;
+                        child.outcome = Some(domain::ChildOutcome {
+                            id: child.execution_id.clone(),
                             status: domain::ChildExecutionStatus::Unknown,
-                            conversation_id,
+                            conversation_id: child.agent_id.clone(),
                             run_id: None,
                             reply_id: None,
                             summary: "A durable execution claim exists without its parent admission record. No child was replayed. Inspect and explicitly reconcile; process death, a missing record or a heartbeat is not proof of unsent effects.".into(),
                             artifacts: Vec::new(),
-                        },
-                    })?;
+                        });
+                        domain::CoordinationCommand::RetainClaim(child)
+                    }
+                    command => command,
+                };
+                let dispatch = matches!(&command, domain::CoordinationCommand::Dispatch(_));
+                let changed = coordination.apply(command)?;
+                let claimed = changed && fresh_intent && dispatch;
+                if !changed {
+                    return Ok((CoordinationResponse { coordination, changed, claimed }, None));
                 }
                 if revision != expected && !independent {
                     return Err(RevisionConflict::caused_by("Coordination changed; inspect its current revision before another transition").into());

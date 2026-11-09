@@ -75,47 +75,38 @@ processing modes, cache writes and other fees may differ. See
 
 ## Catalog caches
 
-Model/provider catalogs retain their TTL memory cache and remote-first disk
-fallback. The model adapter reads only the Harness-owned JSON catalog at
-`MODELS__URL`, with embedded configuration and environment overrides. All provider
-identities use that one response format and the existing `models.json` cache.
-There is no secondary OpenRouter catalog request, import, merge or fallback;
-obsolete extra environment settings have no effect. Existing secondary cache files
-are neither read nor removed. `server/models.json` contains curated static entries
-from the public OpenAI, Anthropic, xAI and TypeSafe author namespaces on OpenRouter,
-plus the original four direct-OpenAI entries. Public metadata was consulted only
-at development time, including the TypeSafe Decisions catalog and verified latest
-alias; catalog reads and provider connects never refresh it from OpenRouter or
-invoke a model. Catalog presence/parameter support never proves account access,
-inference quality or actual execution. Remote bodies, fallback files, and encoded
-cache files each have a 16 MiB limit, checked before parsing or growing the encoded buffer past that
-limit. Both advertised HTTP lengths and streamed chunks are bounded. Parsing,
-cache encoding, memory-cache cloning, and domain conversion run on blocking
-workers. Each catalog adapter owns its response/cache representation.
+The closure-backed catalog ports use the infrastructure HTTP reader composed with
+`with_memory_cache` and `with_file_fallback`. Each adapter owns its response/cache
+representation. `MODELS__URL` is the sole model source: there is no secondary
+OpenRouter request, import, merge or fallback. Obsolete extra environment settings
+have no effect; existing secondary cache files are neither read nor removed.
 
-Cache writes are optional, private, and atomic; a failed cache write does not
-invalidate a successful remote read. Invalid, unsafe, or oversized fallback files
-are rejected. User-facing failures use fixed catalog context labels, and optional
-cache-write warnings contain no raw errors, URLs, paths, or response content.
+- Port clones share a memory cache, with a 300-second default TTL. A miss or expiry
+  fetches the configured URL with a 10-second timeout; concurrent reads share one
+  refresh.
+- Successful responses update memory and atomically replace the optional private
+  disk cache. Persistence failures retain fetched data and emit only a fixed
+  tracing warning, with no raw error, URL, path or response content.
+- Connection, HTTP and JSON failures fall back to disk regardless of cache age.
+  Fallback results enter memory for the configured TTL. If both sources fail,
+  return an error; an empty array remains a valid result.
+- Remote bodies, fallback files and encoded caches each have a 16 MiB limit,
+  checked before parsing or growing the encoded buffer past the limit. Advertised
+  lengths and streamed chunks are bounded. Parsing, encoding, memory-cache cloning
+  and domain conversion run on blocking workers. Unsafe or oversized fallback
+  files are rejected.
+- Default disk paths are `~/.harness/providers.json` and `~/.harness/models.json`,
+  derived from `app_data_path`. A leading `~` expands from `HOME`; relative
+  configured paths resolve against the working directory.
+
+Public catalog metadata does not prove entitlement, quality or execution.
+Catalog reads and provider connects never invoke a model or refresh the static
+snapshot from OpenRouter.
 
 ## Reading and caching
 
-- The application exposes a closure-backed `ReadProviders` port. Infrastructure
-  constructs the HTTP reader with a function. The `fundle` builder composes generic
-  `with_memory_cache` and `with_file_fallback` wrappers around it before passing the
-  port to the `read_providers` use case.
-- Port clones share a memory cache, valid for five minutes by default.
-- On a miss or expiry, fetch the URL (10-second timeout). Concurrent reads share
-  one refresh.
-- Successful responses update memory and atomically replace the disk cache.
-  Persistence failures emit a tracing warning but do not discard fetched data.
-- Connection, HTTP, and JSON errors fall back to the disk file regardless of age.
-  Fallback results also enter memory for the configured TTL.
-- If both sources fail, return an error. An empty array is a valid result.
-- The default disk path is `~/.harness/providers.json`; a leading `~` is expanded
-  from `HOME`. Relative configured paths are relative to the working directory.
-
-Local verification follows the [focused-check/CI policy](ci.md), not a full local suite per edit.
+See [Catalog caches](#catalog-caches) for refresh, fallback and bounds.
+Local verification follows the [focused-check/CI policy](ci.md).
 
 ## Provider authentication settings
 

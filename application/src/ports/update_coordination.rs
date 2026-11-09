@@ -23,4 +23,4 @@ pub struct Response {
     pub claimed: bool,
 }
 
-port! { pub UpdateCoordination(agent_id: String, command: domain::CoordinationCommand, revision: Option<u64>, cancellation: tokio_util::sync::CancellationToken,) -> PortFuture<Result<Response, UpdateCoordinationError>>; }
+port! { pub UpdateCoordination(conversation_id: String, command: domain::CoordinationCommand, revision: Option<u64>, cancellation: tokio_util::sync::CancellationToken,) -> PortFuture<Result<Response, UpdateCoordinationError>>; }

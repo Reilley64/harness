@@ -17,6 +17,7 @@ use crate::read_coordination;
 use crate::read_decider;
 use crate::read_decision;
 use crate::read_directory;
+use crate::read_execution_claim;
 use crate::read_file;
 use crate::read_instructions;
 use crate::read_model_allowlist;
@@ -57,6 +58,7 @@ pub struct Dependencies {
     create_assignment: application::use_cases::create_assignment::Dependencies,
     create_research: ports::CreateResearch,
     read_coordination: ports::ReadCoordination,
+    read_execution_claim: ports::ReadExecutionClaim,
     update_coordination: ports::UpdateCoordination,
     read_decision: ports::ReadDecision,
     update_decision: ports::UpdateDecision,
@@ -185,6 +187,16 @@ impl Dependencies {
                 );
                 ports::ReadCoordination::new(move |id| {
                     let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_execution_claim(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_execution_claim::read_execution_claim(
+                    &settings.app_data_path.join("coordination").join("intents"),
+                );
+                ports::ReadExecutionClaim::new(move |intent, cancellation| {
+                    let result = implementation(intent, cancellation);
                     Box::pin(async move { Ok(result.await?) })
                 })
             })

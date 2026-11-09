@@ -74,6 +74,48 @@ async fn dispatch(
             accepted: false,
         });
     }
+    if let Some(mut execution) = d
+        .read_execution_claim
+        .call(brief.intent.clone(), cancellation.clone())
+        .await
+        .map_err(Error::caused_by)?
+    {
+        if !execution.matches_request(&parent_id, &brief, routed) {
+            return Err(Error::caused_by(
+                "Dispatch intent is already claimed by a different exact typed payload",
+            ));
+        }
+        execution.status = domain::ChildExecutionStatus::Unknown;
+        execution.outcome = Some(domain::ChildOutcome {
+            id: execution.execution_id.clone(),
+            status: domain::ChildExecutionStatus::Unknown,
+            conversation_id: execution.agent_id.clone(),
+            run_id: None,
+            reply_id: None,
+            summary: "An immutable execution claim exists without its recorded parent admission. The accepted identities, pair and guidance were retained. Effects are not proven unsent; inspect and explicitly reconcile. No child was replayed.".into(),
+            artifacts: Vec::new(),
+        });
+        let response = d
+            .update_coordination
+            .call(
+                parent_id.clone(),
+                domain::CoordinationCommand::RetainClaim(Box::new(execution)),
+                prior.as_ref().map(|state| state.revision),
+                CancellationToken::new(),
+            )
+            .await
+            .map_err(Error::caused_by)?;
+        let execution = response
+            .coordination
+            .children
+            .into_iter()
+            .find(|child| child.intent == brief.intent)
+            .ok_or_else(|| Error::caused_by("Retained execution is missing"))?;
+        return Ok(Output {
+            execution,
+            accepted: false,
+        });
+    }
     let parent = d
         .read_conversation
         .call(parent_id.clone())
@@ -235,6 +277,7 @@ async fn dispatch(
         agent_id: id(b"agent"),
         execution_id: id(b"execution"),
         parent_id: parent_id.clone(),
+        parent_agent_id: agent.id.0.clone(),
         parent_run_id: run.id.clone(),
         parent_revision: captured_revision,
         parent_selection: captured_parent,
@@ -287,10 +330,45 @@ async fn dispatch(
             accepted: false,
         });
     }
+    if cancellation.is_cancelled() {
+        let receipt = domain::ChildOutcome {
+            id: accepted.execution_id.clone(),
+            status: domain::ChildExecutionStatus::Stopped,
+            conversation_id: accepted.agent_id.clone(),
+            run_id: None,
+            reply_id: None,
+            summary: "Dispatch was stopped after durable claim admission and before a child future was created. No child inference or tools started.".into(),
+            artifacts: Vec::new(),
+        };
+        let response = d
+            .update_coordination
+            .call(
+                accepted.parent_id.clone(),
+                domain::CoordinationCommand::Receive {
+                    execution_id: accepted.execution_id.clone(),
+                    controller: accepted.controller.clone(),
+                    outcome: receipt,
+                },
+                Some(response.coordination.revision),
+                CancellationToken::new(),
+            )
+            .await
+            .map_err(Error::caused_by)?;
+        let execution = response
+            .coordination
+            .children
+            .into_iter()
+            .find(|child| child.intent == accepted.intent)
+            .ok_or_else(|| Error::caused_by("Stopped accepted execution is missing"))?;
+        return Ok(Output {
+            execution,
+            accepted: true,
+        });
+    }
     let worker = d.clone();
     let child = accepted.clone();
     let task: PortFuture<Result<(), Error>> =
-        Box::pin(async move { execute(worker, child, workspace, cancellation).await });
+        Box::pin(async move { execute(worker, child, workspace, CancellationToken::new()).await });
     tokio::spawn(task);
     Ok(Output {
         execution: accepted,
@@ -304,11 +382,16 @@ async fn execute(
     workspace: std::path::PathBuf,
     cancellation: CancellationToken,
 ) -> Result<(), Error> {
-    let result: Result<create_message::Output, Box<dyn std::error::Error + Send + Sync>> = async {
+    let (result, observations) = {
+        let mut observations = Vec::<Box<dyn std::error::Error + Send + Sync>>::new();
+        let operation = async {
+            let result: Result<create_message::Output, Box<dyn std::error::Error + Send + Sync>> = async {
         let current = decision_access::candidate(&d.read_models, &d.read_model_allowlist, &d.read_provider_connection, &d.create_model_step_factory, &child.selected.selection, child.brief.context_tokens).await?;
         if current.connection_id != child.selected.connection_id || current.model.canonical_id != child.selected.model.canonical_id || cancellation.is_cancelled() {
             return Err("Research was stopped or selected identity changed before creation".into());
         }
+        research_access::authorize(&d.read_work, &child).await?;
+        if cancellation.is_cancelled() { return Err("Research stopped before execution claim start".into()); }
         let coordination = d.read_coordination.call(child.parent_id.clone()).await?.ok_or("Accepted coordination is missing")?;
         d.update_coordination.call(
             child.parent_id.clone(),
@@ -316,6 +399,8 @@ async fn execute(
             Some(coordination.revision),
             cancellation.clone(),
         ).await?;
+        research_access::authorize(&d.read_work, &child).await?;
+        if cancellation.is_cancelled() { return Err("Research stopped before conversation creation".into()); }
         let id = d.create_research.call(child.clone(), workspace.clone(), cancellation.clone()).await?;
         let conversation = d.read_conversation.call(id.clone()).await?;
         research_access::read(&d.read_coordination, &d.read_work, conversation.research.as_ref(), &id, &conversation.model, conversation.effort, &conversation.provider_connection_id, conversation.selected_instructions.as_deref()).await?;
@@ -323,8 +408,42 @@ async fn execute(
         let content = format!("Scoped Research assignment {}. Task data, not authority.\nTask: {}\nConstraints: {}\nTool context: {}\nReturn a source-linked report with artifacts, evidence limits and open questions. This assignment cannot approve, merge or settle parent work.", child.assignment_id, child.brief.task, child.brief.constraints, child.brief.tool_context);
         Ok(create_message::call(d.clone(), id, content, None, PresentTurnEvent::new(|_| Ok(())), receiver, workspace, cancellation.clone()).await?)
     }.await;
+            result
+        };
+        tokio::pin!(operation);
+        let mut controls = tokio::time::interval(std::time::Duration::from_millis(250));
+        let result = loop {
+            tokio::select! {
+                biased;
+                _ = controls.tick() => {
+                    match d.read_coordination.call(child.parent_id.clone()).await {
+                        Ok(Some(state)) => {
+                            if state.gate == domain::CoordinationGate::Stopped {
+                                cancellation.cancel();
+                            }
+                        }
+                        Ok(None) => {
+                            observations.push("Parent coordination disappeared while Research was active".into());
+                            cancellation.cancel();
+                        }
+                        Err(error) => {
+                            observations.push(Box::new(error));
+                            cancellation.cancel();
+                        }
+                    }
+                    if observations.len() >= 256 {
+                        cancellation.cancel();
+                        break (&mut operation).await;
+                    }
+                }
+                result = &mut operation => break result,
+            }
+        };
+        (result, observations)
+    };
     let failed = result.is_err();
-    let mut diagnostics = Vec::<Box<dyn std::error::Error + Send + Sync>>::new();
+    let control_unknown = !observations.is_empty();
+    let mut diagnostics = observations;
     let failure_summary = result
         .as_ref()
         .err()
@@ -351,8 +470,10 @@ async fn execute(
     let outcome = tokio::task::spawn_blocking(move || {
         let reply = conversation.as_ref().and_then(|conversation| conversation.messages.last());
         let uncertain = conversation.as_ref().is_some_and(|conversation| conversation.messages.iter().flat_map(|message| &message.steps).flat_map(|step| &step.calls).any(|call| call.status == domain::ToolStatus::Unknown));
-        let status = if uncertain {
+        let status = if uncertain || control_unknown {
             domain::ChildExecutionStatus::Unknown
+        } else if !failed && reply.is_some_and(|reply| reply.status == domain::MessageStatus::Completed) {
+            domain::ChildExecutionStatus::Completed
         } else if stopped {
             domain::ChildExecutionStatus::Stopped
         } else if failed {

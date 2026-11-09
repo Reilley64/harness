@@ -31,6 +31,7 @@ struct AgentRecord {
 #[derive(serde::Serialize)]
 struct ResearchRecord {
     parent_id: String,
+    parent_agent_id: String,
     intent: String,
 
     assignment_id: String,
@@ -105,6 +106,7 @@ impl Record {
             },
             research: ResearchRecord {
                 parent_id: execution.parent_id,
+                parent_agent_id: execution.parent_agent_id,
                 intent: execution.intent,
                 assignment_id: execution.assignment_id,
                 execution_id: execution.execution_id,

@@ -48,14 +48,21 @@ fails through the normal safe conversation error boundary (`-32004`); malformed
 requests use `-32602`.
 
 `execution` has `intent`, `assignmentId`, `agentId`, `executionId`, `creatorId`,
-`parentRunId`, `parentRevision`, nullable `workId`/`workVersion`, `role`, `providerId`,
+`parentConversationId`, `parentRunId`, `parentRevision`, nullable `workId`/`workVersion`, `role`, `providerId`,
 `modelId`, nullable `effort`, `instructions`, `routed`, `status`, nullable
 `outcomeId`, `deliveredTo`, `followUpCompletedBy`, and a `source` conversation URI.
 Status is `held`, `running`, `completed`, `needs_human`, `failed`, `stopped` or
 `unknown`. Creation lineage is separate from actual Stop ownership.
 
-`coordination` has `agentId`, `revision`, `gate`, nullable `runId`, `settled`,
-`children` (execution summaries), and `joins`. A join has `id`, `runId`,
+`coordination` has `agentId`, `conversationId`, `revision`, `gate`, `status`, nullable
+`runId`, `settled`,
+`children` (execution summaries), and `joins`. `status` distinguishes `running`,
+`waiting`, `ready`, `needs_human`, `approval`, `stopped`, `resume_required` and
+`unknown`; these are coordination facts, not independent process-liveness proof.
+`settled` concerns retained child follow-up, never approved-work acceptance.
+Read additionally includes
+`sessionRevision`, the current atomic conversation snapshot revision needed for
+a new dispatch. Reading it does not recover, steer or start a second controller. A join has `id`, `runId`,
 `mode`, fixed `executions` and `backgrounded`. Gate is `open`, `needs_human`,
 `approval`, `stopped`, `resume_required` or `unknown`; these are domain states,
 not a claim that every transition is already integrated in this candidate.
@@ -69,7 +76,7 @@ requires its typed control or `complete_children_followup` tool; neither child
 prose nor the ending of a parent response writes that disposition.
 
 Safe conversation metadata additionally exposes `agent.role: "research"`, its
-actual `creatorId`, and nullable `research: {parentId, intent, assignmentId,
+actual `creatorId`, and nullable `research: {parentId, parentAgentId, intent, assignmentId,
 executionId}`. Research run task is `research`. Existing schema-six Setup/CoS
 metadata and private-state exclusion remain intact.
 

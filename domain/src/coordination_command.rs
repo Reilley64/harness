@@ -6,6 +6,7 @@ use crate::CoordinationGate;
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoordinationCommand {
     Dispatch(Box<ChildExecution>),
+    RetainClaim(Box<ChildExecution>),
     Start {
         execution_id: String,
         controller: String,
@@ -21,6 +22,12 @@ pub enum CoordinationCommand {
         run_id: String,
     },
     Acquire {
+        agent_id: String,
+
+        controller: String,
+        run_id: String,
+    },
+    Wait {
         controller: String,
         run_id: String,
     },
@@ -40,5 +47,8 @@ pub enum CoordinationCommand {
     },
     Gate {
         gate: CoordinationGate,
+
+        controller: Option<String>,
+        run_id: Option<String>,
     },
 }

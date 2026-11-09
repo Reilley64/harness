@@ -26,11 +26,11 @@ pub(super) fn claim(
     }
     if let Some(bytes) = bytes {
         let record: IntentRecord = serde_json::from_slice(&bytes)?;
-        if record.format != 1 {
+        if record.format != 2 {
             return Err("Unsupported execution claim format".into());
         }
         let existing: domain::ChildExecution = record.execution.try_into()?;
-        if !existing.same_assignment(&proposed) {
+        if !existing.matches_request(&proposed.parent_id, &proposed.brief, proposed.routed) {
             return Err(
                 "Dispatch intent is already claimed by a different exact typed payload".into(),
             );
@@ -39,7 +39,7 @@ pub(super) fn claim(
     }
     let bytes = encode_bounded(
         &IntentRecord {
-            format: 1,
+            format: 2,
             execution: proposed.clone().into(),
         },
         4 * 1024 * 1024,
@@ -51,6 +51,7 @@ pub(super) fn claim(
 #[serde(deny_unknown_fields)]
 pub(super) struct Record {
     format: u32,
+    conversation_id: String,
     agent_id: String,
     revision: u64,
 
@@ -58,6 +59,7 @@ pub(super) struct Record {
 
     controller: Option<String>,
     run_id: Option<String>,
+    waiting: bool,
 
     children: Vec<ChildRecord>,
     joins: Vec<JoinRecord>,
@@ -72,6 +74,7 @@ struct ChildRecord {
     execution_id: String,
 
     parent_id: String,
+    parent_agent_id: String,
     parent_run_id: String,
     parent_revision: u64,
 
@@ -388,6 +391,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             &value.agent_id,
             &value.execution_id,
             &value.parent_id,
+            &value.parent_agent_id,
             &value.parent_run_id,
             &value.controller,
         ] {
@@ -399,6 +403,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             agent_id: value.agent_id,
             execution_id: value.execution_id,
             parent_id: value.parent_id,
+            parent_agent_id: value.parent_agent_id,
             parent_run_id: value.parent_run_id,
             parent_revision: value.parent_revision,
             parent_selection: value.parent_selection.try_into()?,
@@ -450,6 +455,7 @@ impl From<domain::ChildExecution> for ChildRecord {
             agent_id: value.agent_id,
             execution_id: value.execution_id,
             parent_id: value.parent_id,
+            parent_agent_id: value.parent_agent_id,
             parent_run_id: value.parent_run_id,
             parent_revision: value.parent_revision,
             parent_selection: value.parent_selection.into(),
@@ -489,14 +495,16 @@ impl From<domain::ChildExecution> for ChildRecord {
 impl TryFrom<Record> for domain::Coordination {
     type Error = Error;
     fn try_from(value: Record) -> Result<Self, Error> {
-        if value.format != 1 {
+        if value.format != 2 {
             return Err(
                 "Unsupported coordination format; preserve records and use a compatible executable"
                     .into(),
             );
         }
+        conversations::validate_id(&value.conversation_id)?;
         conversations::validate_id(&value.agent_id)?;
         let coordination = Self {
+            conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
             gate: match value.gate.as_str() {
@@ -510,6 +518,7 @@ impl TryFrom<Record> for domain::Coordination {
             },
             controller: value.controller,
             run_id: value.run_id,
+            waiting: value.waiting,
             children: value
                 .children
                 .into_iter()
@@ -541,7 +550,8 @@ impl TryFrom<Record> for domain::Coordination {
 impl From<domain::Coordination> for Record {
     fn from(value: domain::Coordination) -> Self {
         Self {
-            format: 1,
+            format: 2,
+            conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
             gate: match value.gate {
@@ -555,6 +565,7 @@ impl From<domain::Coordination> for Record {
             .into(),
             controller: value.controller,
             run_id: value.run_id,
+            waiting: value.waiting,
             children: value.children.into_iter().map(Into::into).collect(),
             joins: value
                 .joins

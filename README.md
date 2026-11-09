@@ -1,8 +1,7 @@
 # Harness
 
 A local Bun/React/Ink coding assistant with a Rust-owned model/tool loop and
-durable conversations. Factory capabilities are delivered incrementally;
-[approved work](docs/approved-work.md), [native selection](docs/native-decider.md)
+durable conversations. [Approved work](docs/approved-work.md), [native selection](docs/native-decider.md)
 and [managed Research](docs/managed-dispatch.md) document their actual boundaries.
 No runtime sandbox, live-provider qualification or whole-MVP completion is implied.
 
@@ -79,4 +78,3 @@ owns presentation architecture.
 
 Use focused local checks for changed work; CI owns whole-project build/test/check
 suites. [CI notes](docs/ci.md) list exact tasks, pins, coverage and PR policy.
-No permanent tests or test-only dependencies are added.
