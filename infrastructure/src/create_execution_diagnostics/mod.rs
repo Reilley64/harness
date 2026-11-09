@@ -57,7 +57,7 @@ pub fn create_execution_diagnostics(
                             let mut count = 0;
                             while entries.next_entry().await?.is_some() {
                                 count += 1;
-                                if count > 512 { return Err("Run diagnostic storage exceeds its bounded capacity; originals remain in the runtime error".into()) }
+                                if count >= 512 { return Err("Run diagnostic storage exceeds its bounded capacity; originals remain in the runtime error".into()) }
                             }
                         }
                         storage::replace(&path, &bytes).await?;
