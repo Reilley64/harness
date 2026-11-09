@@ -36,6 +36,7 @@ export function useChildren(agent: Agent, parentId?: string) {
     setGuidance(null);
     setConfirmation(false);
   }, []);
+
   useEffect(
     () => () => {
       generation.current++;
@@ -43,6 +44,7 @@ export function useChildren(agent: Agent, parentId?: string) {
     },
     [],
   );
+
   useEffect(() => {
     if (owner.current !== parentId) {
       close();

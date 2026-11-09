@@ -10,29 +10,35 @@ function object(value: unknown): Record<string, unknown> {
     throw new PresentationError("Invalid managed-work response.");
   return value as Record<string, unknown>;
 }
+
 function text(value: unknown): string {
   if (typeof value !== "string")
     throw new PresentationError("Invalid managed-work text.");
   return value;
 }
+
 function optional(value: unknown): string | null {
   return value === null ? null : text(value);
 }
+
 function integer(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
     throw new PresentationError("Invalid managed-work revision.");
   return value;
 }
+
 function flag(value: unknown): boolean {
   if (typeof value !== "boolean")
     throw new PresentationError("Invalid managed-work state.");
   return value;
 }
+
 function list(value: unknown): unknown[] {
   if (!Array.isArray(value) || value.length > 256)
     throw new PresentationError("Managed work exceeds its bounded projection.");
   return value;
 }
+
 export function parseExecution(value: unknown): ChildExecution {
   const v = object(value);
   const status = text(v.status);
@@ -68,6 +74,7 @@ export function parseExecution(value: unknown): ChildExecution {
     source: text(v.source),
   };
 }
+
 export function parseChildren(value: unknown): Children | null {
   const v = object(value).coordination;
   if (v === null) return null;
@@ -102,6 +109,7 @@ export function parseChildren(value: unknown): Children | null {
     }),
   };
 }
+
 export function parseChildResult(value: unknown): ChildResult | null {
   const result = object(value).result;
   if (result === null) return null;

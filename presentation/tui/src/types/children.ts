@@ -22,6 +22,7 @@ export type ChildExecution = {
   followUpCompletedBy: string | null;
   source: string;
 };
+
 export type CapturedJoin = {
   id: string;
   runId: string;
@@ -29,6 +30,7 @@ export type CapturedJoin = {
   executions: string[];
   backgrounded: boolean;
 };
+
 export type Children = {
   agentId: string;
   conversationId: string;
@@ -43,6 +45,7 @@ export type Children = {
   children: ChildExecution[];
   joins: CapturedJoin[];
 };
+
 export type ChildResult = {
   execution: ChildExecution;
   receipt: null | {
@@ -56,6 +59,7 @@ export type ChildResult = {
   };
   authority: string;
 };
+
 export type ChildInspection = {
   history: Conversation | null;
   result: ChildResult | null;
