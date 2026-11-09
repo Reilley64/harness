@@ -139,6 +139,34 @@ safe conversation metadata, and never receives credentials. On exit it cancels
 active replies and waits for their durable finalization before closing the
 subprocess. See [conversations](../conversations.md).
 
+## Managed Research inspection
+
+F6 or `/children` opens the durable inspector without submitting or clearing the
+parent editor. Select with arrows; Enter opens that child's actual saved/live
+history read-only, refreshed without recovery or another execution controller.
+PgUp/PgDn/Ctrl+O retain native history behavior. Escape returns to the inspector
+then the parent; it never stops a child. Background updates do not steal selection,
+title, root draft or per-conversation viewport. Reports page independently.
+
+Space selects fixed members; A/L capture named any/all joins; B backgrounds the
+selected captured join without restarting workers. R refreshes, O reads the
+bounded untrusted report and X requires confirmation before scoped child Stop.
+N/Escape cancels that confirmation. Missing/oversized authority remains visibly
+blocked, not an empty or settled child view. Reports/receipt/follow-up facts do
+not approve work.
+
+`/children guidance <intent>` inspects the pending Research snapshot. V explicitly
+adopts the exact available hash against the inspected parent revision; accepted
+snapshots cannot be replaced. `/children dispatch <JSON>` submits the bounded
+brief described by [ACP](../acp/children.md). These controls remain available
+during parent work without cancelling/resending it. Exit waits for pending child
+operations and owned backend draining before closing stdio.
+
+This inspector is not general child steering/input, durable child drafts, a
+growing creation-arrow map, managed Implementer workspaces or complete subtree
+recovery. [Managed dispatch](../managed-dispatch.md) owns runtime authority,
+recovery, limits and diagnostic retention.
+
 ## One-agent context and navigation
 
 The native map contains the actual repository Griller identity returned by Rust,

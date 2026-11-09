@@ -1,3 +1,4 @@
+use crate::child_runtime::ChildRuntime;
 use crate::ports;
 use crate::ports::ReadModelAllowlist;
 use crate::ports::ReadProviderConnection;
@@ -14,9 +15,14 @@ use crate::ports::UpdateModelSelection;
 #[fundle::deps]
 #[derive(Clone)]
 pub struct Dependencies {
+    pub(crate) child_runtime: ChildRuntime,
+    pub(crate) create_execution_diagnostics: ports::CreateExecutionDiagnostics,
     pub(crate) create_research: ports::CreateResearch,
     pub(crate) read_coordination: ports::ReadCoordination,
     pub(crate) read_execution_claim: ports::ReadExecutionClaim,
+    pub(crate) read_execution_claims: ports::ReadExecutionClaims,
+    pub(crate) read_research_guidance: ports::ReadResearchGuidance,
+    pub(crate) update_research_guidance: ports::UpdateResearchGuidance,
     pub(crate) update_coordination: ports::UpdateCoordination,
     pub(crate) read_decision: ports::ReadDecision,
 

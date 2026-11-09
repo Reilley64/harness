@@ -9,6 +9,7 @@ pub struct Coordination {
     pub conversation_id: String,
     pub agent_id: String,
     pub revision: u64,
+    pub authority_complete: bool,
 
     pub gate: CoordinationGate,
     pub controller: Option<String>,
@@ -25,10 +26,13 @@ impl Coordination {
             conversation_id,
             agent_id,
             revision: 0,
+            authority_complete: true,
+
             gate: CoordinationGate::Open,
             controller: None,
             run_id: None,
             waiting: false,
+
             children: Vec::new(),
             joins: Vec::new(),
         }
@@ -98,7 +102,8 @@ impl Coordination {
     }
 
     pub fn settled(&self) -> bool {
-        self.controller.is_none()
+        self.authority_complete
+            && self.controller.is_none()
             && self
                 .children
                 .iter()
@@ -106,7 +111,7 @@ impl Coordination {
     }
 
     pub fn eligible(&self, run_id: &str) -> Result<bool, &'static str> {
-        if self.gate != CoordinationGate::Open {
+        if !self.authority_complete || self.gate != CoordinationGate::Open {
             return Ok(false);
         }
         for join in self.joins.iter().filter(|join| join.run_id == run_id) {
@@ -153,6 +158,7 @@ impl Coordination {
                     || self.controller.is_none()
                     || self.run_id.as_deref() != Some(child.parent_run_id.as_str())
                     || child.status != ChildExecutionStatus::Held
+                    || child.stop_requested
                     || child.outcome.is_some()
                     || child.delivered_to.is_some()
                     || child.follow_up_completed_by.is_some()
@@ -199,12 +205,47 @@ impl Coordination {
                     .iter_mut()
                     .find(|child| child.execution_id == execution_id)
                     .ok_or("Child execution is missing")?;
-                if child.controller != controller || child.status != ChildExecutionStatus::Held {
+                if child.stop_requested
+                    || child.controller != controller
+                    || child.status != ChildExecutionStatus::Held
+                {
                     return Err(
                         "Child already started or belongs to another controller; never replay",
                     );
                 }
                 child.status = ChildExecutionStatus::Running;
+            }
+            CoordinationCommand::MarkUnknown {
+                execution_id,
+                controller,
+            } => {
+                let child = self
+                    .children
+                    .iter_mut()
+                    .find(|child| child.execution_id == execution_id)
+                    .ok_or("Unknown execution")?;
+                if child.controller != controller {
+                    return Err("Execution controller differs");
+                }
+                if child.outcome.is_some() {
+                    return Ok(false);
+                }
+                if child.status == ChildExecutionStatus::Unknown && child.stop_requested {
+                    return Ok(false);
+                }
+                child.status = ChildExecutionStatus::Unknown;
+                child.stop_requested = true;
+            }
+            CoordinationCommand::StopChild { execution_id } => {
+                let child = self
+                    .children
+                    .iter_mut()
+                    .find(|child| child.execution_id == execution_id)
+                    .ok_or("Child execution is missing")?;
+                if child.outcome.is_some() || child.stop_requested {
+                    return Ok(false);
+                }
+                child.stop_requested = true;
             }
             CoordinationCommand::Receive {
                 execution_id,
@@ -229,7 +270,9 @@ impl Coordination {
                 }
                 if !matches!(
                     child.status,
-                    ChildExecutionStatus::Held | ChildExecutionStatus::Running
+                    ChildExecutionStatus::Held
+                        | ChildExecutionStatus::Running
+                        | ChildExecutionStatus::Unknown
                 ) {
                     return Err("Execution cannot receive another terminal outcome");
                 }
@@ -283,6 +326,49 @@ impl Coordination {
                 }
                 self.controller = Some(controller);
                 self.run_id = Some(run_id);
+            }
+            CoordinationCommand::AcknowledgeParent {
+                agent_id,
+                controller,
+                run_id,
+            } => {
+                self.controls(&controller, &run_id)?;
+                if agent_id != self.agent_id
+                    || self.gate != CoordinationGate::ResumeRequired
+                    || !self.authority_complete
+                {
+                    return Err(
+                        "Only the recovered controlling run can acknowledge this interruption",
+                    );
+                }
+                for child in &mut self.children {
+                    if child.outcome.is_none() {
+                        child.stop_requested = true;
+                    }
+                }
+                self.gate = CoordinationGate::NeedsHuman;
+                self.controller = None;
+                self.run_id = None;
+                self.waiting = false;
+            }
+            CoordinationCommand::ResumeParent {
+                agent_id,
+                controller,
+                run_id,
+            } => {
+                self.controls(&controller, &run_id)?;
+                if agent_id != self.agent_id
+                    || self.gate != CoordinationGate::ResumeRequired
+                    || !self.authority_complete
+                {
+                    return Err(
+                        "Only the recovered controlling run can explicitly Resume this parent",
+                    );
+                }
+                self.gate = CoordinationGate::Open;
+                self.controller = None;
+                self.run_id = None;
+                self.waiting = false;
             }
             CoordinationCommand::Wait { controller, run_id } => {
                 self.controls(&controller, &run_id)?;
@@ -366,12 +452,16 @@ impl Coordination {
                 run_id,
             } => {
                 if gate == CoordinationGate::Open {
-                    if controller.is_some()
+                    if !self.authority_complete
+                        || controller.is_some()
                         || run_id.is_some()
                         || self.controller.is_some()
                         || !matches!(
                             self.gate,
-                            CoordinationGate::Open | CoordinationGate::NeedsHuman
+                            CoordinationGate::Open
+                                | CoordinationGate::NeedsHuman
+                                | CoordinationGate::Stopped
+                                | CoordinationGate::Unknown
                         )
                     {
                         return Err(
@@ -388,6 +478,21 @@ impl Coordination {
                 }
                 if self.gate == gate {
                     return Ok(false);
+                }
+                if gate == CoordinationGate::ResumeRequired {
+                    for child in &mut self.children {
+                        if child.outcome.is_none() {
+                            child.status = ChildExecutionStatus::Unknown;
+                            child.stop_requested = true;
+                        }
+                    }
+                }
+                if gate == CoordinationGate::Stopped {
+                    for child in &mut self.children {
+                        if child.outcome.is_none() {
+                            child.stop_requested = true;
+                        }
+                    }
                 }
                 self.gate = gate;
             }

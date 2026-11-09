@@ -33,6 +33,7 @@ pub struct ChildExecution {
 
     pub controller: String,
     pub status: ChildExecutionStatus,
+    pub stop_requested: bool,
 
     pub outcome: Option<ChildOutcome>,
 
@@ -145,7 +146,10 @@ impl ChildExecution {
                     return Err("Child outcome differs from the admitted execution");
                 }
             }
-            None if self.status.terminal() || self.delivered_to.is_some() => {
+            None if self.delivered_to.is_some()
+                || (self.status.terminal()
+                    && !(self.status == ChildExecutionStatus::Unknown && self.stop_requested)) =>
+            {
                 return Err("Terminal execution or delivery is missing its durable receipt");
             }
             None => {}

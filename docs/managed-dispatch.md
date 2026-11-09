@@ -17,8 +17,9 @@ Tools remain trusted OS-user operations, not a sandbox or role permission matrix
 
 [ACP child coordination](acp/children.md) owns wire shapes. [Frontend guidance](frontend.md)
 owns native interaction; the model-facing controls use ordinary tool panels.
-The current stock UI does not yet provide a child-status/join inspector or active
-worker navigation. Those missing controls are not implied by the ACP capability.
+The stock inspector opens existing Research history read-only and exposes fixed
+joins, backgrounding, source reports, scoped Stop and pending guidance adoption.
+This is not the later growing-map or general execution-subtree integration.
 
 ## Admission and immutable assignment facts
 
@@ -39,10 +40,14 @@ fuzzy semantic deduplication. The intent UUID is the global execution-claim key.
 
 Default `role/research` and `procedure/research` use the existing versioned,
 licensed bundle and dependency resolver. No personal/global skills are read.
-Required missing guidance blocks. Explicit local/repository overrides currently
-block dispatch rather than being silently adopted. Pending-assignment inspection
-and explicit adoption remain an implementation gap; removing an override is not
-an adoption workflow. Active instruction snapshots never change automatically.
+Required missing guidance blocks. Explicit local/repository overrides require
+inspection and adoption for the exact pending intent, parent conversation revision
+and available snapshot hash. Adoption captures parent-agent and approved-work
+identity/version in an immutable closure; a changed parent, work version, available
+hash or already-accepted intent rejects the action. The claim and adoption share
+intent locking. Later override changes affect neither an accepted child nor its
+parent. Removing an override is not adoption; active snapshots never change
+automatically.
 
 ## Claims, joins and receipts
 
@@ -59,7 +64,12 @@ An exact immutable claim at `coordination/intents/<intent UUID>.json` persists
 before parent admission and before a real child future starts. Per-intent locks
 serialize the same key, not unrelated assignments. A claim left without its
 parent admission becomes an inspectable Unknown receipt on exact-key recovery;
-it is never treated as proof of unsent work or silently replayed.
+it is never treated as proof of unsent work or silently replayed. A bounded
+per-parent reference index at `coordination/parents/<parent>/<intent>.json`
+permits claim discovery without scanning an unbounded global pool. An origin
+marker detects loss of initialized coordination. Reconstructed orphan facts have
+`authorityComplete: false`: original join/admission facts are not invented and no
+fresh prompt can permissively reopen that incomplete authority.
 
 Claims persist before a real child future starts. Each child has a stable
 controlling execution identity. Parent coordination has its own controller/run
@@ -79,8 +89,14 @@ individual model/tool limits and the normal generation budget remain in force.
 
 Research execution cancellation is independent of a completed parent prompt's
 transport lifetime. A parent NeedsHuman boundary does not cancel unaffected
-children. Live workers observe the durable parent Stop gate without provider
-polling; already-known completed reports and uncertain effects remain distinct.
+children. Live workers observe durable parent gates and per-execution Stop fences without
+provider polling. Stop fences are monotonic across later parent prompts; a new
+parent run cannot revive an old worker. Already-known completed reports and
+uncertain effects remain distinct. The backend owns worker futures and independent
+tokens. Native exit waits for pending child controls, requests durable Stop, cancels
+and drains owned futures before closing stdio; backend shutdown also drains. A
+runtime-close race after fresh claim admission retains a no-start Stopped receipt.
+This does not imply control of another process's unrelated owned workers.
 
 A child outcome is written independently while the parent is busy. Receipt,
 delivery to a parent run and required follow-up completion are separate facts.
@@ -109,7 +125,19 @@ bounded 8 KiB summary and source conversation/run/reply references, with at most
 32 artifact references of 4096 bytes. Larger report text stays in its source
 conversation. Child text is explicitly untrusted data: it cannot approve work,
 settle the parent, change captured joins, rekey intent, replay effects or authorize
-merge. Result receipt alone never establishes those authorities.
+merge. Result receipt alone never establishes those authorities. An ordinary
+`read_children` tool must not report an empty child set when required projection
+facts are missing or oversized; bounded reports remain independently inspectable.
+
+Worker diagnostic chains are retained privately before a receipt at
+`coordination/diagnostics/<execution UUID>.json` (format one, at most 4 MiB and
+256 causes per chain). Public artifacts expose an opaque diagnostic source URI,
+not its contents, credentials or provider continuation. Persistence failures keep
+the original errors in the owned runtime failure instead of dropping them. A fatal
+owned worker fences its own execution Unknown without inventing a receipt; the
+parent does not wait indefinitely on a falsely live Held/Running claim. Private
+snapshot reads reopen an inode atomically replaced before metadata validation,
+at most eight times; mode, owner, no-follow, hardlink and size checks remain intact.
 
 ## Compatibility and recovery limits
 
@@ -127,17 +155,28 @@ missing durable agent-versus-conversation identity or downmigrating them.
 A held or running claim is not proof that a request was unsent. PID death or an
 expired heartbeat cannot authorize replay. Reopening does not launch an accepted
 child again. Normal leaf recovery retains uncertain effects and requires explicit
-Resume. Exact-key orphan inspection retains an Unknown receipt without rechecking a new
-worker selection or launching a future. Complete claim discovery/reconciliation,
-cross-process wake/restart integration, subtree Stop and later-run/input
-integration are not implemented by this candidate;
-HARNESS-30 owns their remaining composition. The available parent wait loop is
-not evidence that all idle-process/restart wake arbitration has been completed.
+Resume. Recovery of a controlling parent gates continuation and durably fences
+unfinished Research as Unknown without inventing a terminal report for a dead
+worker. A late actual worker receipt can still attach its known source facts.
+Known receipts, delivery and incomplete follow-up survive separately. Only
+explicit same-run Resume admits a new parent controller; acknowledging uncertain
+work instead fences the old scope and enables a later human instruction, not an
+old effect replay. A missing report remains unresolved, not settled.
+
+Exact-key orphan inspection retains Unknown facts without rechecking a new worker
+selection or launching a future. Active parent wait loops observe cross-process
+receipts and wake at safe boundaries, not through inference polling. There is no
+always-on scheduler or execution while closed. Full subtree/later-run/input and
+approval integration, complete idle-process arbitration and the composed native
+map remain HARNESS-30/31/42 work, not claims implied by these available controls.
 
 Controlled development probes exercise real Rust workers and tool writes across
 competing backend processes, fixed joins/backgrounding, parent input boundaries,
 exact-key orphan inspection and separate receipt/delivery/follow-up. Only loopback
 catalog/provider responses and synthetic credentials are substituted. These are
-not final qualification, CoS/native-routing coverage, full restart/wake
-arbitration, SDK/Ink launcher evidence, live quality, paid access or whole-MVP
-acceptance.
+not final qualification, full restart/wake arbitration, live quality, paid access
+or whole-MVP acceptance. Additional development probes traverse public application
+bundles, routed/fallback CoS, busy model/tool receipt boundaries, actual SDK/Ink
+launcher paths, real process kills before continuation and between delivery and
+follow-up, private-record races and available admission gates. Each substitution
+and inherited/native limitation stays explicit; ACP alone does not prove Ink.

@@ -685,19 +685,23 @@ impl TryFrom<Record> for domain::Conversation {
         model.validate_effort(effort)?;
         Ok(Self {
             id: dto.id,
+            agent,
             assignment,
             research,
-            current_work: None,
-            agent,
-            runs,
-            instruction_snapshots,
-            selected_instructions: dto.selected_instructions,
-            resume_required: dto.resume_required,
-            provider_connection_id: dto.provider_connection_id,
+
             workspace: dto.workspace,
+            provider_connection_id: dto.provider_connection_id,
             model,
             effort,
+
+            instruction_snapshots,
+            selected_instructions: dto.selected_instructions,
+
             messages,
+            runs,
+            current_work: None,
+            resume_required: dto.resume_required,
+
             created_at: dto.created_at,
             updated_at: dto.updated_at,
             revision: dto.revision,

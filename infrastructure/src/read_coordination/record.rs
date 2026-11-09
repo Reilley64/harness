@@ -1,4 +1,7 @@
 use super::Error;
+fn complete() -> bool {
+    true
+}
 use crate::conversations;
 use crate::instructions;
 
@@ -9,6 +12,8 @@ pub(super) struct Record {
     conversation_id: String,
     agent_id: String,
     revision: u64,
+    #[serde(default = "complete")]
+    authority_complete: bool,
 
     gate: String,
 
@@ -48,6 +53,8 @@ struct ChildRecord {
 
     controller: String,
     status: String,
+    #[serde(default)]
+    stop_requested: bool,
 
     outcome: Option<OutcomeRecord>,
 
@@ -101,8 +108,10 @@ struct CandidateRecord {
 struct SnapshotRecord {
     id: String,
     phase: String,
+
     scopes: Vec<String>,
     references: Vec<String>,
+
     instructions: Vec<InstructionRecord>,
 }
 
@@ -113,6 +122,7 @@ struct InstructionRecord {
     version: String,
     source: String,
     upstream: Vec<String>,
+
     requires: Vec<String>,
     body: String,
 }
@@ -291,6 +301,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             routed: value.routed,
             controller: value.controller,
             status: status(&value.status)?,
+            stop_requested: value.stop_requested,
             outcome: value
                 .outcome
                 .map(|value| {
@@ -328,6 +339,7 @@ impl TryFrom<Record> for domain::Coordination {
             conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
+            authority_complete: value.authority_complete,
             gate: match value.gate.as_str() {
                 "open" => domain::CoordinationGate::Open,
                 "needs_human" => domain::CoordinationGate::NeedsHuman,

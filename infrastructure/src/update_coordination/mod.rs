@@ -69,8 +69,19 @@ pub fn update_coordination(
                         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
                         Err(error) => return Err(error.into()),
                     };
+                    let guidance_path = directory
+                        .join("guidance")
+                        .join(format!("{}.json", child.intent));
+                    let adoption = match tokio::fs::symlink_metadata(&guidance_path).await {
+                        Ok(_) => {
+                            Some(storage::read_private(&guidance_path, 2 * 1024 * 1024).await?)
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                        Err(error) => return Err(error.into()),
+                    };
                     let (child, encoded) =
-                        tokio::task::spawn_blocking(move || record::claim(bytes, *child)).await??;
+                        tokio::task::spawn_blocking(move || record::claim(bytes, *child, adoption))
+                            .await??;
                     let fresh = encoded.is_some();
                     if let Some(encoded) = encoded {
                         if cancellation.is_cancelled() {
@@ -78,6 +89,11 @@ pub fn update_coordination(
                                 "Dispatch stopped before durable execution claim admission".into(),
                             );
                         }
+                        let index = directory.join("parents").join(&child.parent_id);
+                        storage::private_directory(&index).await?;
+                        let reference = record::reference(&child)?;
+                        storage::replace(&index.join(format!("{}.json", child.intent)), &reference)
+                            .await?;
                         storage::replace(&intent_path, &encoded).await?;
                     }
                     (
@@ -127,7 +143,7 @@ pub fn update_coordination(
                             _ => return Err::<_, Error>("Parent coordination must first be admitted by its actual active execution".into()),
                         };
                         let mut coordination = domain::Coordination::new(id.clone(), agent_id);
-                        if matches!(&command, domain::CoordinationCommand::RetainClaim(_)) { coordination.gate = domain::CoordinationGate::Unknown; }
+                        if matches!(&command, domain::CoordinationCommand::RetainClaim(_)) { coordination.gate = domain::CoordinationGate::Unknown; coordination.authority_complete = false; }
                         coordination
                     }
                 };
@@ -135,7 +151,7 @@ pub fn update_coordination(
                     return Err::<_, Error>("Coordination identity differs from its file".into());
                 }
                 let expected = (coordination.revision != 0).then_some(coordination.revision);
-                let independent = matches!(&command, domain::CoordinationCommand::Dispatch(_) | domain::CoordinationCommand::Start { .. } | domain::CoordinationCommand::Receive { .. } | domain::CoordinationCommand::CompleteFollowUp { .. } | domain::CoordinationCommand::Release { .. } | domain::CoordinationCommand::Wait { .. } | domain::CoordinationCommand::Gate { .. } | domain::CoordinationCommand::RetainClaim(_));
+                let independent = matches!(&command, domain::CoordinationCommand::Dispatch(_) | domain::CoordinationCommand::Start { .. } | domain::CoordinationCommand::Receive { .. } | domain::CoordinationCommand::CompleteFollowUp { .. } | domain::CoordinationCommand::Release { .. } | domain::CoordinationCommand::Wait { .. } | domain::CoordinationCommand::Gate { .. } | domain::CoordinationCommand::RetainClaim(_) | domain::CoordinationCommand::StopChild { .. } | domain::CoordinationCommand::MarkUnknown { .. });
                 if matches!(&command, domain::CoordinationCommand::Deliver { .. }) && revision != expected {
                     return Err(RevisionConflict::caused_by("Current-work delivery revision changed before admission").into());
                 }
@@ -176,6 +192,13 @@ pub fn update_coordination(
                     return Err("Coordination stopped before atomic write admission".into());
                 }
                 storage::replace(&path, &encoded).await?;
+                let origin = path.with_extension("origin");
+                if tokio::fs::symlink_metadata(&origin)
+                    .await
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+                {
+                    storage::replace(&origin, b"coordination-format-two-initialized").await?;
+                }
             }
             Ok(response)
         })

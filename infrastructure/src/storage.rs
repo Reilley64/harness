@@ -56,18 +56,28 @@ pub(crate) async fn read_private(path: &Path, limit: usize) -> Result<Vec<u8>, S
     options.read(true);
     #[cfg(unix)]
     options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    let file = options.open(path).await?;
-    let metadata = file.metadata().await?;
-    validate_private_file(&metadata)?;
-    if metadata.len() > limit as u64 {
-        return Err("Private app data file exceeds its size limit".into());
+    for _ in 0..8 {
+        let file = options.open(path).await?;
+        let metadata = file.metadata().await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() == 0 {
+                continue;
+            }
+        }
+        validate_private_file(&metadata)?;
+        if metadata.len() > limit as u64 {
+            return Err("Private app data file exceeds its size limit".into());
+        }
+        let mut bytes = Vec::new();
+        file.take(limit as u64 + 1).read_to_end(&mut bytes).await?;
+        if bytes.len() > limit {
+            return Err("Private app data file exceeds its size limit".into());
+        }
+        return Ok(bytes);
     }
-    let mut bytes = Vec::new();
-    file.take(limit as u64 + 1).read_to_end(&mut bytes).await?;
-    if bytes.len() > limit {
-        return Err("Private app data file exceeds its size limit".into());
-    }
-    Ok(bytes)
+    Err("Private snapshot kept changing before admission; retry inspection without substituting empty data".into())
 }
 
 pub(crate) async fn lock(path: &Path) -> Result<std::fs::File, StorageError> {

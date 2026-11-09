@@ -8,6 +8,7 @@ import { StartupWordmark } from "../components/molecules/startup-wordmark.js";
 import { WorkingIndicator } from "../components/molecules/working-indicator.js";
 import { AgentMap } from "../components/organisms/agent-map.js";
 import { ApprovedWorkPanel } from "../components/organisms/approved-work-panel.js";
+import { ChildrenPanel } from "../components/organisms/children-panel.js";
 import { GuidancePanel } from "../components/organisms/guidance-panel.js";
 import { McpPanel } from "../components/organisms/mcp-panel.js";
 import { ModelPicker } from "../components/organisms/model-picker.js";
@@ -19,6 +20,7 @@ import { Transcript } from "../components/organisms/transcript.js";
 import { HarnessLayout } from "../components/templates/harness-layout.js";
 import { useAgentConnection } from "../hooks/use-agent-connection.js";
 import { useApprovedWork } from "../hooks/use-approved-work.js";
+import { useChildren } from "../hooks/use-children.js";
 import { useContextNavigation } from "../hooks/use-context-navigation.js";
 import { useContextTitle } from "../hooks/use-context-title.js";
 import { useConversation } from "../hooks/use-conversation.js";
@@ -66,6 +68,10 @@ export function HarnessScreen({
   const chat = useConversation(agent, initialConversation, (next) => {
     models.restore({ model: next.model, effort: next.effort });
   });
+  const children = useChildren(agent, chat.conversation?.id);
+  const childViewport = useTranscriptViewport(
+    children.history?.id ?? "child-initial",
+  );
   const guidance = useGuidance(agent, chat.conversation);
   const approved = useApprovedWork(agent, chat.conversation);
   const native = useNativeDecider(agent, chat.conversation?.id);
@@ -107,7 +113,8 @@ export function HarnessScreen({
     approved.open ||
     native.mode !== null ||
     mcp.visible ||
-    setup.open;
+    setup.open ||
+    children.visible;
   useContextNavigation(
     !modal && !stopConfirmation,
     () => {
@@ -124,27 +131,43 @@ export function HarnessScreen({
       if (chat.conversation?.agent?.role !== "griller") openConversation();
       else setMap(false);
     },
+    () => {
+      chat.cancelOpen();
+      guidance.close();
+      approved.close();
+      setup.close();
+      setMap(false);
+      void children.inspect();
+    },
   );
   useContextTitle(
-    native.mode
-      ? "harness - Decider"
-      : map
-        ? "harness - Agent map"
-        : chat.conversation && !chat.conversation.agent
-          ? "harness - Conversation"
-          : role === "chief_of_staff"
-            ? "harness - Chief of Staff"
-            : role === "setup"
-              ? "harness - Setup"
-              : role === "research"
-                ? "harness - Research"
-                : "harness - Griller",
+    children.visible
+      ? children.history
+        ? "harness - Research"
+        : "harness - Children"
+      : native.mode
+        ? "harness - Decider"
+        : map
+          ? "harness - Agent map"
+          : chat.conversation && !chat.conversation.agent
+            ? "harness - Conversation"
+            : role === "chief_of_staff"
+              ? "harness - Chief of Staff"
+              : role === "setup"
+                ? "harness - Setup"
+                : role === "research"
+                  ? "harness - Research"
+                  : "harness - Griller",
   );
 
   useInput((input, key) => {
     if (key.eventType === "release") return;
     if (key.ctrl && (input === "q" || input === "c")) {
       exit();
+      return;
+    }
+    if (children.visible) {
+      children.input(input, key);
       return;
     }
     if (
@@ -273,6 +296,27 @@ export function HarnessScreen({
     const command = value.trim();
     if (!command.startsWith("/guidance")) guidance.close();
     if (command !== "/setup") setup.close();
+    if (command === "/children" || command.startsWith("/children ")) {
+      draft.change("");
+      setMap(false);
+      if (command.startsWith("/children guidance "))
+        void children.inspectGuidance(
+          command.slice("/children guidance ".length),
+        );
+      else if (command.startsWith("/children dispatch ")) {
+        try {
+          const args: unknown = JSON.parse(
+            command.slice("/children dispatch ".length),
+          );
+          if (!args || typeof args !== "object" || Array.isArray(args))
+            throw new Error("Expected dispatch JSON object.");
+          void children.dispatch(args as Record<string, unknown>);
+        } catch (error) {
+          setNotice(errorMessage(error));
+        }
+      } else void children.inspect();
+      return;
+    }
     if (
       chat.busy &&
       command.startsWith("/") &&
@@ -415,7 +459,8 @@ export function HarnessScreen({
         !guidance.open &&
         !approved.open &&
         !native.mode &&
-        !setup.open
+        !setup.open &&
+        !children.visible
       }
       selectedModel={
         models.selection
@@ -456,6 +501,15 @@ export function HarnessScreen({
         <TerminalText>
           {`Stop ${role === "chief_of_staff" ? "Chief of Staff" : role === "setup" ? "Setup" : role === "research" ? "Research" : "Griller"}'s active run? Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
         </TerminalText>
+      )}
+      {children.visible && (
+        <ChildrenPanel
+          state={children}
+          columns={columns}
+          rows={rows}
+          viewport={childViewport.value}
+          changeViewport={childViewport.change}
+        />
       )}
       {native.mode && (
         <NativeDeciderPanel
@@ -546,7 +600,8 @@ export function HarnessScreen({
           approved.open ||
           native.mode ||
           mcp.visible ||
-          setup.open
+          setup.open ||
+          children.visible
             ? "none"
             : "flex"
         }

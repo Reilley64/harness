@@ -23,7 +23,15 @@ pub fn read_coordination(
             let path = directory.join(format!("{id}.json"));
             match tokio::fs::symlink_metadata(&path).await {
                 Ok(_) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if tokio::fs::symlink_metadata(directory.join(format!("{id}.origin")))
+                        .await
+                        .is_ok()
+                    {
+                        return Err("Required initialized coordination is missing; reconcile durable claims without inference".into());
+                    }
+                    return Ok(None);
+                }
                 Err(error) => return Err(error.into()),
             }
             storage::private_directory(&directory).await?;

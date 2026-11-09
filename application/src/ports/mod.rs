@@ -19,11 +19,23 @@ macro_rules! port {
     };
 }
 
+mod create_execution_diagnostics;
+pub use create_execution_diagnostics::CreateExecutionDiagnostics;
+pub use create_execution_diagnostics::CreateExecutionDiagnosticsError;
 mod create_research;
 pub use create_research::CreateResearch;
 pub use create_research::CreateResearchError;
 mod read_coordination;
 mod read_execution_claim;
+mod read_execution_claims;
+pub use read_execution_claims::ReadExecutionClaims;
+pub use read_execution_claims::ReadExecutionClaimsError;
+mod update_research_guidance;
+pub use update_research_guidance::UpdateResearchGuidance;
+pub use update_research_guidance::UpdateResearchGuidanceError;
+mod read_research_guidance;
+pub use read_research_guidance::ReadResearchGuidance;
+pub use read_research_guidance::ReadResearchGuidanceError;
 mod update_coordination;
 pub use read_coordination::ReadCoordination;
 pub use read_coordination::ReadCoordinationError;

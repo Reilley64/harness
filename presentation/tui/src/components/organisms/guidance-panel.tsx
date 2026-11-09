@@ -11,6 +11,7 @@ export function GuidancePanel({
   columns,
   rows,
   refresh,
+  adoptionCommand = "/guidance adopt",
 }: {
   guidance: Guidance | null;
   loading: boolean;
@@ -18,6 +19,7 @@ export function GuidancePanel({
   columns: number;
   rows: number;
   refresh: () => void;
+  adoptionCommand?: string;
 }) {
   const [tab, setTab] = useState<
     "selected" | "current" | "available" | "bundled"
@@ -122,7 +124,7 @@ export function GuidancePanel({
       <TerminalText>
         s selected · c run · a available · b bundled · d text · r refresh
       </TerminalText>
-      <TerminalText>{`↑↓/PgUp/PgDn · ${start + 1}/${lines.length} · close then /guidance adopt`}</TerminalText>
+      <TerminalText>{`↑↓/PgUp/PgDn · ${start + 1}/${lines.length} · ${adoptionCommand}`}</TerminalText>
       {lines.slice(start, start + height).map((line) => (
         <TerminalText key={line.id} wrap="truncate-end">
           {line.text || " "}

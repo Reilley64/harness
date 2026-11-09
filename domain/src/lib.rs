@@ -1,7 +1,9 @@
 mod children_control;
 pub use children_control::ChildrenControl;
 mod research_assignment;
+mod research_guidance;
 pub use research_assignment::ResearchAssignment;
+pub use research_guidance::ResearchGuidance;
 mod captured_join;
 mod child_execution;
 mod child_execution_status;

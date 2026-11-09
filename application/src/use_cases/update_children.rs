@@ -18,6 +18,29 @@ pub async fn call(
         .call(agent_id.clone())
         .await
         .map_err(Error::caused_by)?;
+    if let domain::ChildrenControl::Stop { execution_id } = &control {
+        let state = d
+            .read_coordination
+            .call(agent_id.clone())
+            .await
+            .map_err(Error::caused_by)?
+            .ok_or_else(|| Error::caused_by("Parent coordination is missing"))?;
+        let response = d
+            .update_coordination
+            .call(
+                agent_id,
+                domain::CoordinationCommand::StopChild {
+                    execution_id: execution_id.clone(),
+                },
+                Some(state.revision),
+                cancellation,
+            )
+            .await
+            .map_err(Error::caused_by)?;
+        return Ok(Output {
+            coordination: response.coordination,
+        });
+    }
     if conversation.resume_required
         || conversation.agent.as_ref().is_none_or(|agent| {
             !matches!(
@@ -44,6 +67,9 @@ pub async fn call(
         .map_err(Error::caused_by)?
         .ok_or_else(|| Error::caused_by("No accepted child executions are available"))?;
     let command = match control {
+        domain::ChildrenControl::Stop { execution_id } => {
+            domain::CoordinationCommand::StopChild { execution_id }
+        }
         domain::ChildrenControl::Join {
             id,
             mode,

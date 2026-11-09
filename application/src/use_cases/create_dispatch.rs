@@ -6,12 +6,14 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
 
+use crate::child_runtime::StartError;
 use crate::decision_access;
 use crate::error_context;
 use crate::ports::PortFuture;
 use crate::ports::PresentTurnEvent;
 use crate::research_access;
 use crate::use_cases::create_message;
+use crate::use_cases::read_children;
 use crate::work_access;
 use tokio_util::sync::CancellationToken;
 
@@ -53,11 +55,17 @@ async fn dispatch(
     if intent.to_string() != brief.intent {
         return Err(Error::caused_by("Research intent must be a canonical UUID"));
     }
-    let prior = d
-        .read_coordination
-        .call(parent_id.clone())
-        .await
-        .map_err(Error::caused_by)?;
+    let (prior, mut diagnostics) = read_children::load(
+        &read_children::Dependencies {
+            read_coordination: d.read_coordination.clone(),
+            read_conversation: d.read_conversation.clone(),
+            read_execution_claims: d.read_execution_claims.clone(),
+            update_coordination: d.update_coordination.clone(),
+        },
+        parent_id.clone(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     if let Some(execution) = prior.as_ref().and_then(|coordination| {
         coordination
             .children
@@ -65,14 +73,24 @@ async fn dispatch(
             .find(|child| child.intent == brief.intent)
     }) {
         if execution.brief != brief || execution.routed != routed {
-            return Err(Error::caused_by(
-                "Dispatch key conflicts with its accepted exact payload",
+            return Err(error::retain(
+                Error::caused_by("Dispatch key conflicts with its accepted exact payload"),
+                diagnostics,
             ));
         }
         return Ok(Output {
+            diagnostics,
             execution: execution.clone(),
             accepted: false,
         });
+    }
+    if !diagnostics.is_empty() {
+        return Err(error::retain(
+            Error::caused_by(
+                "Required coordination was reconciled as Unknown; inspect before new work",
+            ),
+            diagnostics,
+        ));
     }
     if let Some(mut execution) = d
         .read_execution_claim
@@ -112,6 +130,7 @@ async fn dispatch(
             .find(|child| child.intent == brief.intent)
             .ok_or_else(|| Error::caused_by("Retained execution is missing"))?;
         return Ok(Output {
+            diagnostics,
             execution,
             accepted: false,
         });
@@ -232,19 +251,34 @@ async fn dispatch(
         .workspace
         .clone()
         .ok_or_else(|| Error::caused_by("Research parent has no saved workspace"))?;
-    let guidance = d
-        .read_instructions
-        .call(workspace.clone(), "research".into(), Vec::new(), Vec::new())
+    let adopted = d
+        .read_research_guidance
+        .call(brief.intent.clone())
         .await
         .map_err(Error::caused_by)?;
-    if !guidance.overrides.is_empty() {
-        return Err(Error::caused_by(
-            "Research instruction overrides require explicit inspection/adoption before dispatch",
-        ));
-    }
-    let instructions = guidance.available.ok_or_else(|| {
-        Error::caused_by("Required Research instructions are unavailable; inspect guidance")
-    })?;
+    let instructions = if let Some(adopted) = adopted {
+        if !adopted.matches(&parent) {
+            return Err(Error::caused_by(
+                "Research adoption differs from the actual parent or approved work; inspect without replacement",
+            ));
+        }
+        adopted.snapshot
+    } else {
+        let guidance = d
+            .read_instructions
+            .call(workspace.clone(), "research".into(), Vec::new(), Vec::new())
+            .await
+            .map_err(Error::caused_by)?;
+        if !guidance.overrides.is_empty() {
+            return Err(Error::caused_by(error_context::ErrorContext::caused_by(
+                "Research overrides require explicit inspection and adoption for this intent in /children guidance.",
+                "Research guidance is not adopted",
+            )));
+        }
+        guidance.available.ok_or_else(|| {
+            Error::caused_by("Required Research instructions are unavailable; inspect guidance")
+        })?
+    };
     let instructions = tokio::task::spawn_blocking(move || {
         instructions.validate()?;
         Ok::<_, &'static str>(instructions)
@@ -276,12 +310,15 @@ async fn dispatch(
         assignment_id: id(b"assignment"),
         agent_id: id(b"agent"),
         execution_id: id(b"execution"),
+
         parent_id: parent_id.clone(),
         parent_agent_id: agent.id.0.clone(),
         parent_run_id: run.id.clone(),
         parent_revision: captured_revision,
+
         parent_selection: captured_parent,
         parent_connection_id: captured_connection,
+
         work_id: parent
             .assignment
             .as_ref()
@@ -298,13 +335,18 @@ async fn dispatch(
             .assignment
             .as_ref()
             .map(|assignment| assignment.approved_at),
+
         brief,
         selected,
         instructions,
         routed,
+
         controller: uuid::Uuid::new_v4().to_string(),
         status: domain::ChildExecutionStatus::Held,
+        stop_requested: false,
+
         outcome: None,
+
         delivered_to: None,
         follow_up_completed_by: None,
     };
@@ -326,52 +368,107 @@ async fn dispatch(
         .ok_or_else(|| Error::caused_by("Accepted Research execution is missing"))?;
     if !response.claimed {
         return Ok(Output {
+            diagnostics,
             execution: accepted,
             accepted: false,
         });
     }
     if cancellation.is_cancelled() {
-        let receipt = domain::ChildOutcome {
-            id: accepted.execution_id.clone(),
-            status: domain::ChildExecutionStatus::Stopped,
-            conversation_id: accepted.agent_id.clone(),
-            run_id: None,
-            reply_id: None,
-            summary: "Dispatch was stopped after durable claim admission and before a child future was created. No child inference or tools started.".into(),
-            artifacts: Vec::new(),
-        };
-        let response = d
-            .update_coordination
-            .call(
-                accepted.parent_id.clone(),
-                domain::CoordinationCommand::Receive {
-                    execution_id: accepted.execution_id.clone(),
-                    controller: accepted.controller.clone(),
-                    outcome: receipt,
-                },
-                Some(response.coordination.revision),
-                CancellationToken::new(),
-            )
-            .await
-            .map_err(Error::caused_by)?;
-        let execution = response
-            .coordination
-            .children
-            .into_iter()
-            .find(|child| child.intent == accepted.intent)
-            .ok_or_else(|| Error::caused_by("Stopped accepted execution is missing"))?;
-        return Ok(Output {
-            execution,
-            accepted: true,
-        });
+        return stopped_before_spawn(&d,accepted,diagnostics,response.coordination.revision,"Dispatch stopped after durable admission and before a child future was created. No child inference or tools started.").await;
     }
     let worker = d.clone();
     let child = accepted.clone();
-    let task: PortFuture<Result<(), Error>> =
-        Box::pin(async move { execute(worker, child, workspace, CancellationToken::new()).await });
-    tokio::spawn(task);
+    let token = CancellationToken::new();
+    let execution_token = token.clone();
+    let task = Box::pin(async move {
+        let result = execute(worker.clone(), child.clone(), workspace, execution_token).await;
+        if let Err(original) = result {
+            let fenced = worker
+                .update_coordination
+                .call(
+                    child.parent_id,
+                    domain::CoordinationCommand::MarkUnknown {
+                        execution_id: child.execution_id,
+                        controller: child.controller,
+                    },
+                    None,
+                    CancellationToken::new(),
+                )
+                .await;
+            let failure = match fenced {
+                Ok(_) => original,
+                Err(fence) => error::retain(original, vec![Box::new(fence)]),
+            };
+            return Err(Box::new(failure) as Box<dyn std::error::Error + Send + Sync>);
+        }
+        Ok(())
+    });
+    let started = d.child_runtime.start(
+        accepted.parent_id.clone(),
+        accepted.execution_id.clone(),
+        task,
+        token,
+    );
+    if let Err(error) = started {
+        if matches!(error, StartError::Closing) {
+            diagnostics.push(Box::new(error));
+            return stopped_before_spawn(&d,accepted,diagnostics,response.coordination.revision,"Runtime shutdown won admission after the durable claim. No child inference or tools started.").await;
+        }
+        return Err(Error::caused_by(error));
+    }
     Ok(Output {
+        diagnostics,
         execution: accepted,
+        accepted: true,
+    })
+}
+
+async fn stopped_before_spawn(
+    d: &create_message::Dependencies,
+    accepted: domain::ChildExecution,
+    mut diagnostics: Vec<Box<dyn std::error::Error + Send + Sync>>,
+    revision: u64,
+    summary: &str,
+) -> Result<Output, Error> {
+    let receipt = domain::ChildOutcome {
+        id: accepted.execution_id.clone(),
+        status: domain::ChildExecutionStatus::Stopped,
+        conversation_id: accepted.agent_id.clone(),
+        run_id: None,
+        reply_id: None,
+        summary: summary.into(),
+        artifacts: Vec::new(),
+    };
+    let response = d
+        .update_coordination
+        .call(
+            accepted.parent_id.clone(),
+            domain::CoordinationCommand::Receive {
+                execution_id: accepted.execution_id.clone(),
+                controller: accepted.controller.clone(),
+                outcome: receipt,
+            },
+            Some(revision),
+            CancellationToken::new(),
+        )
+        .await
+        .map_err(|failure| {
+            error::retain(Error::caused_by(failure), std::mem::take(&mut diagnostics))
+        })?;
+    let execution = response
+        .coordination
+        .children
+        .into_iter()
+        .find(|child| child.intent == accepted.intent)
+        .ok_or_else(|| {
+            error::retain(
+                Error::caused_by("Stopped accepted execution is missing"),
+                std::mem::take(&mut diagnostics),
+            )
+        })?;
+    Ok(Output {
+        diagnostics,
+        execution,
         accepted: true,
     })
 }
@@ -418,7 +515,8 @@ async fn execute(
                 _ = controls.tick() => {
                     match d.read_coordination.call(child.parent_id.clone()).await {
                         Ok(Some(state)) => {
-                            if state.gate == domain::CoordinationGate::Stopped {
+                            if !matches!(state.gate,domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman | domain::CoordinationGate::Stopped) { observations.push("Parent continuation requires explicit reconciliation; no child was replayed".into()); }
+                            if !matches!(state.gate,domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman) || state.children.iter().any(|entry| entry.execution_id == child.execution_id && entry.stop_requested) {
                                 cancellation.cancel();
                             }
                         }
@@ -465,6 +563,17 @@ async fn execute(
         }
     };
     let stopped = cancellation.is_cancelled();
+    let retained = !diagnostics.is_empty();
+    if retained {
+        d.create_execution_diagnostics
+            .call(
+                child.parent_id.clone(),
+                child.execution_id.clone(),
+                std::mem::take(&mut diagnostics),
+            )
+            .await
+            .map_err(Error::caused_by)?;
+    }
     let outcome_id = child.execution_id.clone();
     let conversation_id = child.agent_id.clone();
     let outcome = tokio::task::spawn_blocking(move || {
@@ -490,13 +599,17 @@ async fn execute(
             if text.len() <= 8192 { text.to_owned() } else { "Report exceeds the bounded summary; inspect the source-linked child conversation and its recorded artifacts.".into() }
         });
         domain::ChildOutcome {
-            id: outcome_id,
+            id: outcome_id.clone(),
             status,
             conversation_id: conversation_id.clone(),
             run_id: conversation.as_ref().and_then(|conversation| conversation.runs.last()).map(|run| run.id.clone()),
             reply_id: reply.map(|reply| reply.id.clone()),
             summary,
-            artifacts: vec![format!("harness://conversations/{conversation_id}")],
+            artifacts: if retained {
+                vec![format!("harness://conversations/{conversation_id}"),format!("harness://execution-diagnostics/{outcome_id}")]
+            } else {
+                vec![format!("harness://conversations/{conversation_id}")]
+            },
         }
     }).await.map_err(|error| error::retain(Error::caused_by(error), std::mem::take(&mut diagnostics)))?;
     let coordination = d

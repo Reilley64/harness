@@ -75,6 +75,8 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         read_children,
         update_children,
         create_dispatch,
+        delete_executions,
+        update_research_guidance,
         read_decision,
         update_decision,
         read_deciders,
@@ -98,6 +100,8 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         read_model_allowlist,
         update_model_allowlist,
     } = dependencies.into();
+    let stopping_children = update_children.clone();
+    let viewing_children = read_conversation.clone();
     let children_results = read_children.clone();
     let background_children = update_children.clone();
     let follow_up_children = update_children.clone();
@@ -157,6 +161,50 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
+            async move |request: children::AdoptRequest, responder, connection| {
+                let d=update_research_guidance.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_research_guidance::call(d,request.session_id,request.revision,request.intent,request.snapshot,tokio_util::sync::CancellationToken::new()).await{
+                        Ok(output)=>responder.respond(children::AdoptResponse{intent:output.guidance.intent,snapshot:output.guidance.snapshot.id}),
+                        Err(error)=>responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::StopRequest, responder, connection| {
+                let d = stopping_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::Stop { execution_id: request.execution_id }, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_: children::DrainRequest, responder, connection| {
+                let d = delete_executions.clone();
+                connection.spawn(async move {
+                    match application::use_cases::delete_executions::call(d).await {
+                        Ok(output) => responder.respond(children::DrainResponse { stopped: output.stopped }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ViewRequest, responder, connection| {
+                let d = viewing_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_conversation::inspect(d, request.session_id).await {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
             async move |request: children::ReadRequest, responder, connection| {
                 let d = read_children.clone();
                 connection.spawn(async move {
@@ -166,6 +214,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                                 let mut coordination = output.coordination.as_ref().map(children::summary);
                                 if let Some(coordination) = &mut coordination {
                                     coordination["sessionRevision"] = serde_json::json!(output.session_revision);
+                                    coordination["contextBlocked"] = serde_json::json!(!output.diagnostics.is_empty());
                                 }
                                 children::Response { coordination, execution: None, result: None }
                             }).await;

@@ -30,21 +30,26 @@ pub fn create_conversation(
             let id = uuid::Uuid::new_v4().to_string();
             let _guard = conversations::lock(&directory, &id).await?;
             let now = conversations::now()?;
+            let workspace = Some(tokio::fs::canonicalize(workspace).await?);
             let conversation = domain::Conversation {
                 id,
                 agent: None,
-                research: None,
-                current_work: None,
                 assignment: None,
-                runs: Vec::new(),
-                instruction_snapshots: Vec::new(),
-                selected_instructions: None,
-                resume_required: false,
+                research: None,
+
+                workspace,
                 provider_connection_id: connection.id,
-                workspace: Some(tokio::fs::canonicalize(workspace).await?),
                 model,
                 effort,
+
+                instruction_snapshots: Vec::new(),
+                selected_instructions: None,
+
                 messages: Vec::new(),
+                runs: Vec::new(),
+                current_work: None,
+                resume_required: false,
+
                 created_at: now,
                 updated_at: now,
                 revision: 0,

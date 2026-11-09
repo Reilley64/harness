@@ -11,6 +11,13 @@ pub enum CoordinationCommand {
         execution_id: String,
         controller: String,
     },
+    MarkUnknown {
+        execution_id: String,
+        controller: String,
+    },
+    StopChild {
+        execution_id: String,
+    },
     Receive {
         execution_id: String,
         controller: String,
@@ -24,6 +31,16 @@ pub enum CoordinationCommand {
     Acquire {
         agent_id: String,
 
+        controller: String,
+        run_id: String,
+    },
+    ResumeParent {
+        agent_id: String,
+        controller: String,
+        run_id: String,
+    },
+    AcknowledgeParent {
+        agent_id: String,
         controller: String,
         run_id: String,
     },

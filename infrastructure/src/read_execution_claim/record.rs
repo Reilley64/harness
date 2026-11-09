@@ -51,6 +51,8 @@ struct ChildRecord {
 
     controller: String,
     status: String,
+    #[serde(default)]
+    stop_requested: bool,
 
     outcome: Option<OutcomeRecord>,
 
@@ -104,8 +106,10 @@ struct CandidateRecord {
 struct SnapshotRecord {
     id: String,
     phase: String,
+
     scopes: Vec<String>,
     references: Vec<String>,
+
     instructions: Vec<InstructionRecord>,
 }
 
@@ -116,6 +120,7 @@ struct InstructionRecord {
     version: String,
     source: String,
     upstream: Vec<String>,
+
     requires: Vec<String>,
     body: String,
 }
@@ -282,6 +287,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             routed: value.routed,
             controller: value.controller,
             status: status(&value.status)?,
+            stop_requested: value.stop_requested,
             outcome: value
                 .outcome
                 .map(|value| {

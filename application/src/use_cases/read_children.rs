@@ -13,17 +13,15 @@ pub async fn call(
     agent_id: String,
 ) -> Result<Output, Error> {
     let d = dependencies.into();
-    let coordination = d
-        .read_coordination
-        .call(agent_id.clone())
-        .await
-        .map_err(Error::caused_by)?;
+    let (coordination, mut diagnostics) = load(&d, agent_id.clone()).await?;
     let conversation = if coordination.is_some() {
         Some(
             d.read_conversation
                 .call(agent_id)
                 .await
-                .map_err(Error::caused_by)?,
+                .map_err(|failure| {
+                    error::retain(Error::caused_by(failure), std::mem::take(&mut diagnostics))
+                })?,
         )
     } else {
         None
@@ -33,8 +31,12 @@ pub async fn call(
             .as_ref()
             .map(|conversation| conversation.revision);
         drop(conversation);
-        let current_work = coordination.as_ref().map(project).transpose()?;
+        let current_work = match coordination.as_ref().map(project).transpose() {
+            Ok(view)=>view,
+            Err(error)=>{diagnostics.push(Box::new(error));Some("Required current-work projection exceeds its limit. Inspect source-linked child results; no facts were truncated or treated as an empty work set.".into())}
+        };
         Ok(Output {
+            diagnostics,
             coordination,
             session_revision,
             current_work,
@@ -42,6 +44,70 @@ pub async fn call(
     })
     .await
     .map_err(Error::caused_by)?
+}
+
+pub(crate) fn retained(mut diagnostics: Vec<Box<dyn std::error::Error + Send + Sync>>) -> Error {
+    let original = diagnostics.remove(0);
+    error::retain(Error::caused_by(original), diagnostics)
+}
+
+pub(crate) async fn load(
+    d: &Dependencies,
+    parent: String,
+) -> Result<
+    (
+        Option<domain::Coordination>,
+        Vec<Box<dyn std::error::Error + Send + Sync>>,
+    ),
+    Error,
+> {
+    let claims = d
+        .read_execution_claims
+        .call(parent.clone(), tokio_util::sync::CancellationToken::new())
+        .await
+        .map_err(Error::caused_by)?;
+    let mut diagnostics = Vec::<Box<dyn std::error::Error + Send + Sync>>::new();
+    let mut state = match d.read_coordination.call(parent.clone()).await {
+        Ok(state) => state,
+        Err(error) if !claims.is_empty() => {
+            diagnostics.push(Box::new(error));
+            None
+        }
+        Err(error) => return Err(Error::caused_by(error)),
+    };
+    for mut child in claims {
+        if let Some(prior) = state
+            .as_ref()
+            .and_then(|s| s.children.iter().find(|c| c.intent == child.intent))
+        {
+            if !prior.same_assignment(&child) {
+                return Err(error::retain(
+                    Error::caused_by("Required claim differs from parent admission"),
+                    diagnostics,
+                ));
+            }
+            continue;
+        }
+        child.status = domain::ChildExecutionStatus::Unknown;
+        child.outcome=Some(domain::ChildOutcome{
+            id:child.execution_id.clone(),status:domain::ChildExecutionStatus::Unknown,conversation_id:child.agent_id.clone(),
+            run_id:None,reply_id:None,summary:"Discovered durable claim has no matching parent admission. No child was replayed and effects are not proven unsent. Inspect its source before explicit reconciliation.".into(),artifacts:Vec::new(),
+        });
+        match d
+            .update_coordination
+            .call(
+                parent.clone(),
+                domain::CoordinationCommand::RetainClaim(Box::new(child)),
+                state.as_ref().map(|s| s.revision),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+        {
+            Ok(response) => state = Some(response.coordination),
+            Err(failure) => return Err(error::retain(Error::caused_by(failure), diagnostics)),
+        }
+    }
+    Ok((state, diagnostics))
 }
 
 pub(crate) fn project(coordination: &domain::Coordination) -> Result<String, Error> {

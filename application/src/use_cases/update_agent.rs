@@ -1,3 +1,5 @@
+use crate::coordination_recovery;
+
 mod dependencies;
 mod error;
 mod output;
@@ -19,9 +21,23 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: String) -> Result<O
         .await
         .map_err(Error::caused_by)?;
     conversation.recover();
+    coordination_recovery::pause(
+        &dependencies.read_coordination,
+        &dependencies.update_coordination,
+        &conversation,
+    )
+    .await
+    .map_err(Error::caused_by)?;
     conversation
         .acknowledge_interruption()
         .map_err(Error::caused_by)?;
+    coordination_recovery::acknowledge(
+        &dependencies.read_coordination,
+        &dependencies.update_coordination,
+        &conversation,
+    )
+    .await
+    .map_err(Error::caused_by)?;
     let conversation = dependencies
         .update_conversation
         .call(conversation)

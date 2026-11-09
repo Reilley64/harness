@@ -7,6 +7,7 @@ mod error;
 mod managed;
 mod output;
 
+use crate::coordination_recovery;
 use crate::model_access;
 use crate::research_access;
 use crate::use_cases::create_assignment;
@@ -100,6 +101,13 @@ async fn coordinate(
         .await
         .map_err(Error::caused_by)?;
     if conversation.recover() {
+        coordination_recovery::pause(
+            &dependencies.read_coordination,
+            &dependencies.update_coordination,
+            &conversation,
+        )
+        .await
+        .map_err(Error::caused_by)?;
         checkpoint(&dependencies, &mut conversation).await?;
     }
     if content.is_some() && conversation.resume_required {
@@ -251,6 +259,13 @@ async fn coordinate(
             .map_err(Error::caused_by)?;
     } else {
         conversation.resume().map_err(Error::caused_by)?;
+        coordination_recovery::resume(
+            &dependencies.read_coordination,
+            &dependencies.update_coordination,
+            &conversation,
+        )
+        .await
+        .map_err(Error::caused_by)?;
     }
     conversation = dependencies
         .update_conversation
@@ -877,8 +892,13 @@ async fn execute(
                 domain::ToolResult::success(format!("Durable child control accepted at coordination revision {}. Child execution identities and progress are unchanged.", output.coordination.revision))
             }
             domain::ToolInvocation::ReadChildren => {
-                let output = read_children::call(read_children::Dependencies { read_coordination: dependencies.read_coordination.clone(), read_conversation: dependencies.read_conversation.clone() }, sender_id.into()).await?;
-                domain::ToolResult::success(output.current_work.unwrap_or_else(|| "No accepted child work.".into()))
+                let output = read_children::call(read_children::Dependencies { read_coordination: dependencies.read_coordination.clone(), read_conversation: dependencies.read_conversation.clone(), read_execution_claims: dependencies.read_execution_claims.clone(), update_coordination: dependencies.update_coordination.clone() }, sender_id.into()).await?;
+                tool_errors.extend(output.diagnostics);
+                match output.current_work {
+                    Some(view) => domain::ToolResult::success(view),
+                    None if output.coordination.is_some() => domain::ToolResult::failed("Required current-work facts are unavailable or exceed the bounded context. Inspect retained child results and joins; no empty child view was substituted.".into()),
+                    None => domain::ToolResult::success("No accepted child work.".into()),
+                }
             }
             domain::ToolInvocation::ReadChildResult(execution_id) => {
                 let coordination = dependencies.read_coordination.call(sender_id.into()).await?.ok_or("No accepted child work")?;
@@ -887,12 +907,12 @@ async fn execute(
             }
             domain::ToolInvocation::PrepareAssignment(brief) => {
                 let output = create_assignment::call(dependencies.create_assignment.clone(), sender_id, sender_agent, assignment, parent, parent_connection_id, parent_revision, brief, cancellation).await?;
-                domain::ToolResult::success(format!("Assignment intent {} prepared with the exact actual-parent model AND thinking snapshot. Inspect /decision {}. No worker launched; dispatch/workspaces/review/merge remain unavailable.", output.decision.id, output.decision.id))
+                domain::ToolResult::success(format!("Assignment intent {} prepared with the exact actual-parent model AND thinking snapshot. Inspect /decision {}. No worker launched. Research dispatch is separately admitted; Implementers/workspaces/review/merge remain unavailable.", output.decision.id, output.decision.id))
             }
             domain::ToolInvocation::PublishWork(arguments) => {
                 if cancellation.is_cancelled() { return Ok(domain::ToolResult::cancelled()); }
                 let result=create_work::call(dependencies.create_work.clone(),sender_id,sender_agent,workspace,arguments.work_id,arguments.intent,arguments.path,arguments.revision,cancellation).await?;
-                domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Child dispatch, review and merge are unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
+                domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Only separately admitted Research can execute; implementation, review and merge remain unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
             }
             domain::ToolInvocation::McpCall(arguments) => {
                 let response = dependencies.create_mcp_call.call(workspace, arguments, cancellation).await?;

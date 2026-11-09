@@ -1,4 +1,7 @@
 use super::Error;
+fn complete() -> bool {
+    true
+}
 use crate::cache::encode_bounded;
 use crate::conversations;
 use crate::instructions;
@@ -11,13 +14,49 @@ struct IntentRecord {
     execution: ChildRecord,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GuidanceRecord {
+    format: u32,
+    intent: String,
+    parent_id: String,
+    parent_agent_id: String,
+
+    work_id: Option<String>,
+    work_intent: Option<String>,
+    work_version: Option<String>,
+
+    snapshot: SnapshotRecord,
+}
+
+#[derive(serde::Serialize)]
+struct Reference<'a> {
+    format: u32,
+    intent: &'a str,
+    parent_id: &'a str,
+    parent_agent_id: &'a str,
+}
+pub(super) fn reference(child: &domain::ChildExecution) -> Result<Vec<u8>, Error> {
+    encode_bounded(
+        &Reference {
+            format: 1,
+            intent: &child.intent,
+            parent_id: &child.parent_id,
+            parent_agent_id: &child.parent_agent_id,
+        },
+        4096,
+    )
+}
+
 pub(super) fn claim(
     bytes: Option<Vec<u8>>,
     proposed: domain::ChildExecution,
+    adoption: Option<Vec<u8>>,
 ) -> Result<(domain::ChildExecution, Option<Vec<u8>>), Error> {
     proposed.validate()?;
     instructions::validate(&proposed.instructions)?;
-    if proposed.status != domain::ChildExecutionStatus::Held
+    if proposed.stop_requested
+        || proposed.status != domain::ChildExecutionStatus::Held
         || proposed.outcome.is_some()
         || proposed.delivered_to.is_some()
         || proposed.follow_up_completed_by.is_some()
@@ -37,6 +76,21 @@ pub(super) fn claim(
         }
         return Ok((existing, None));
     }
+    if let Some(adoption) = adoption {
+        let adoption: GuidanceRecord = serde_json::from_slice(&adoption)?;
+        let snapshot: domain::InstructionSnapshot = adoption.snapshot.try_into()?;
+        if adoption.format != 1
+            || adoption.intent != proposed.intent
+            || adoption.parent_id != proposed.parent_id
+            || adoption.parent_agent_id != proposed.parent_agent_id
+            || adoption.work_id != proposed.work_id
+            || adoption.work_intent != proposed.work_intent
+            || adoption.work_version != proposed.work_version
+            || snapshot != proposed.instructions
+        {
+            return Err("Research adoption changed before claim admission; inspect the exact retained closure".into());
+        }
+    }
     let bytes = encode_bounded(
         &IntentRecord {
             format: 2,
@@ -54,6 +108,8 @@ pub(super) struct Record {
     conversation_id: String,
     agent_id: String,
     revision: u64,
+    #[serde(default = "complete")]
+    authority_complete: bool,
 
     gate: String,
 
@@ -93,6 +149,8 @@ struct ChildRecord {
 
     controller: String,
     status: String,
+    #[serde(default)]
+    stop_requested: bool,
 
     outcome: Option<OutcomeRecord>,
 
@@ -146,8 +204,10 @@ struct CandidateRecord {
 struct SnapshotRecord {
     id: String,
     phase: String,
+
     scopes: Vec<String>,
     references: Vec<String>,
+
     instructions: Vec<InstructionRecord>,
 }
 
@@ -158,6 +218,7 @@ struct InstructionRecord {
     version: String,
     source: String,
     upstream: Vec<String>,
+
     requires: Vec<String>,
     body: String,
 }
@@ -425,6 +486,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             routed: value.routed,
             controller: value.controller,
             status: status(&value.status)?,
+            stop_requested: value.stop_requested,
             outcome: value
                 .outcome
                 .map(|value| {
@@ -477,6 +539,7 @@ impl From<domain::ChildExecution> for ChildRecord {
             routed: value.routed,
             controller: value.controller,
             status: status_name(value.status),
+            stop_requested: value.stop_requested,
             outcome: value.outcome.map(|value| OutcomeRecord {
                 id: value.id,
                 status: status_name(value.status),
@@ -507,6 +570,7 @@ impl TryFrom<Record> for domain::Coordination {
             conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
+            authority_complete: value.authority_complete,
             gate: match value.gate.as_str() {
                 "open" => domain::CoordinationGate::Open,
                 "needs_human" => domain::CoordinationGate::NeedsHuman,
@@ -554,6 +618,7 @@ impl From<domain::Coordination> for Record {
             conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
+            authority_complete: value.authority_complete,
             gate: match value.gate {
                 domain::CoordinationGate::Open => "open",
                 domain::CoordinationGate::NeedsHuman => "needs_human",

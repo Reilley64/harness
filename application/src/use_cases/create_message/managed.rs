@@ -36,13 +36,28 @@ pub(super) async fn claim(
         .ok_or_else(|| Error::caused_by("The parent has no active logical run"))?
         .id
         .clone();
-    let mut coordination = d
-        .read_coordination
-        .call(conversation.id.clone())
-        .await
-        .map_err(Error::caused_by)?;
+    let (mut coordination, diagnostics) = read_children::load(
+        &read_children::Dependencies {
+            read_coordination: d.read_coordination.clone(),
+            read_conversation: d.read_conversation.clone(),
+            read_execution_claims: d.read_execution_claims.clone(),
+            update_coordination: d.update_coordination.clone(),
+        },
+        conversation.id.clone(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    if !diagnostics.is_empty() {
+        return Err(Error::caused_by(read_children::retained(diagnostics)));
+    }
     if coordination.as_ref().is_some_and(|state| {
-        state.gate == domain::CoordinationGate::NeedsHuman && state.controller.is_none()
+        matches!(
+            state.gate,
+            domain::CoordinationGate::NeedsHuman
+                | domain::CoordinationGate::Stopped
+                | domain::CoordinationGate::Unknown
+        ) && state.authority_complete
+            && state.controller.is_none()
     }) {
         let response = d
             .update_coordination
@@ -136,16 +151,21 @@ pub(super) async fn prepare(
 ) -> Result<(), Error> {
     let Some(lease) = lease else { return Ok(()) };
     for _ in 0..8 {
-        let state = d
-            .read_coordination
-            .call(conversation.id.clone())
-            .await
-            .map_err(Error::caused_by)?
-            .ok_or_else(|| {
-                Error::caused_by(
-                    "Required parent coordination is missing; inspect without inference",
-                )
-            })?;
+        let (state, recovered) = read_children::load(
+            &read_children::Dependencies {
+                read_coordination: d.read_coordination.clone(),
+                read_conversation: d.read_conversation.clone(),
+                read_execution_claims: d.read_execution_claims.clone(),
+                update_coordination: d.update_coordination.clone(),
+            },
+            conversation.id.clone(),
+        )
+        .await
+        .map_err(Error::caused_by)?;
+        diagnostics.extend(recovered);
+        let state = state.ok_or_else(|| {
+            Error::caused_by("Required parent coordination is missing; inspect without inference")
+        })?;
         if !state.eligible(&lease.run_id).map_err(Error::caused_by)? {
             return Err(Error::caused_by(
                 "Parent continuation is gated or a captured join is pending",
@@ -169,7 +189,7 @@ pub(super) async fn prepare(
                     .checked_add(1)
                     .ok_or_else(|| Error::caused_by("Coordination revision exhausted"))?;
             }
-            let view = read_children::project(&admitted).map_err(Error::caused_by)?;
+            let view = read_children::project(&admitted).map_err(|error|Error::caused_by(ErrorContext::caused_by("Required current-work facts cannot fit the 64 KiB context. Inspect retained source-linked results and joins before continuing; no facts were truncated.",error)))?;
             Ok::<_, Error>((state.revision, command, view))
         })
         .await
@@ -248,6 +268,13 @@ pub(super) async fn wait(
                 .children
                 .iter()
                 .any(|child| child.delivered_to.is_some() && child.follow_up_completed_by.is_none())
+        {
+            return Ok(false);
+        }
+        if after_response
+            && state.children.iter().any(|child| {
+                child.status == domain::ChildExecutionStatus::Unknown && child.outcome.is_none()
+            })
         {
             return Ok(false);
         }

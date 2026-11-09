@@ -4,6 +4,12 @@ use infrastructure::dependencies::Dependencies;
 use infrastructure::settings::Settings;
 use ohno::AppError;
 
+#[ohno::error]
+#[display("ACP and owned execution drain both failed: {drain}")]
+struct ShutdownError {
+    drain: application::use_cases::delete_executions::Error,
+}
+
 #[tokio::main]
 async fn main() {
     std::panic::set_hook(Box::new(|_| {
@@ -25,6 +31,12 @@ async fn run() -> Result<(), AppError> {
         .create_dispatch(|_| {
             application::use_cases::create_dispatch::Dependencies::new((&dependencies).into())
         })
+        .update_research_guidance(|_| {
+            application::use_cases::update_research_guidance::Dependencies::new(
+                (&dependencies).into(),
+            )
+        })
+        .delete_executions(|_| (&dependencies).into())
         .read_children(|_| (&dependencies).into())
         .update_children(|_| (&dependencies).into())
         .read_decision(|_| (&dependencies).into())
@@ -51,6 +63,12 @@ async fn run() -> Result<(), AppError> {
         .update_model_selection(|_| (&dependencies).into())
         .build();
 
-    presentation_acp::run(presentation).await?;
-    Ok(())
+    let result = presentation_acp::run(presentation).await;
+    let drained = application::use_cases::delete_executions::call(&dependencies).await;
+    match (result, drained) {
+        (Ok(()), Ok(_)) => Ok(()),
+        (Err(error), Ok(_)) => Err(error.into()),
+        (Ok(()), Err(error)) => Err(error.into()),
+        (Err(original), Err(drain)) => Err(ShutdownError::caused_by(drain, original).into()),
+    }
 }
