@@ -534,6 +534,7 @@ impl Coordination {
                     .find(|child| child.execution_id == execution_id)
                     .ok_or("Targeted instruction does not name an owned execution")?;
                 if !self.authority_complete
+                    || self.restart_required
                     || !matches!(
                         self.gate,
                         CoordinationGate::Open | CoordinationGate::NeedsHuman
