@@ -563,8 +563,8 @@ async fn execute(
                 _ = controls.tick() => {
                     match d.read_coordination.call(child.parent_id.clone()).await {
                         Ok(Some(state)) => {
-                            if !matches!(state.gate,domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman | domain::CoordinationGate::Stopped) { observations.push("Parent continuation requires explicit reconciliation; no child was replayed".into()); }
-                            if !matches!(state.gate,domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman) || state.children.iter().any(|entry| entry.execution_id == child.execution_id && entry.stop_requested) {
+                            if !matches!(state.gate,domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman | domain::CoordinationGate::Stopped | domain::CoordinationGate::ResumeRequired) { observations.push("Parent continuation requires explicit reconciliation; no child was replayed".into()); }
+                            if state.gate == domain::CoordinationGate::Stopped || state.children.iter().any(|entry| entry.execution_id == child.execution_id && entry.stop_requested) {
                                 cancellation.cancel();
                             }
                         }
@@ -622,6 +622,12 @@ async fn execute(
             )
             .await
             .map_err(Error::caused_by)?;
+    }
+    if conversation
+        .as_ref()
+        .is_some_and(|source| source.resume_required)
+    {
+        return Ok(());
     }
     let unsettled = match conversation.as_ref() {
         Some(conversation) => d

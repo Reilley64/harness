@@ -542,9 +542,13 @@ async fn coordinate(
             tokio::select! {outcome=&mut result=>outcome,_=tokio::time::sleep(std::time::Duration::from_secs(1200))=>{turn_cancellation.cancel();let stopped=result.await;Err(match stopped { Ok(_) => Error::caused_by("Turn exceeded 20 minutes"), Err(original) => error::retain(Error::caused_by("Turn exceeded 20 minutes"), vec![Box::new(original)]) })}}
         }
     };
+    let mut durably_paused = false;
     if managed_parent && !durably_stopped && !cancellation.is_cancelled() {
-        match managed::stopped(&dependencies, &conversation).await {
-            Ok(stopped) => durably_stopped = stopped,
+        match managed::disposition(&dependencies, &conversation).await {
+            Ok(gate) => {
+                durably_stopped = gate == domain::CoordinationGate::Stopped;
+                durably_paused = gate == domain::CoordinationGate::ResumeRequired;
+            }
             Err(error) => {
                 result = Err(match result {
                     Ok(_) => error,
@@ -555,6 +559,8 @@ async fn coordinate(
     }
     let status = if cancellation.is_cancelled() || durably_stopped {
         domain::MessageStatus::Cancelled
+    } else if durably_paused {
+        domain::MessageStatus::Interrupted
     } else {
         match &result {
             Ok(status) => *status,
@@ -565,8 +571,19 @@ async fn coordinate(
         conversation
             .finish_reply(buffer.lock().clone(), status)
             .map_err(Error::caused_by)?;
+        if status == domain::MessageStatus::Interrupted {
+            coordination_recovery::pause(
+                &dependencies.read_coordination,
+                &dependencies.update_coordination,
+                &conversation,
+            )
+            .await
+            .map_err(Error::caused_by)?;
+        }
         checkpoint(&dependencies, &mut conversation).await?;
-        managed::release(&dependencies, &conversation, status).await?;
+        if status != domain::MessageStatus::Interrupted {
+            managed::release(&dependencies, &conversation, status).await?;
+        }
         if recovering_research {
             receipts::persist(&dependencies, &conversation).await?;
         }
@@ -580,7 +597,10 @@ async fn coordinate(
         return Err(error::retain(error, tool_errors));
     }
     if let Err(error) = result {
-        if status != domain::MessageStatus::Cancelled {
+        if !matches!(
+            status,
+            domain::MessageStatus::Cancelled | domain::MessageStatus::Interrupted
+        ) {
             return Err(error::retain(error, tool_errors));
         }
         tool_errors.push(Box::new(error));

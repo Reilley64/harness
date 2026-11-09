@@ -222,6 +222,12 @@ async fn answer(
             .await
             .map_err(Error::caused_by)?;
     }
+    if output.conversation.resume_required {
+        return Ok(Output {
+            conversation: output.conversation,
+            tool_errors: output.tool_errors,
+        });
+    }
     let unsettled = d
         .read_coordination
         .call(output.conversation.id.clone())

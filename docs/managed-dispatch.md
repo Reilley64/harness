@@ -129,12 +129,20 @@ controller wins the monitor race. Finalization rechecks exact owned Stop facts;
 it records cancellation while retaining original diagnostics and known/uncertain
 effects, rather than turning a successful scoped Stop into a Failed run and an
 outcomeless Unknown claim. Missing or corrupt ownership still fails closed.
-Recovery/inspection gates are not classified as Stop.
+Recovery/inspection gates are not classified as Stop. If an ancestor is recovered
+while a later-run controller remains alive in another process, that controller
+checkpoints Interrupted/Resume-required and relinquishes its lease without a
+terminal receipt or Stop. Its original run and descendants remain retained;
+explicit owner then child Resume continues that run when no Unknown tool effect
+requires reconciliation.
 
 Later-run diagnostics are checkpointed privately before the receipt, linked to the
 actual execution and run. The diagnostic writer retains its format-one original
-execution records unchanged; format two adds the exact run identity in a separate
-immutable per-run file. A successful owned Stop does not become a failed background
+execution records unchanged; format two adds the exact run identity. A run's
+content-addressed immutable diagnostic batches retain successive interruption and
+Resume observations without overwriting earlier causes; old execution and early
+per-run file paths are left intact. The per-run directory is bounded at 512
+members, failing with original carriers rather than dropping evidence. A successful owned Stop does not become a failed background
 future merely because its admission-fence diagnostic was retained. Persistence or
 disposal failures still carry the original boxed causes and fail actionably.
 

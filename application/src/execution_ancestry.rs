@@ -30,16 +30,26 @@ pub(crate) async fn read(
     Ok(boundaries)
 }
 
-pub(crate) async fn stopped(
+pub(crate) async fn gate(
     coordination: &ReadCoordination,
     conversations: &ReadConversation,
     id: &str,
     research: &domain::ResearchAssignment,
-) -> Result<bool, Error> {
-    Ok(inspect(coordination, conversations, id, research)
-        .await?
+) -> Result<domain::CoordinationGate, Error> {
+    let boundaries = inspect(coordination, conversations, id, research).await?;
+    if boundaries
         .iter()
-        .any(|boundary| boundary.gate == domain::CoordinationGate::Stopped))
+        .any(|boundary| boundary.gate == domain::CoordinationGate::Stopped)
+    {
+        return Ok(domain::CoordinationGate::Stopped);
+    }
+    if boundaries
+        .iter()
+        .any(|boundary| boundary.gate == domain::CoordinationGate::ResumeRequired)
+    {
+        return Ok(domain::CoordinationGate::ResumeRequired);
+    }
+    Ok(domain::CoordinationGate::Open)
 }
 
 async fn inspect(

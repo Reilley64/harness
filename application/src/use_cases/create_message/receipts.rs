@@ -7,6 +7,9 @@ pub(super) async fn persist(
     d: &Dependencies,
     conversation: &domain::Conversation,
 ) -> Result<(), Error> {
+    if conversation.resume_required {
+        return Ok(());
+    }
     let research = conversation
         .research
         .as_ref()

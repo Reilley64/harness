@@ -331,6 +331,9 @@ impl Conversation {
         }
         reply.content = content;
         reply.status = status;
+        if status == MessageStatus::Interrupted {
+            self.resume_required = true;
+        }
         if let Some(run) = self.runs.last_mut() {
             run.status = match status {
                 MessageStatus::Cancelled => RunStatus::Stopped,

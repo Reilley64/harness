@@ -128,10 +128,11 @@ pub(super) async fn claim(
     Ok(Some(Lease { controller, run_id }))
 }
 
-pub(super) async fn stopped(
+pub(super) async fn disposition(
     d: &Dependencies,
     conversation: &domain::Conversation,
-) -> Result<bool, Error> {
+) -> Result<domain::CoordinationGate, Error> {
+    let mut gate = domain::CoordinationGate::Open;
     if let Some(state) = d
         .read_coordination
         .call(conversation.id.clone())
@@ -152,20 +153,27 @@ pub(super) async fn stopped(
             ));
         }
         if state.gate == domain::CoordinationGate::Stopped {
-            return Ok(true);
+            return Ok(domain::CoordinationGate::Stopped);
         }
+        gate = state.gate;
     }
     if let Some(research) = &conversation.research {
-        return execution_ancestry::stopped(
+        let ancestor = execution_ancestry::gate(
             &d.read_coordination,
             &d.read_conversation,
             &conversation.id,
             research,
         )
         .await
-        .map_err(Error::caused_by);
+        .map_err(Error::caused_by)?;
+        if matches!(
+            ancestor,
+            domain::CoordinationGate::Stopped | domain::CoordinationGate::ResumeRequired
+        ) {
+            return Ok(ancestor);
+        }
     }
-    Ok(false)
+    Ok(gate)
 }
 
 pub(super) async fn monitor(
