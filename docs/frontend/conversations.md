@@ -162,8 +162,15 @@ brief described by [ACP](../acp/children.md). These controls remain available
 during parent work without cancelling/resending it. Exit waits for pending child
 operations and owned backend draining before closing stdio.
 
+`/children steer {"executionId":"<owned execution>","text":"<instruction>"}`
+submits a distinct targeted instruction, not another parent message. The inspector
+shows its persisted order and effective-boundary acknowledgement, plus the latest
+accepted/applied instructions for the selected child. Rejected commands retain
+their editor text. No cancellation/resend, assignment restart or later-run enqueue
+implements this control.
+
 Child Stop traverses [retained execution ownership](../managed-dispatch.md#ownership-scoped-stop).
-This inspector is not general child steering/input, durable child drafts, a
+This inspector does not provide general typed child input, durable child drafts, a
 growing creation-arrow map, managed Implementer workspaces or complete subtree
 recovery. [Managed dispatch](../managed-dispatch.md) owns runtime authority,
 recovery, limits and diagnostic retention.

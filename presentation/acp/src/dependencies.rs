@@ -1,6 +1,7 @@
 use application::use_cases::create_agent;
 use application::use_cases::create_conversation;
 use application::use_cases::create_dispatch;
+use application::use_cases::create_instruction;
 use application::use_cases::create_message;
 use application::use_cases::create_provider_connection;
 use application::use_cases::delete_execution;
@@ -32,6 +33,7 @@ use application::use_cases::update_work;
 #[fundle::bundle]
 pub struct Dependencies {
     pub create_dispatch: create_dispatch::Dependencies,
+    pub create_instruction: create_instruction::Dependencies,
     pub update_research_guidance: update_research_guidance::Dependencies,
     pub delete_execution: delete_execution::Dependencies,
     pub delete_executions: delete_executions::Dependencies,

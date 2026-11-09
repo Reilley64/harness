@@ -16,6 +16,7 @@ Fields are camelCase and unknown fields are rejected.
 | `_harness/children/read` | `{sessionId}` | Read durable parent status without inference. |
 | `_harness/children/result` | `{sessionId, executionId}` | Read that parent's bounded source-linked receipt. |
 | `_harness/children/dispatch` | `{sessionId, revision, intent, routed, role, task, constraints, toolContext, contextTokens}` | Admit or reuse a Research execution and return before long child completion. |
+| `_harness/children/steer` | `{sessionId, executionId, id, text}` | Durably order a targeted human instruction for an existing active owned child. |
 | `_harness/children/join` | `{sessionId, id, mode, executions}` | Capture a fixed `any`/`all` set on the parent's active logical run. |
 | `_harness/children/background` | `{sessionId, id}` | Release that captured join without restarting children. |
 | `_harness/children/stop` | `{sessionId, executionId}` | Stop this parent's exact execution and its retained owned descendants, not siblings. |
@@ -42,6 +43,21 @@ Example read:
 The JSON-RPC `id` correlates one request/response. The explicit intent, child,
 assignment, execution, parent run and join IDs correlate durable work; a new
 JSON-RPC ID does not authorize another execution or a new assignment payload.
+
+## Targeted instruction acknowledgement
+
+`_harness/children/steer` takes the owning parent's session, exact execution and
+canonical instruction UUID. Text is 1..16384 UTF-8 bytes and cannot be blank.
+It returns `{instruction, effectiveBoundary}` only after durable acceptance.
+Instruction has `id`, `executionId`, parent-global `order`, `text`, nullable
+`appliedRun` and `appliedReply`. The latter identify a separately checkpointed
+application, not a promise that an already admitted effect was undone.
+Coordination reads expose the same ordered `instructions` array.
+
+Only the existing immediate-steering policy applies. An active generation is
+superseded; an already admitted tool may finish before remaining stale calls
+are skipped. Input/approval/restart/Stop require their matching controls;
+this endpoint does not enqueue a later run or grant scope authority.
 
 ## Responses
 

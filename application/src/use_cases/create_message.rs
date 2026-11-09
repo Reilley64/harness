@@ -4,6 +4,7 @@ use crate::ports::CreateModelStep;
 use crate::use_cases::update_mcp_configuration;
 mod dependencies;
 mod error;
+mod instructions;
 mod managed;
 mod output;
 
@@ -490,6 +491,7 @@ async fn run(
         .as_ref()
         .map_or(reply.steps.len(), Vec::len);
     for step_number in attempts..domain::MAX_MODEL_STEPS {
+        instructions::synchronize(dependencies, conversation, buffer, cancellation).await?;
         while let Ok(request) = steering.try_recv() {
             accept(dependencies, conversation, request, buffer, cancellation).await?;
         }
@@ -574,6 +576,7 @@ async fn run(
         }
         let finalizing =
             step_number + 1 == domain::MAX_MODEL_STEPS || executions >= domain::MAX_TOOL_EXECUTIONS;
+        instructions::admit(dependencies, research.as_ref(), cancellation).await?;
         let step_token = cancellation.child_token();
         let future = create.call(
             conversation.clone(),
@@ -588,9 +591,15 @@ async fn run(
         );
         tokio::pin!(future);
         let mut restart = false;
+        let mut instruction_timer = tokio::time::interval(std::time::Duration::from_millis(100));
         let result = loop {
             tokio::select! {
                 result=&mut future=>break result,
+                _ = instruction_timer.tick(), if !finalizing => {
+                    if instructions::synchronize(dependencies, conversation, buffer, cancellation).await? {
+                        step_token.cancel(); restart = true; break (&mut future).await;
+                    }
+                }
                 Some(request)=steering.recv()=>{
                     if finalizing {
                         let accepted = conversation.steering_accepted(&request.id, &request.text).unwrap_or(false);
@@ -603,6 +612,10 @@ async fn run(
                 }
             }
         };
+        if !finalizing {
+            restart |=
+                instructions::synchronize(dependencies, conversation, buffer, cancellation).await?;
+        }
         let reply = conversation.active_reply_mut().map_err(Error::caused_by)?;
         if result
             .as_ref()
@@ -685,6 +698,8 @@ async fn run(
         }
         let mut steered = false;
         for mut call in calls {
+            steered |=
+                instructions::synchronize(dependencies, conversation, buffer, cancellation).await?;
             while let Ok(request) = steering.try_recv() {
                 steered |=
                     accept(dependencies, conversation, request, buffer, cancellation).await?;
@@ -710,6 +725,7 @@ async fn run(
                     truncated: false,
                 };
             } else if let Some(Ok(invocation)) = invocation {
+                instructions::admit(dependencies, research.as_ref(), cancellation).await?;
                 executions += 1;
                 call.start().map_err(Error::caused_by)?;
                 conversation
@@ -789,6 +805,7 @@ async fn run(
                 result = loop {
                     tokio::select! {
                         result=&mut future=>break result,
+                        _ = instruction_timer.tick() => { steered |= instructions::synchronize(dependencies, conversation, buffer, cancellation).await?; }
                         Some(request)=steering.recv()=>{steered|=accept(dependencies,conversation,request,buffer,cancellation).await?;}
                     }
                 };

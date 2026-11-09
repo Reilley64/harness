@@ -1,5 +1,6 @@
 import type {
   ChildExecution,
+  ChildInstruction,
   ChildResult,
   Children,
 } from "../types/children.js";
@@ -75,6 +76,14 @@ export function parseExecution(value: unknown): ChildExecution {
   };
 }
 
+export function parseChildInstruction(value: unknown): ChildInstruction {
+  const v = object(value);
+  return {
+    id: text(v.id), executionId: text(v.executionId), order: integer(v.order), text: text(v.text),
+    appliedRun: optional(v.appliedRun), appliedReply: optional(v.appliedReply),
+  };
+}
+
 export function parseChildren(value: unknown): Children | null {
   const v = object(value).coordination;
   if (v === null) return null;
@@ -95,6 +104,7 @@ export function parseChildren(value: unknown): Children | null {
     status: text(state.status),
     settled: flag(state.settled),
     children: list(state.children).map(parseExecution),
+    instructions: list(state.instructions).map(parseChildInstruction),
     joins: list(state.joins).map((item) => {
       const j = object(item);
       if (j.mode !== "any" && j.mode !== "all")

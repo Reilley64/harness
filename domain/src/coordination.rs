@@ -1,6 +1,7 @@
 use crate::CapturedJoin;
 use crate::ChildExecution;
 use crate::ChildExecutionStatus;
+use crate::ChildInstruction;
 use crate::CoordinationCommand;
 use crate::CoordinationGate;
 
@@ -18,6 +19,7 @@ pub struct Coordination {
 
     pub children: Vec<ChildExecution>,
     pub joins: Vec<CapturedJoin>,
+    pub instructions: Vec<ChildInstruction>,
 }
 
 impl Coordination {
@@ -35,6 +37,7 @@ impl Coordination {
 
             children: Vec::new(),
             joins: Vec::new(),
+            instructions: Vec::new(),
         }
     }
 
@@ -55,6 +58,7 @@ impl Coordination {
                 .is_some_and(|id| id.is_empty() || id.len() > 128)
             || self.children.len() > 256
             || self.joins.len() > 256
+            || self.instructions.len() > 256
         {
             return Err(
                 "Coordination facts are missing or exceed bounded storage; inspect retained work",
@@ -77,6 +81,20 @@ impl Coordination {
                 })
             {
                 return Err("Child identity is duplicated or belongs to another parent");
+            }
+        }
+        for (index, instruction) in self.instructions.iter().enumerate() {
+            instruction.validate()?;
+            if instruction.order != index as u64 + 1
+                || !self
+                    .children
+                    .iter()
+                    .any(|child| child.execution_id == instruction.execution_id)
+                || self.instructions[..index]
+                    .iter()
+                    .any(|prior| prior.id == instruction.id)
+            {
+                return Err("Child instruction order or exact ownership is invalid");
             }
         }
         for (index, join) in self.joins.iter().enumerate() {
@@ -142,6 +160,110 @@ impl Coordination {
 
     fn transition(&mut self, command: CoordinationCommand) -> Result<bool, &'static str> {
         match command {
+            CoordinationCommand::SteerChild {
+                id,
+                execution_id,
+                text,
+            } => {
+                if let Some(prior) = self.instructions.iter().find(|prior| prior.id == id) {
+                    return if prior.execution_id == execution_id && prior.text == text {
+                        Ok(false)
+                    } else {
+                        Err("Instruction identity is already bound to different scope or text")
+                    };
+                }
+                let child = self
+                    .children
+                    .iter()
+                    .find(|child| child.execution_id == execution_id)
+                    .ok_or("Targeted instruction does not name an owned execution")?;
+                if !self.authority_complete
+                    || !matches!(
+                        self.gate,
+                        CoordinationGate::Open | CoordinationGate::NeedsHuman
+                    )
+                    || child.stop_requested
+                    || child.status != ChildExecutionStatus::Running
+                    || self
+                        .instructions
+                        .iter()
+                        .filter(|prior| prior.execution_id == execution_id)
+                        .count()
+                        >= 64
+                {
+                    return Err(
+                        "Targeted child is stopped, input/approval/restart gated or no longer active",
+                    );
+                }
+                self.instructions.push(ChildInstruction {
+                    id,
+                    execution_id,
+                    order: self.instructions.len() as u64 + 1,
+                    text,
+                    applied_run: None,
+                    applied_reply: None,
+                });
+            }
+            CoordinationCommand::AdmitChildAction {
+                execution_id,
+                controller,
+            } => {
+                let child = self
+                    .children
+                    .iter()
+                    .find(|child| child.execution_id == execution_id)
+                    .ok_or("Child action has no durable execution owner")?;
+                if !self.authority_complete
+                    || !matches!(
+                        self.gate,
+                        CoordinationGate::Open | CoordinationGate::NeedsHuman
+                    )
+                    || child.controller != controller
+                    || child.stop_requested
+                    || child.status != ChildExecutionStatus::Running
+                    || self.instructions.iter().any(|instruction| {
+                        instruction.execution_id == execution_id
+                            && instruction.applied_run.is_none()
+                    })
+                {
+                    return Err(
+                        "Child action is fenced by a gate or an unapplied human instruction",
+                    );
+                }
+            }
+            CoordinationCommand::ApplyChildInstruction {
+                id,
+                controller,
+                run_id,
+                reply_id,
+            } => {
+                let instruction = self
+                    .instructions
+                    .iter_mut()
+                    .find(|instruction| instruction.id == id)
+                    .ok_or("Accepted child instruction is missing")?;
+                let child = self
+                    .children
+                    .iter()
+                    .find(|child| child.execution_id == instruction.execution_id)
+                    .ok_or("Accepted child instruction has no execution owner")?;
+                if child.controller != controller {
+                    return Err(
+                        "Instruction acknowledgement belongs to a different execution controller",
+                    );
+                }
+                if instruction.applied_run.is_some() {
+                    return if instruction.applied_run.as_deref() == Some(&run_id)
+                        && instruction.applied_reply.as_deref() == Some(&reply_id)
+                    {
+                        Ok(false)
+                    } else {
+                        Err("Instruction was already checkpointed by a different run or reply")
+                    };
+                }
+                instruction.applied_run = Some(run_id);
+                instruction.applied_reply = Some(reply_id);
+            }
             CoordinationCommand::Dispatch(child) => {
                 if let Some(prior) = self
                     .children

@@ -297,8 +297,21 @@ export function HarnessScreen({
     if (!command.startsWith("/guidance")) guidance.close();
     if (command !== "/setup") setup.close();
     if (command === "/children" || command.startsWith("/children ")) {
-      draft.change("");
       setMap(false);
+      if (command.startsWith("/children steer ")) {
+        try {
+          const args: unknown = JSON.parse(command.slice("/children steer ".length));
+          if (!args || typeof args !== "object" || !("executionId" in args) || typeof args.executionId !== "string" || !("text" in args) || typeof args.text !== "string")
+            throw new Error("Expected child instruction JSON with executionId and text.");
+          void children.steer(args.executionId, args.text).then((accepted) => {
+            if (accepted) draft.change("");
+          });
+        } catch (error) {
+          setNotice(errorMessage(error));
+        }
+        return;
+      }
+      draft.change("");
       if (command.startsWith("/children guidance "))
         void children.inspectGuidance(
           command.slice("/children guidance ".length),

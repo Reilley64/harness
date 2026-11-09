@@ -21,6 +21,7 @@ The stock inspector opens existing Research history read-only and exposes fixed
 joins, backgrounding, source reports, scoped Stop and pending guidance adoption.
 The growing map remains separate. [Ownership-scoped Stop](#ownership-scoped-stop)
 is available without adding nested dispatch, child input or a new controller.
+[Targeted instructions](#targeted-human-instructions) use the existing controller.
 
 ## Admission and immutable assignment facts
 
@@ -118,6 +119,37 @@ provider request/result pairing. A completed parent model response can be shown
 while owned children remain outstanding; it is not settlement. The owning run
 waits without inference and resumes for eligible results or accepted steering.
 Closed coordination gates retain outcomes without permitting a new model call.
+
+## Targeted human instructions
+
+`create_instruction` admits a human instruction for an exact existing active
+child execution, separately from the parent's conversation prompt. The parent
+coordination record assigns a durable total order across its targeted children.
+The same instruction UUID and exact payload is idempotent; conflicting reuse
+fails. Instructions are bounded to 16 KiB each, 64 per execution and 256 retained
+per parent. These are storage bounds, not an enqueue-after-run mode.
+
+Acknowledgement follows the atomic parent checkpoint. A separate applied-run and
+applied-reply acknowledgement follows the child's conversation checkpoint.
+Both are visible through ordinary reads and the CoS current-work context.
+Instructions have human precedence within their exact accepted assignment scope;
+they do not grant new scope, answer input, approve a version or clear Stop/Resume.
+A child without an active reply must use the appropriate typed continuation
+control, not ordinary steering.
+
+The existing worker controller observes the durable instructions during generation
+and tool work. A superseded generation retains its reported usage but not its
+discarded continuation. An already admitted tool may finish; remaining batch
+calls are skipped. Before new inference or tool admission, an atomic ownership
+check rejects unapplied instructions and closed gates. No frontend resend,
+assignment restart or second child controller implements steering.
+
+Coordination with targeted instructions writes format three, requiring its
+ordered instruction array. Existing format-two records remain readable and write
+format two until the first instruction; their absent array means no historical
+targeted instructions, not inferred authority. Format three cannot omit the
+array, format two cannot carry it, and older executables reject the new format.
+Conversation schemas and immutable claim format two are unchanged.
 
 ## Ownership-scoped Stop
 

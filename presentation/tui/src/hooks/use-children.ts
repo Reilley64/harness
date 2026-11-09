@@ -20,6 +20,7 @@ export function useChildren(agent: Agent, parentId?: string) {
   const [confirmation, setConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acknowledgement, setAcknowledgement] = useState<string | null>(null);
   const generation = useRef(0);
   const owner = useRef(parentId);
   const controller = useRef<AbortController | null>(null);
@@ -121,6 +122,15 @@ export function useChildren(agent: Agent, parentId?: string) {
       })
     )
       await refresh();
+  }
+  async function steer(executionId: string, text: string) {
+    const instructionId = crypto.randomUUID();
+    setVisible(true);
+    setAcknowledgement(null);
+    return run(async (id) => {
+      const accepted = await agent.steerChild(id, executionId, instructionId, text);
+      setAcknowledgement(`Instruction ${accepted.instruction.id}, durable order ${accepted.instruction.order}. ${accepted.effectiveBoundary}`);
+    });
   }
   const child = state?.children.find((c) => c.executionId === selected);
   const captured = state?.joins[join % Math.max(1, state.joins.length)];
@@ -284,6 +294,8 @@ export function useChildren(agent: Agent, parentId?: string) {
     inspect,
     inspectGuidance,
     dispatch,
+    steer,
+    acknowledgement,
     close,
   };
 }

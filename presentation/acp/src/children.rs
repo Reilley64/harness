@@ -135,6 +135,34 @@ pub(crate) struct AdoptResponse {
     pub snapshot: String,
 }
 
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcRequest,
+)]
+#[request(method="_harness/children/steer",response=SteerResponse)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SteerRequest {
+    pub session_id: String,
+    pub execution_id: String,
+    pub id: String,
+    pub text: String,
+}
+
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SteerResponse {
+    pub instruction: serde_json::Value,
+    pub effective_boundary: String,
+}
+
+pub(crate) fn instruction(value: &domain::ChildInstruction) -> serde_json::Value {
+    serde_json::json!({
+        "id": value.id, "executionId": value.execution_id, "order": value.order, "text": value.text,
+        "appliedRun": value.applied_run, "appliedReply": value.applied_reply,
+    })
+}
+
 pub(crate) fn execution(child: &domain::ChildExecution) -> serde_json::Value {
     serde_json::json!({
         "intent": child.intent,
@@ -172,6 +200,7 @@ pub(crate) fn summary(state: &domain::Coordination) -> serde_json::Value {
         "runId": state.run_id,
         "status": match state.gate { domain::CoordinationGate::Open => if state.waiting { "waiting" } else if state.controller.is_some() { "running" } else { "ready" }, domain::CoordinationGate::NeedsHuman => "needs_human", domain::CoordinationGate::Approval => "approval", domain::CoordinationGate::Stopped => "stopped", domain::CoordinationGate::ResumeRequired => "resume_required", domain::CoordinationGate::Unknown => "unknown" },
         "settled": state.settled(),
+        "instructions": state.instructions.iter().map(instruction).collect::<Vec<_>>(),
         "children": state.children.iter().map(execution).collect::<Vec<_>>(),
         "joins": state.joins.iter().map(|join| serde_json::json!({ "id": join.id, "runId": join.run_id, "mode": match join.mode { domain::JoinMode::Any => "any", domain::JoinMode::All => "all" }, "executions": join.executions, "backgrounded": join.backgrounded })).collect::<Vec<_>>(),
     })

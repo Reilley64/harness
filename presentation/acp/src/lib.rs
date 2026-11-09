@@ -76,6 +76,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         read_children,
         update_children,
         create_dispatch,
+        create_instruction,
         delete_execution,
         delete_executions,
         update_research_guidance,
@@ -188,6 +189,21 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     }
                 })
             }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::SteerRequest, responder, connection| {
+                let d = create_instruction.clone();
+                connection.spawn(async move {
+                    match application::use_cases::create_instruction::call(d, request.session_id, request.execution_id, request.id, request.text, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::SteerResponse {
+                            instruction: children::instruction(&output.instruction),
+                            effective_boundary: "Accepted durably in parent order. An active generation is superseded; an already admitted tool may finish. Remaining stale actions are fenced at the next safe boundary.".into(),
+                        }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |request: children::AdoptRequest, responder, connection| {

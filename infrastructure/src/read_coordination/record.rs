@@ -19,6 +19,19 @@ pub(super) struct Record {
 
     children: Vec<ChildRecord>,
     joins: Vec<JoinRecord>,
+    instructions: Option<Vec<ChildInstructionRecord>>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChildInstructionRecord {
+    id: String,
+    execution_id: String,
+    order: u64,
+    text: String,
+
+    applied_run: Option<String>,
+    applied_reply: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -322,9 +335,12 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
 impl TryFrom<Record> for domain::Coordination {
     type Error = Error;
     fn try_from(value: Record) -> Result<Self, Error> {
-        if value.format != 2 {
+        if !matches!(
+            (value.format, value.instructions.is_some()),
+            (2, false) | (3, true)
+        ) {
             return Err(
-                "Unsupported coordination format; preserve records and use a compatible executable"
+                "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
                     .into(),
             );
         }
@@ -347,6 +363,29 @@ impl TryFrom<Record> for domain::Coordination {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
+            instructions: value
+                .instructions
+                .unwrap_or_default()
+                .into_iter()
+                .map(|instruction| {
+                    conversations::validate_id(&instruction.id)?;
+                    conversations::validate_id(&instruction.execution_id)?;
+                    if let Some(id) = &instruction.applied_run {
+                        conversations::validate_id(id)?;
+                    }
+                    if let Some(id) = &instruction.applied_reply {
+                        conversations::validate_id(id)?;
+                    }
+                    Ok::<_, Error>(domain::ChildInstruction {
+                        id: instruction.id,
+                        execution_id: instruction.execution_id,
+                        order: instruction.order,
+                        text: instruction.text,
+                        applied_run: instruction.applied_run,
+                        applied_reply: instruction.applied_reply,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
             children: value
                 .children
                 .into_iter()

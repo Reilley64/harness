@@ -116,6 +116,20 @@ pub(super) struct Record {
 
     children: Vec<ChildRecord>,
     joins: Vec<JoinRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instructions: Option<Vec<ChildInstructionRecord>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ChildInstructionRecord {
+    id: String,
+    execution_id: String,
+    order: u64,
+    text: String,
+
+    applied_run: Option<String>,
+    applied_reply: Option<String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -554,9 +568,12 @@ impl From<domain::ChildExecution> for ChildRecord {
 impl TryFrom<Record> for domain::Coordination {
     type Error = Error;
     fn try_from(value: Record) -> Result<Self, Error> {
-        if value.format != 2 {
+        if !matches!(
+            (value.format, value.instructions.is_some()),
+            (2, false) | (3, true)
+        ) {
             return Err(
-                "Unsupported coordination format; preserve records and use a compatible executable"
+                "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
                     .into(),
             );
         }
@@ -579,6 +596,29 @@ impl TryFrom<Record> for domain::Coordination {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
+            instructions: value
+                .instructions
+                .unwrap_or_default()
+                .into_iter()
+                .map(|instruction| {
+                    conversations::validate_id(&instruction.id)?;
+                    conversations::validate_id(&instruction.execution_id)?;
+                    if let Some(id) = &instruction.applied_run {
+                        conversations::validate_id(id)?;
+                    }
+                    if let Some(id) = &instruction.applied_reply {
+                        conversations::validate_id(id)?;
+                    }
+                    Ok::<_, Error>(domain::ChildInstruction {
+                        id: instruction.id,
+                        execution_id: instruction.execution_id,
+                        order: instruction.order,
+                        text: instruction.text,
+                        applied_run: instruction.applied_run,
+                        applied_reply: instruction.applied_reply,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
             children: value
                 .children
                 .into_iter()
@@ -610,7 +650,7 @@ impl TryFrom<Record> for domain::Coordination {
 impl From<domain::Coordination> for Record {
     fn from(value: domain::Coordination) -> Self {
         Self {
-            format: 2,
+            format: if value.instructions.is_empty() { 2 } else { 3 },
             conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
@@ -627,6 +667,20 @@ impl From<domain::Coordination> for Record {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
+            instructions: (!value.instructions.is_empty()).then(|| {
+                value
+                    .instructions
+                    .into_iter()
+                    .map(|instruction| ChildInstructionRecord {
+                        id: instruction.id,
+                        execution_id: instruction.execution_id,
+                        order: instruction.order,
+                        text: instruction.text,
+                        applied_run: instruction.applied_run,
+                        applied_reply: instruction.applied_reply,
+                    })
+                    .collect()
+            }),
             children: value.children.into_iter().map(Into::into).collect(),
             joins: value
                 .joins

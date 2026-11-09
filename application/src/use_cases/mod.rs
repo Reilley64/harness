@@ -2,6 +2,7 @@ pub mod create_agent;
 pub mod create_assignment;
 pub mod create_conversation;
 pub mod create_dispatch;
+pub mod create_instruction;
 pub mod create_message;
 pub mod create_provider_connection;
 pub mod create_work;

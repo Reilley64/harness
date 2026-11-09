@@ -5,6 +5,21 @@ use crate::CoordinationGate;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoordinationCommand {
+    SteerChild {
+        id: String,
+        execution_id: String,
+        text: String,
+    },
+    AdmitChildAction {
+        execution_id: String,
+        controller: String,
+    },
+    ApplyChildInstruction {
+        id: String,
+        controller: String,
+        run_id: String,
+        reply_id: String,
+    },
     Dispatch(Box<ChildExecution>),
     RetainClaim(Box<ChildExecution>),
     Start {

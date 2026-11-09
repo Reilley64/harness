@@ -27,7 +27,7 @@ import {
   parseProviderConnection,
   validAuthorizationUrl,
 } from "./authorization.js";
-import { parseChildResult, parseChildren, parseExecution } from "./children.js";
+import { parseChildInstruction, parseChildResult, parseChildren, parseExecution } from "./children.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
 import { parseDeciders, parseDecision } from "./decisions.js";
 import { PresentationError } from "./errors.js";
@@ -414,6 +414,20 @@ export function connectAgent() {
       ),
     );
   }
+  async function steerChild(
+    sessionId: string,
+    executionId: string,
+    id: string,
+    text: string,
+  ) {
+    const value = await childRequest(
+      "_harness/children/steer", { sessionId, executionId, id, text }, undefined, true,
+    );
+    if (!value || typeof value !== "object" || !("instruction" in value) || !("effectiveBoundary" in value) || typeof value.effectiveBoundary !== "string")
+      throw new PresentationError("Invalid durable child instruction acknowledgement.");
+    return { instruction: parseChildInstruction(value.instruction), effectiveBoundary: value.effectiveBoundary };
+  }
+
   async function dispatchChild(
     sessionId: string,
     args: Record<string, unknown>,
@@ -1027,6 +1041,7 @@ export function connectAgent() {
     childResult,
     controlChildren,
     dispatchChild,
+    steerChild,
     adoptResearch,
     viewConversation,
     updateMcp,

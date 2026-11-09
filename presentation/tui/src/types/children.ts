@@ -31,6 +31,15 @@ export type CapturedJoin = {
   backgrounded: boolean;
 };
 
+export type ChildInstruction = {
+  id: string;
+  executionId: string;
+  order: number;
+  text: string;
+  appliedRun: string | null;
+  appliedReply: string | null;
+};
+
 export type Children = {
   agentId: string;
   conversationId: string;
@@ -44,6 +53,7 @@ export type Children = {
   settled: boolean;
   children: ChildExecution[];
   joins: CapturedJoin[];
+  instructions: ChildInstruction[];
 };
 
 export type ChildResult = {
