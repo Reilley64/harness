@@ -125,6 +125,7 @@ pub(crate) struct AdoptRequest {
     pub intent: String,
     pub snapshot: String,
 }
+
 #[derive(
     Debug, Clone, serde::Serialize, serde::Deserialize, agent_client_protocol::JsonRpcResponse,
 )]

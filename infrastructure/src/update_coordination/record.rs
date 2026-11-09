@@ -33,6 +33,7 @@ struct Reference<'a> {
     parent_id: &'a str,
     parent_agent_id: &'a str,
 }
+
 pub(super) fn reference(child: &domain::ChildExecution) -> Result<Vec<u8>, Error> {
     encode_bounded(
         &Reference {

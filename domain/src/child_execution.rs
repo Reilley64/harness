@@ -110,6 +110,7 @@ impl ChildExecution {
             ]
             .iter()
             .any(|id| id.is_empty() || id.len() > 128)
+            || self.routed != self.work_id.is_some()
             || self.work_id.is_some() != self.work_version.is_some()
             || self.work_id.is_some() != self.work_intent.is_some()
             || self.work_id.is_some() != self.approved_at.is_some()

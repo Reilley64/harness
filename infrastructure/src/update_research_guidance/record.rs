@@ -1,4 +1,5 @@
 use crate::conversations;
+
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -15,6 +16,7 @@ pub(super) struct Record {
 
     snapshot: SnapshotRecord,
 }
+
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct SnapshotRecord {
@@ -26,6 +28,7 @@ struct SnapshotRecord {
 
     instructions: Vec<InstructionRecord>,
 }
+
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct InstructionRecord {
@@ -37,6 +40,7 @@ struct InstructionRecord {
     requires: Vec<String>,
     body: String,
 }
+
 impl TryFrom<Record> for domain::ResearchGuidance {
     type Error = Error;
     fn try_from(value: Record) -> Result<Self, Error> {
@@ -77,6 +81,7 @@ impl TryFrom<Record> for domain::ResearchGuidance {
         Ok(guidance)
     }
 }
+
 impl From<domain::ResearchGuidance> for Record {
     fn from(value: domain::ResearchGuidance) -> Self {
         let snapshot = value.snapshot;

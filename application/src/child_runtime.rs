@@ -11,6 +11,7 @@ pub enum StartError {
     Closing,
     AlreadyOwned,
 }
+
 impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
@@ -19,6 +20,7 @@ impl std::fmt::Display for StartError {
         })
     }
 }
+
 impl std::error::Error for StartError {}
 
 #[derive(Clone, Default)]

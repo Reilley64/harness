@@ -88,14 +88,13 @@ reported incompatible model is an error before tools, never a replacement worker
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 6 with approved assignment/CoS metadata, optional Setup
-tool drafts, per-message/run
-provider provenance, optional resolved-model/serving-provider metadata, agent/run
-associations and immutable instruction snapshots. Versions 1 through 5 remain
-readable without rewriting until mutation/recovery; versions 1 through 4 use
-their single stored provider for missing legacy provider provenance. Historical
-instruction provenance and human consent are never invented.
-See [role guidance](role-guidance.md) and [repository Setup](repository-setup.md).
+Conversation records preserve per-message/run provider provenance, optional
+resolved-model/serving-provider metadata, agent/run associations and immutable
+instruction snapshots. Historical instruction provenance and human consent are
+never invented. [Conversation recovery](conversations/recovery.md) owns general
+version compatibility; [managed Research](managed-dispatch.md#compatibility-and-recovery-limits)
+owns its additive schema-seven lineage. See [role guidance](role-guidance.md) and
+[repository Setup](repository-setup.md).
 Read/create/update conversation adapters and preference adapters each own their
 serialized `Record` types. Shared filesystem helpers operate on bytes, not DTOs.
 

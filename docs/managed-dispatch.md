@@ -32,8 +32,11 @@ Current permission, positive Chat compatibility, context, connection and canonic
 identity are checked before execution. There is no worker fallback after dispatch.
 
 The durable claim retains parent/run/revision, work/version/approval references,
-chosen pair, exact brief and Research instruction snapshot. Mutable picker
-preferences do not select a later worker for an accepted intent. The same globally claimed
+chosen pair, exact brief and Research instruction snapshot. Routed Research also
+requires the complete approved-work identity, intent, version and approval time at
+every admission boundary; omission or nulling is incomplete authority, never
+unrestricted inheritance. Unrouted Griller inheritance carries no work tuple.
+Mutable picker preferences do not select a later worker for an accepted intent. The same globally claimed
 intent with the same typed payload returns the accepted handle without starting
 another future; conflicting payload reuse, including another parent, fails. Intent UUIDs are explicit, not
 fuzzy semantic deduplication. The intent UUID is the global execution-claim key.
