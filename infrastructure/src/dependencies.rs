@@ -61,6 +61,8 @@ pub struct Dependencies {
     settings: Settings,
     create_assignment: application::use_cases::create_assignment::Dependencies,
     child_runtime: application::child_runtime::ChildRuntime,
+    read_children: application::use_cases::read_children::Dependencies,
+    delete_execution: application::use_cases::delete_execution::Dependencies,
     create_execution_diagnostics: ports::CreateExecutionDiagnostics,
     create_research: ports::CreateResearch,
     read_coordination: ports::ReadCoordination,
@@ -200,6 +202,8 @@ impl Dependencies {
                 })
             })
             .child_runtime(|_| application::child_runtime::ChildRuntime::default())
+            .read_children(|deps| deps.into())
+            .delete_execution(|deps| deps.into())
             .read_coordination(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let implementation = read_coordination::read_coordination(

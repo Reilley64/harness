@@ -36,6 +36,7 @@ async fn run() -> Result<(), AppError> {
                 (&dependencies).into(),
             )
         })
+        .delete_execution(|_| (&dependencies).into())
         .delete_executions(|_| (&dependencies).into())
         .read_children(|_| (&dependencies).into())
         .update_children(|_| (&dependencies).into())
