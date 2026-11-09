@@ -67,13 +67,14 @@ pub(crate) async fn monitor(
             .iter()
             .find(|child| child.execution_id == research.execution_id)
             .ok_or("Research execution disappeared; inspect without replay")?;
-        if child.stop_requested
-            || !matches!(
-                state.gate,
-                domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman
-            )
-        {
-            return Ok(());
+        match state.execution_gate(&child.execution_id)? {
+            domain::CoordinationGate::Stopped => return Ok(()),
+            domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman => {}
+            _ => {
+                return Err(
+                    "Research ownership is gated for recovery or inspection, not stopped".into(),
+                );
+            }
         }
     }
 }

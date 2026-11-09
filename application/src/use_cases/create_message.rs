@@ -476,7 +476,7 @@ async fn coordinate(
     let monitored_run = conversation.runs.last().map(|run| run.id.clone());
     let monitored_research = conversation.research.clone();
     let mut durably_stopped = false;
-    let result = {
+    let mut result = {
         let result = run(
             &dependencies,
             &create_model_step,
@@ -542,6 +542,17 @@ async fn coordinate(
             tokio::select! {outcome=&mut result=>outcome,_=tokio::time::sleep(std::time::Duration::from_secs(1200))=>{turn_cancellation.cancel();let stopped=result.await;Err(match stopped { Ok(_) => Error::caused_by("Turn exceeded 20 minutes"), Err(original) => error::retain(Error::caused_by("Turn exceeded 20 minutes"), vec![Box::new(original)]) })}}
         }
     };
+    if managed_parent && !durably_stopped && !cancellation.is_cancelled() {
+        match managed::stopped(&dependencies, &conversation).await {
+            Ok(stopped) => durably_stopped = stopped,
+            Err(error) => {
+                result = Err(match result {
+                    Ok(_) => error,
+                    Err(original) => error::retain(error, vec![Box::new(original)]),
+                })
+            }
+        }
+    }
     let status = if cancellation.is_cancelled() || durably_stopped {
         domain::MessageStatus::Cancelled
     } else {

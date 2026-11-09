@@ -191,6 +191,26 @@ impl Coordination {
             .find(|scope| scope.execution_id == execution_id)
     }
 
+    pub fn execution_gate(&self, execution_id: &str) -> Result<CoordinationGate, &'static str> {
+        if !self.authority_complete {
+            return Err("Execution ownership authority is incomplete");
+        }
+        let child = self
+            .children
+            .iter()
+            .find(|child| child.execution_id == execution_id)
+            .ok_or("Execution ownership is missing")?;
+        Ok(
+            if child.stop_requested || self.gate == CoordinationGate::Stopped {
+                CoordinationGate::Stopped
+            } else if child.resume_required || self.gate == CoordinationGate::ResumeRequired {
+                CoordinationGate::ResumeRequired
+            } else {
+                self.gate
+            },
+        )
+    }
+
     pub fn settled(&self) -> bool {
         self.authority_complete
             && !self.restart_required

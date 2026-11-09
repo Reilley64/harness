@@ -1,6 +1,7 @@
 use super::Dependencies;
 use super::Error;
 use crate::error_context::ErrorContext;
+use crate::execution_ancestry;
 use crate::ports::ReadCoordination;
 use crate::ports::UpdateCoordination;
 use crate::turn_control::SteeringRequest;
@@ -125,6 +126,46 @@ pub(super) async fn claim(
         .await
         .map_err(Error::caused_by)?;
     Ok(Some(Lease { controller, run_id }))
+}
+
+pub(super) async fn stopped(
+    d: &Dependencies,
+    conversation: &domain::Conversation,
+) -> Result<bool, Error> {
+    if let Some(state) = d
+        .read_coordination
+        .call(conversation.id.clone())
+        .await
+        .map_err(Error::caused_by)?
+    {
+        if conversation
+            .agent
+            .as_ref()
+            .is_none_or(|agent| agent.id.0 != state.agent_id)
+            || state
+                .run_id
+                .as_ref()
+                .is_some_and(|id| conversation.runs.last().is_none_or(|run| run.id != *id))
+        {
+            return Err(Error::caused_by(
+                "Stop disposition ownership differs from its durable run",
+            ));
+        }
+        if state.gate == domain::CoordinationGate::Stopped {
+            return Ok(true);
+        }
+    }
+    if let Some(research) = &conversation.research {
+        return execution_ancestry::stopped(
+            &d.read_coordination,
+            &d.read_conversation,
+            &conversation.id,
+            research,
+        )
+        .await
+        .map_err(Error::caused_by);
+    }
+    Ok(false)
 }
 
 pub(super) async fn monitor(

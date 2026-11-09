@@ -124,6 +124,13 @@ while owned children remain outstanding; it is not settlement. The owning run
 waits without inference and resumes for eligible results or accepted steering.
 Closed coordination gates retain outcomes without permitting a new model call.
 
+A durable Stop also governs final disposition when an admission fence or a cleared
+controller wins the monitor race. Finalization rechecks exact owned Stop facts;
+it records cancellation while retaining original diagnostics and known/uncertain
+effects, rather than turning a successful scoped Stop into a Failed run and an
+outcomeless Unknown claim. Missing or corrupt ownership still fails closed.
+Recovery/inspection gates are not classified as Stop.
+
 ## Targeted human instructions
 
 `create_instruction` admits a human instruction for an exact existing active
