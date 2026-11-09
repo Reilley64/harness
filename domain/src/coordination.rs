@@ -203,7 +203,10 @@ impl Coordination {
         Ok(
             if child.stop_requested || self.gate == CoordinationGate::Stopped {
                 CoordinationGate::Stopped
-            } else if child.resume_required || self.gate == CoordinationGate::ResumeRequired {
+            } else if self.restart_required
+                || child.resume_required
+                || self.gate == CoordinationGate::ResumeRequired
+            {
                 CoordinationGate::ResumeRequired
             } else {
                 self.gate
@@ -393,6 +396,7 @@ impl Coordination {
                     ChildExecutionStatus::NeedsHuman | ChildExecutionStatus::Completed
                 );
         if !self.authority_complete
+            || self.restart_required
             || !matches!(
                 self.gate,
                 CoordinationGate::Open | CoordinationGate::NeedsHuman
@@ -564,6 +568,7 @@ impl Coordination {
                     .find(|child| child.execution_id == execution_id)
                     .ok_or("Recovered child execution is missing")?;
                 if !self.authority_complete
+                    || self.restart_required
                     || !matches!(
                         self.gate,
                         CoordinationGate::Open | CoordinationGate::NeedsHuman
@@ -609,6 +614,7 @@ impl Coordination {
                     .as_ref()
                     .ok_or("Human input request has no durable receipt")?;
                 if !self.authority_complete
+                    || self.restart_required
                     || !matches!(
                         self.gate,
                         CoordinationGate::Open | CoordinationGate::NeedsHuman

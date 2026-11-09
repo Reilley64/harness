@@ -111,6 +111,12 @@ saved but is not replayed as completed model output. During a tool, the current
 operation finishes; remaining calls in that batch are recorded Skipped before
 continuing with the new instruction. Rapid instructions retain their order.
 
+If instruction or ownership observation fails during admitted work, the backend
+cancels as appropriate and awaits the provider/tool cleanup before finalization.
+It retains reported usage, the tool's actual result and original operation and
+observation causes. A failed observation does not release a mutation guard while
+its blocking commit continues or admit another action.
+
 Explicit Stop cancels the current turn, including subprocess cleanup, without
 initiating another request. Escape only closes or back-navigates. Failed/unaccepted instructions remain drafts. Unsaved draft text
 is not cleared by completion. Neither React nor the transport automatically

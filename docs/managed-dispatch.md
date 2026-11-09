@@ -151,8 +151,10 @@ disposal failures still carry the original boxed causes and fail actionably.
 `create_instruction` admits a human instruction for an exact existing active
 child execution, separately from the parent's conversation prompt. The parent
 coordination record assigns a durable total order across its targeted children.
-The same instruction UUID and exact payload is idempotent; conflicting reuse
-fails. Instructions are bounded to 16 KiB each, 64 per execution and 256 retained
+The same instruction UUID and exact payload returns its retained acknowledgement,
+even after completion or while input, Stop or restart prevents new admission.
+Conflicting reuse fails; acknowledgement retrieval does not clear any gate or
+start work. Instructions are bounded to 16 KiB each, 64 per execution and 256 retained
 per parent. These are storage bounds, not an enqueue-after-run mode.
 
 Acknowledgement follows the atomic parent checkpoint. A separate applied-run and
@@ -346,7 +348,11 @@ selected conversation execution guard. Live owners are not mistaken for dead
 workers merely because another backend reads their history. Lost active owners
 receive durable recovery notices without replay. A parent that already ended for
 human input also requires explicit Resume when its outstanding ownership was
-interrupted. A matching answer cannot bypass that post-restart gate.
+interrupted. That owner's restart gate also fences surviving descendants,
+including later-run controllers in other processes. A live ownership lease is
+not marked lost; its controller drains admitted work and pauses truthfully before
+new inference or effects. Stop remains dominant. Neither a matching answer nor a
+child Resume can bypass the owner's post-restart gate.
 
 At an ended input boundary, explicit Resume only acknowledges restart and restores
 the same question, without inference. The subsequent matching answer starts the

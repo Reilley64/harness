@@ -19,10 +19,12 @@ pub async fn read(
         .call(research.parent_id.clone())
         .await?
         .ok_or("Research coordination is missing; inspect the accepted execution without replay")?;
-    if !matches!(
-        parent.gate,
-        domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman
-    ) {
+    if parent.restart_required
+        || !matches!(
+            parent.gate,
+            domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman
+        )
+    {
         return Err(
             "Research parent is gated; retain results without new inference or effects".into(),
         );

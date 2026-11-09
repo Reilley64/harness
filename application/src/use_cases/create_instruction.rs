@@ -35,6 +35,27 @@ pub async fn call(
         .iter()
         .find(|child| child.execution_id == execution_id)
         .ok_or_else(|| Error::caused_by("Targeted child is not owned by this parent"))?;
+    if !state.authority_complete {
+        return Err(Error::caused_by(
+            "Instruction acknowledgement requires complete execution ownership",
+        ));
+    }
+    if let Some(instruction) = state
+        .instructions
+        .iter()
+        .find(|instruction| instruction.id == id)
+    {
+        return if instruction.execution_id == execution_id && instruction.text == text {
+            Ok(Output {
+                instruction: instruction.clone(),
+            })
+        } else {
+            Err(Error::caused_by(
+                "Instruction identity is already bound to a different exact payload",
+            ))
+        };
+    }
+
     let conversation = d
         .read_conversation
         .call(child.agent_id.clone())
