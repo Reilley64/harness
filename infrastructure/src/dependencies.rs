@@ -202,8 +202,6 @@ impl Dependencies {
                 })
             })
             .child_runtime(|_| application::child_runtime::ChildRuntime::default())
-            .read_children(|deps| deps.into())
-            .delete_execution(|deps| deps.into())
             .read_coordination(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let implementation = read_coordination::read_coordination(
@@ -658,6 +656,8 @@ impl Dependencies {
                 );
                 ports::CreateNativeDecision::new(implementation)
             })
+            .read_children(|deps| deps.into())
+            .delete_execution(|deps| deps.into())
             .create_assignment(|deps| deps.into())
             .create_work(|deps| deps.into())
             .build()
