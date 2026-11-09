@@ -189,10 +189,12 @@ impl Dependencies {
                 let implementation = create_execution_diagnostics::create_execution_diagnostics(
                     &settings.app_data_path.join("coordination/diagnostics"),
                 );
-                ports::CreateExecutionDiagnostics::new(move |parent, execution, diagnostics| {
-                    let result = implementation(parent, execution, diagnostics);
-                    Box::pin(async move { Ok(result.await?) })
-                })
+                ports::CreateExecutionDiagnostics::new(
+                    move |parent, execution, run, diagnostics| {
+                        let result = implementation(parent, execution, run, diagnostics);
+                        Box::pin(async move { Ok(result.await?) })
+                    },
+                )
             })
             .create_research(|deps| {
                 let settings: &Settings = deps.as_ref();

@@ -617,6 +617,7 @@ async fn execute(
             .call(
                 child.parent_id.clone(),
                 child.execution_id.clone(),
+                None,
                 std::mem::take(&mut diagnostics),
             )
             .await

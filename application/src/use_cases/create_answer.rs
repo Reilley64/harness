@@ -204,6 +204,24 @@ async fn answer(
             });
         }
     };
+    let retained = !output.tool_errors.is_empty();
+    if retained {
+        let run = output.conversation.runs.last().ok_or_else(|| {
+            error::retain(
+                Error::caused_by("Later diagnostics have no durable run"),
+                std::mem::take(&mut output.tool_errors),
+            )
+        })?;
+        d.create_execution_diagnostics
+            .call(
+                research.parent_id.clone(),
+                research.execution_id.clone(),
+                Some(run.id.clone()),
+                std::mem::take(&mut output.tool_errors),
+            )
+            .await
+            .map_err(Error::caused_by)?;
+    }
     let unsettled = d
         .read_coordination
         .call(output.conversation.id.clone())
@@ -215,6 +233,7 @@ async fn answer(
             )
         })?
         .is_some_and(|state| !state.settled());
+    let execution_id = research.execution_id.clone();
     let (mut conversation, outcome) = tokio::task::spawn_blocking(move || {
         let conversation = output.conversation;
         let reply = conversation.messages.last().ok_or_else(|| Error::caused_by("Later child run has no reply"))?;
@@ -234,7 +253,7 @@ async fn answer(
             summary: if reply.content.len() <= 8192 { reply.content.clone() } else {
                 "Later-run report exceeds its bounded summary; inspect the retained source conversation.".into()
             },
-            artifacts: vec![format!("harness://conversations/{id}")],
+            artifacts: if retained { vec![format!("harness://conversations/{id}"), format!("harness://execution-diagnostics/{}/runs/{}", execution_id, run.id)] } else { vec![format!("harness://conversations/{id}")] },
         };
         Ok::<_, Error>((Output { conversation, tool_errors: output.tool_errors }, outcome))
     }).await.map_err(Error::caused_by)??;

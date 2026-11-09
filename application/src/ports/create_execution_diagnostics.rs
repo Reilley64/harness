@@ -6,4 +6,4 @@ use crate::ports::PortFuture;
 #[display("failed to retain private execution diagnostics")]
 pub struct CreateExecutionDiagnosticsError;
 
-port! { pub CreateExecutionDiagnostics(parent_id:String,execution_id:String,diagnostics:Vec<Box<dyn std::error::Error+Send+Sync>>,) -> PortFuture<Result<(),CreateExecutionDiagnosticsError>>; }
+port! { pub CreateExecutionDiagnostics(parent_id:String,execution_id:String,run_id:Option<String>,diagnostics:Vec<Box<dyn std::error::Error+Send+Sync>>,) -> PortFuture<Result<(),CreateExecutionDiagnosticsError>>; }

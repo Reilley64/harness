@@ -14,14 +14,27 @@ struct Retained {
 
 pub fn create_execution_diagnostics(
     directory: &Path,
-) -> impl Fn(String, String, Vec<Error>) -> PortFuture<Result<(), Error>> + Send + Sync + use<> {
+) -> impl Fn(String, String, Option<String>, Vec<Error>) -> PortFuture<Result<(), Error>>
++ Send
++ Sync
++ use<> {
     let directory = directory.to_owned();
-    move |parent_id, execution_id, diagnostics| {
+    move |parent_id, execution_id, run_id, diagnostics| {
         let directory = directory.clone();
         Box::pin(async move {
-            let path = directory.join(format!("{execution_id}.json"));
+            let (directory, path) = match &run_id {
+                Some(run) => {
+                    let directory = directory.join(&execution_id);
+                    let path = directory.join(format!("{run}.json"));
+                    (directory, path)
+                }
+                None => (
+                    directory.clone(),
+                    directory.join(format!("{execution_id}.json")),
+                ),
+            };
             let (diagnostics, encoded) = tokio::task::spawn_blocking(move || {
-                let encoded = record::encode(parent_id, execution_id, &diagnostics);
+                let encoded = record::encode(parent_id, execution_id, run_id, &diagnostics);
                 (diagnostics, encoded)
             })
             .await?;

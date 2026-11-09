@@ -9,6 +9,8 @@ struct Record {
     format: u32,
     parent_id: String,
     execution_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run_id: Option<String>,
 
     diagnostics: Vec<Diagnostic>,
 }
@@ -68,10 +70,14 @@ fn text(arguments: std::fmt::Arguments<'_>, remaining: &mut usize) -> Result<Str
 pub(super) fn encode(
     parent_id: String,
     execution_id: String,
+    run_id: Option<String>,
     diagnostics: &[Error],
 ) -> Result<Vec<u8>, Error> {
     conversations::validate_id(&parent_id)?;
     conversations::validate_id(&execution_id)?;
+    if let Some(run) = &run_id {
+        conversations::validate_id(run)?;
+    }
     let mut entries = Vec::new();
     let mut remaining = LIMIT;
     for error in diagnostics {
@@ -91,9 +97,10 @@ pub(super) fn encode(
     serde_json::to_writer(
         &mut encoded,
         &Record {
-            format: 1,
+            format: if run_id.is_some() { 2 } else { 1 },
             parent_id,
             execution_id,
+            run_id,
             diagnostics: entries,
         },
     )?;

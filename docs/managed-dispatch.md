@@ -131,6 +131,13 @@ effects, rather than turning a successful scoped Stop into a Failed run and an
 outcomeless Unknown claim. Missing or corrupt ownership still fails closed.
 Recovery/inspection gates are not classified as Stop.
 
+Later-run diagnostics are checkpointed privately before the receipt, linked to the
+actual execution and run. The diagnostic writer retains its format-one original
+execution records unchanged; format two adds the exact run identity in a separate
+immutable per-run file. A successful owned Stop does not become a failed background
+future merely because its admission-fence diagnostic was retained. Persistence or
+disposal failures still carry the original boxed causes and fail actionably.
+
 ## Targeted human instructions
 
 `create_instruction` admits a human instruction for an exact existing active
