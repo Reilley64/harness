@@ -194,7 +194,7 @@ selects it; a same-node double-click within 400 ms opens it. Ink-measured hit bo
 handle split SGR reports and invalidate pending double-clicks on geometry changes.
 
 Titles are exactly `harness - Griller`, `harness - Setup`, `harness - Research`,
-`harness - Chief of Staff` and `harness - Agent map`; an explicitly
+`harness - Chief of Staff`, `harness - Children` and `harness - Agent map`; an explicitly
 loaded unassociated pilot uses `harness - Conversation`. Only static context labels
 enter title escapes. Background updates cannot change selection/title. Title,
 mouse and raw/alternate-screen modes pair with cleanup. The transcript stays

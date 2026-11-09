@@ -47,6 +47,7 @@ pub async fn read(
     {
         return Err("Research selection, execution or captured guidance changed; inspect without replacement".into());
     }
+    model.validate_context(child.brief.context_tokens)?;
     authorize(work, child).await
 }
 

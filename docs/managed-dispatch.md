@@ -29,7 +29,10 @@ run, saved workspace and permitted role. CoS work must still match its exact
 approved handoff. A routed brief must match the settled native intent; an
 unrouted Griller captures its actual provider connection, model and thinking.
 Current permission, positive Chat compatibility, context, connection and canonical
-identity are checked before execution. There is no worker fallback after dispatch.
+identity are checked before execution. Every later model admission reloads the
+current catalog and rechecks its context capacity against the immutable brief; an
+insufficient refresh blocks without replacing the pair or replaying prior effects.
+There is no worker fallback after dispatch.
 
 The durable claim retains parent/run/revision, work/version/approval references,
 chosen pair, exact brief and Research instruction snapshot. Routed Research also

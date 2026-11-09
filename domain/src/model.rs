@@ -47,6 +47,13 @@ impl Model {
         Ok(())
     }
 
+    pub fn validate_context(&self, required: u64) -> Result<(), &'static str> {
+        if required == 0 || self.context_window.is_none_or(|limit| limit < required) {
+            return Err("The model does not satisfy the required context capacity");
+        }
+        Ok(())
+    }
+
     pub fn validate_effort(&self, effort: Option<ModelEffort>) -> Result<(), &'static str> {
         if self.id.trim().is_empty() || self.provider_id.0.trim().is_empty() {
             return Err("A model and provider must be selected");

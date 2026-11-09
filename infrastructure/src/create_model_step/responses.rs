@@ -111,7 +111,7 @@ where
                         work.authorize_assignment(a,&coordinator_id).context("Approved work changed; inspect and approve the current scope/criteria version")?;
                     }
 
-                    application::research_access::read(&read_coordination, &read_work, research.as_ref(), &coordinator_id, &model, effort, &connection_id, instructions.as_deref()).await?;
+                    application::research_access::read(&read_coordination, &read_work, research.as_ref(), &coordinator_id, &current, effort, &connection_id, instructions.as_deref()).await?;
                     if let Some(run_id) = &parent_run {
                         let state = read_coordination.call(coordinator_id.clone()).await?.ok_or("Required current-work coordination is unavailable")?;
                         if state.gate != domain::CoordinationGate::Open || state.run_id.as_ref() != Some(run_id) || state.controller.is_none() {
