@@ -442,8 +442,8 @@ async fn coordinate(
         .await
         .map_err(Error::caused_by)?;
     let mut tool_errors = Vec::new();
-    if let (Some(request_run), Some(research)) = (answer_run, conversation.research.clone()) {
-        if let Err(original) = dependencies
+    if let (Some(request_run), Some(research)) = (answer_run, conversation.research.clone())
+        && let Err(original) = dependencies
             .update_coordination
             .call(
                 research.parent_id.clone(),
@@ -456,17 +456,16 @@ async fn coordinate(
                 cancellation.clone(),
             )
             .await
-        {
-            conversation = answers::reconcile(
-                &dependencies,
-                conversation,
-                &research,
-                &request_run,
-                original,
-                &mut tool_errors,
-            )
-            .await?;
-        }
+    {
+        conversation = answers::reconcile(
+            &dependencies,
+            conversation,
+            &research,
+            &request_run,
+            original,
+            &mut tool_errors,
+        )
+        .await?;
     }
     let buffer = Arc::new(Mutex::new(
         conversation
