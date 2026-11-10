@@ -116,6 +116,52 @@ pub(super) struct Record {
 
     children: Vec<ChildRecord>,
     joins: Vec<JoinRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instructions: Option<Vec<ChildInstructionRecord>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovered: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scopes: Option<Vec<ScopeRecord>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    restart: Option<RestartRecord>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct RestartRecord {
+    required: bool,
+    notices: Vec<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveryRecord {
+    notice: Option<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ScopeRecord {
+    id: String,
+    execution_id: String,
+    version: String,
+    text: String,
+
+    replaces: Option<String>,
+    supersedes_run: Option<String>,
+    approved_by: Option<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ChildInstructionRecord {
+    id: String,
+    execution_id: String,
+    order: u64,
+    text: String,
+
+    applied_run: Option<String>,
+    applied_reply: Option<String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -147,9 +193,23 @@ struct ChildRecord {
     controller: String,
     status: String,
     stop_requested: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resume_required: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery: Option<RecoveryRecord>,
 
     outcome: Option<OutcomeRecord>,
 
+    delivered_to: Option<String>,
+    follow_up_completed_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    history: Option<Vec<ReceiptRecord>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptRecord {
+    outcome: OutcomeRecord,
     delivered_to: Option<String>,
     follow_up_completed_by: Option<String>,
 }
@@ -483,6 +543,8 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             controller: value.controller,
             status: status(&value.status)?,
             stop_requested: value.stop_requested,
+            resume_required: value.resume_required.unwrap_or(false),
+            recovery_notice: value.recovery.and_then(|recovery| recovery.notice),
             outcome: value
                 .outcome
                 .map(|value| {
@@ -499,6 +561,27 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
                 .transpose()?,
             delivered_to: value.delivered_to,
             follow_up_completed_by: value.follow_up_completed_by,
+            history: value
+                .history
+                .unwrap_or_default()
+                .into_iter()
+                .map(|receipt| {
+                    let value = receipt.outcome;
+                    Ok::<_, Error>(domain::ChildReceipt {
+                        outcome: domain::ChildOutcome {
+                            id: value.id,
+                            status: status(&value.status)?,
+                            conversation_id: value.conversation_id,
+                            run_id: value.run_id,
+                            reply_id: value.reply_id,
+                            summary: value.summary,
+                            artifacts: value.artifacts,
+                        },
+                        delivered_to: receipt.delivered_to,
+                        follow_up_completed_by: receipt.follow_up_completed_by,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
         };
         child.validate()?;
         Ok(child)
@@ -536,6 +619,8 @@ impl From<domain::ChildExecution> for ChildRecord {
             controller: value.controller,
             status: status_name(value.status),
             stop_requested: value.stop_requested,
+            resume_required: None,
+            recovery: None,
             outcome: value.outcome.map(|value| OutcomeRecord {
                 id: value.id,
                 status: status_name(value.status),
@@ -547,6 +632,25 @@ impl From<domain::ChildExecution> for ChildRecord {
             }),
             delivered_to: value.delivered_to,
             follow_up_completed_by: value.follow_up_completed_by,
+            history: (!value.history.is_empty()).then(|| {
+                value
+                    .history
+                    .into_iter()
+                    .map(|receipt| ReceiptRecord {
+                        outcome: OutcomeRecord {
+                            id: receipt.outcome.id,
+                            status: status_name(receipt.outcome.status),
+                            conversation_id: receipt.outcome.conversation_id,
+                            run_id: receipt.outcome.run_id,
+                            reply_id: receipt.outcome.reply_id,
+                            summary: receipt.outcome.summary,
+                            artifacts: receipt.outcome.artifacts,
+                        },
+                        delivered_to: receipt.delivered_to,
+                        follow_up_completed_by: receipt.follow_up_completed_by,
+                    })
+                    .collect()
+            }),
         }
     }
 }
@@ -554,11 +658,41 @@ impl From<domain::ChildExecution> for ChildRecord {
 impl TryFrom<Record> for domain::Coordination {
     type Error = Error;
     fn try_from(value: Record) -> Result<Self, Error> {
-        if value.format != 2 {
+        if !matches!(
+            (value.format, value.instructions.is_some()),
+            (2, false) | (3, true) | (4, true) | (5, true) | (6, true) | (7, true)
+        ) || value.children.iter().any(|child| {
+            child.history.is_some() != (value.format >= 4)
+                || child.resume_required.is_some() != (value.format >= 5)
+                || child.recovery.is_some() != (value.format == 7)
+        }) {
             return Err(
-                "Unsupported coordination format; preserve records and use a compatible executable"
+                "Unsupported or incomplete coordination format; preserve records and use a compatible executable"
                     .into(),
             );
+        }
+        if value.recovered.is_some() != (value.format >= 5) {
+            return Err("Recovered ownership facts are incomplete or incompatible".into());
+        }
+        if value.scopes.is_some() != (value.format >= 6) {
+            return Err("Scope authority facts are incomplete or incompatible".into());
+        }
+        if value.restart.is_some() != (value.format == 7) {
+            return Err("Idle recovery facts are incomplete or incompatible".into());
+        }
+        if let Some(restart) = &value.restart {
+            for notice in &restart.notices {
+                conversations::validate_id(notice)?;
+            }
+        }
+        for child in &value.children {
+            if let Some(notice) = child
+                .recovery
+                .as_ref()
+                .and_then(|recovery| recovery.notice.as_ref())
+            {
+                conversations::validate_id(notice)?;
+            }
         }
         conversations::validate_id(&value.conversation_id)?;
         conversations::validate_id(&value.agent_id)?;
@@ -567,6 +701,13 @@ impl TryFrom<Record> for domain::Coordination {
             agent_id: value.agent_id,
             revision: value.revision,
             authority_complete: value.authority_complete,
+            restart_required: value
+                .restart
+                .as_ref()
+                .is_some_and(|restart| restart.required),
+            recovery_notices: value
+                .restart
+                .map_or_else(Vec::new, |restart| restart.notices),
             gate: match value.gate.as_str() {
                 "open" => domain::CoordinationGate::Open,
                 "needs_human" => domain::CoordinationGate::NeedsHuman,
@@ -579,6 +720,55 @@ impl TryFrom<Record> for domain::Coordination {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
+            recovered: value.recovered.unwrap_or_default(),
+            scopes: value
+                .scopes
+                .unwrap_or_default()
+                .into_iter()
+                .map(|scope| {
+                    for id in [&scope.id, &scope.execution_id, &scope.version] {
+                        conversations::validate_id(id)?;
+                    }
+                    for id in [&scope.replaces, &scope.supersedes_run, &scope.approved_by]
+                        .into_iter()
+                        .flatten()
+                    {
+                        conversations::validate_id(id)?;
+                    }
+                    Ok::<_, Error>(domain::ScopeAmendment {
+                        id: scope.id,
+                        execution_id: scope.execution_id,
+                        version: scope.version,
+                        text: scope.text,
+                        replaces: scope.replaces,
+                        supersedes_run: scope.supersedes_run,
+                        approved_by: scope.approved_by,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
+            instructions: value
+                .instructions
+                .unwrap_or_default()
+                .into_iter()
+                .map(|instruction| {
+                    conversations::validate_id(&instruction.id)?;
+                    conversations::validate_id(&instruction.execution_id)?;
+                    if let Some(id) = &instruction.applied_run {
+                        conversations::validate_id(id)?;
+                    }
+                    if let Some(id) = &instruction.applied_reply {
+                        conversations::validate_id(id)?;
+                    }
+                    Ok::<_, Error>(domain::ChildInstruction {
+                        id: instruction.id,
+                        execution_id: instruction.execution_id,
+                        order: instruction.order,
+                        text: instruction.text,
+                        applied_run: instruction.applied_run,
+                        applied_reply: instruction.applied_reply,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
             children: value
                 .children
                 .into_iter()
@@ -609,8 +799,28 @@ impl TryFrom<Record> for domain::Coordination {
 
 impl From<domain::Coordination> for Record {
     fn from(value: domain::Coordination) -> Self {
+        let restarted = !value.recovery_notices.is_empty()
+            || value
+                .children
+                .iter()
+                .any(|child| child.recovery_notice.is_some());
+        let scoped = restarted || !value.scopes.is_empty();
+        let recovered = scoped || !value.recovered.is_empty();
+        let later_runs = recovered || value.children.iter().any(|child| !child.history.is_empty());
         Self {
-            format: 2,
+            format: if restarted {
+                7
+            } else if scoped {
+                6
+            } else if recovered {
+                5
+            } else if later_runs {
+                4
+            } else if value.instructions.is_empty() {
+                2
+            } else {
+                3
+            },
             conversation_id: value.conversation_id,
             agent_id: value.agent_id,
             revision: value.revision,
@@ -627,7 +837,61 @@ impl From<domain::Coordination> for Record {
             controller: value.controller,
             run_id: value.run_id,
             waiting: value.waiting,
-            children: value.children.into_iter().map(Into::into).collect(),
+            recovered: recovered.then_some(value.recovered),
+            restart: restarted.then_some(RestartRecord {
+                required: value.restart_required,
+                notices: value.recovery_notices,
+            }),
+            scopes: scoped.then(|| {
+                value
+                    .scopes
+                    .into_iter()
+                    .map(|scope| ScopeRecord {
+                        id: scope.id,
+                        execution_id: scope.execution_id,
+                        version: scope.version,
+                        text: scope.text,
+                        replaces: scope.replaces,
+                        supersedes_run: scope.supersedes_run,
+                        approved_by: scope.approved_by,
+                    })
+                    .collect()
+            }),
+            instructions: (later_runs || !value.instructions.is_empty()).then(|| {
+                value
+                    .instructions
+                    .into_iter()
+                    .map(|instruction| ChildInstructionRecord {
+                        id: instruction.id,
+                        execution_id: instruction.execution_id,
+                        order: instruction.order,
+                        text: instruction.text,
+                        applied_run: instruction.applied_run,
+                        applied_reply: instruction.applied_reply,
+                    })
+                    .collect()
+            }),
+            children: value
+                .children
+                .into_iter()
+                .map(|child| {
+                    let resume_required = child.resume_required;
+                    let recovery_notice = child.recovery_notice.clone();
+                    let mut record = ChildRecord::from(child);
+                    if restarted {
+                        record.recovery = Some(RecoveryRecord {
+                            notice: recovery_notice,
+                        });
+                    }
+                    if recovered {
+                        record.resume_required = Some(resume_required);
+                    }
+                    if later_runs && record.history.is_none() {
+                        record.history = Some(Vec::new());
+                    }
+                    record
+                })
+                .collect(),
             joins: value
                 .joins
                 .into_iter()

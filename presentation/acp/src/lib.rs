@@ -4,6 +4,7 @@ mod children;
 mod conversations;
 mod decisions;
 mod dependencies;
+mod executions;
 mod guidance;
 mod mcp;
 mod projection;
@@ -75,6 +76,10 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         read_children,
         update_children,
         create_dispatch,
+        create_instruction,
+        create_scope,
+        update_scope,
+        delete_execution,
         delete_executions,
         update_research_guidance,
         read_decision,
@@ -108,12 +113,17 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
     let sessions = conversations::Sessions::default();
     let agent_sessions = sessions.clone();
     let read_agent_sessions = sessions.clone();
+    let answer_sessions = sessions.clone();
+    let view_sessions = sessions.clone();
+    let answer_history = read_conversation.clone();
+    let answer_dependencies = create_message.clone();
     let resume_sessions = sessions.clone();
     let resume_history = read_conversation.clone();
     let resume_dependencies = create_message.clone();
     let new_sessions = sessions.clone();
     let loaded_sessions = sessions.clone();
     let prompted_sessions = sessions.clone();
+    let execution_sessions = sessions.clone();
     let steering_sessions = sessions.clone();
     let steering_history = read_conversation.clone();
     let projection_history = read_conversation.clone();
@@ -144,6 +154,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/nativeDecider".into(), serde_json::json!(true)),
                     ("harness/setup".into(), serde_json::json!(true)),
                     ("harness/children".into(), serde_json::json!(true)),
+                    ("harness/executionStop".into(), serde_json::json!(true)),
                 ]
                 .into_iter()
                 .collect();
@@ -157,6 +168,70 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                         ])
                         .meta(metadata),
                 )
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: executions::Request, responder, connection| {
+                let d = delete_execution.clone();
+                let sessions = execution_sessions.clone();
+                connection.spawn(async move {
+                    let selected_conversation = request.execution_id.is_none();
+                    let result = application::use_cases::delete_execution::call(
+                        d,
+                        request.session_id.clone(),
+                        request.execution_id,
+                        tokio_util::sync::CancellationToken::new(),
+                    ).await;
+                    if selected_conversation {
+                        sessions.cancel(&request.session_id);
+                    }
+                    match result {
+                        Ok(output) => responder.respond(executions::Response {
+                            coordination: children::summary(&output.coordination),
+                            executions: output.executions,
+                        }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ScopeRequest, responder, connection| {
+                let d = create_scope.clone();
+                connection.spawn(async move {
+                    match application::use_cases::create_scope::call(d, request.session_id, request.execution_id, request.id, request.text, request.replaces, request.supersedes_run, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::ScopeResponse { scope: children::scope(&output.scope), continuation_started: false }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ApproveScopeRequest, responder, connection| {
+                let d = update_scope.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_scope::call(d, request.session_id, request.id, request.version, request.approval_id, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::ScopeResponse { scope: children::scope(&output.scope), continuation_started: output.started }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::SteerRequest, responder, connection| {
+                let d = create_instruction.clone();
+                connection.spawn(async move {
+                    match application::use_cases::create_instruction::call(d, request.session_id, request.execution_id, request.id, request.text, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::SteerResponse {
+                            instruction: children::instruction(&output.instruction),
+                            effective_boundary: "Accepted durably in parent order. An active generation is superseded; an already admitted tool may finish. Remaining stale actions are fenced at the next safe boundary.".into(),
+                        }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -196,13 +271,31 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         .on_receive_request(
             async move |request: children::ViewRequest, responder, connection| {
                 let d = viewing_children.clone();
+                let sessions = view_sessions.clone();
                 connection.spawn(async move {
                     match application::use_cases::read_conversation::inspect(d, request.session_id).await {
-                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Ok(output) => {
+                            if let Some(workspace) = &output.conversation.workspace {
+                                sessions.register(&output.conversation.id, workspace.clone());
+                            }
+                            responder.respond(agents::response(&output.conversation))
+                        }
                         Err(error) => responder.respond_with_error(conversations::error(error)),
                     }
                 })
             }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::AnswerRequest, responder, connection| {
+                let prompt = PromptRequest::new(
+                    request.session_id,
+                    vec![agent_client_protocol::v1::schema::ContentBlock::Text(
+                        agent_client_protocol::v1::schema::TextContent::new(request.text),
+                    )],
+                );
+                prompt::receive(prompt, responder, connection, answer_dependencies.clone(), answer_history.clone(), answer_sessions.clone(), false, Some(request.request_run))
+            },
+            agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |request: children::ReadRequest, responder, connection| {
@@ -626,6 +719,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     projection_history.clone(),
                     prompted_sessions.clone(),
                     false,
+                    None,
                 )
             },
             agent_client_protocol::on_receive_request!(),
@@ -836,6 +930,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     resume_history.clone(),
                     resume_sessions.clone(),
                     true,
+                    None,
                 )
             },
             agent_client_protocol::on_receive_request!(),

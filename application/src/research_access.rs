@@ -19,10 +19,12 @@ pub async fn read(
         .call(research.parent_id.clone())
         .await?
         .ok_or("Research coordination is missing; inspect the accepted execution without replay")?;
-    if !matches!(
-        parent.gate,
-        domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman
-    ) {
+    if parent.restart_required
+        || !matches!(
+            parent.gate,
+            domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman
+        )
+    {
         return Err(
             "Research parent is gated; retain results without new inference or effects".into(),
         );
@@ -33,6 +35,7 @@ pub async fn read(
         .find(|child| child.intent == research.intent)
         .ok_or("Research execution claim is missing")?;
     if child.stop_requested
+        || child.resume_required
         || child.parent_agent_id != research.parent_agent_id
         || child.agent_id != id
         || child.assignment_id != research.assignment_id
@@ -49,6 +52,33 @@ pub async fn read(
     }
     model.validate_context(child.brief.context_tokens)?;
     authorize(work, child).await
+}
+
+pub(crate) async fn monitor(
+    coordination: &ports::ReadCoordination,
+    research: domain::ResearchAssignment,
+) -> Result<(), Error> {
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let state = coordination
+            .call(research.parent_id.clone())
+            .await?
+            .ok_or("Research ownership disappeared; inspect without replay")?;
+        let child = state
+            .children
+            .iter()
+            .find(|child| child.execution_id == research.execution_id)
+            .ok_or("Research execution disappeared; inspect without replay")?;
+        match state.execution_gate(&child.execution_id)? {
+            domain::CoordinationGate::Stopped => return Ok(()),
+            domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman => {}
+            _ => {
+                return Err(
+                    "Research ownership is gated for recovery or inspection, not stopped".into(),
+                );
+            }
+        }
+    }
 }
 
 pub(crate) async fn authorize(

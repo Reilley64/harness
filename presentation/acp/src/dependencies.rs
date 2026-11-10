@@ -1,8 +1,11 @@
 use application::use_cases::create_agent;
 use application::use_cases::create_conversation;
 use application::use_cases::create_dispatch;
+use application::use_cases::create_instruction;
 use application::use_cases::create_message;
 use application::use_cases::create_provider_connection;
+use application::use_cases::create_scope;
+use application::use_cases::delete_execution;
 use application::use_cases::delete_executions;
 use application::use_cases::read_agent;
 use application::use_cases::read_children;
@@ -25,13 +28,18 @@ use application::use_cases::update_mcp_configuration;
 use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
 use application::use_cases::update_research_guidance;
+use application::use_cases::update_scope;
 use application::use_cases::update_setup;
 use application::use_cases::update_work;
 
 #[fundle::bundle]
 pub struct Dependencies {
     pub create_dispatch: create_dispatch::Dependencies,
+    pub create_instruction: create_instruction::Dependencies,
+    pub create_scope: create_scope::Dependencies,
+    pub update_scope: update_scope::Dependencies,
     pub update_research_guidance: update_research_guidance::Dependencies,
+    pub delete_execution: delete_execution::Dependencies,
     pub delete_executions: delete_executions::Dependencies,
     pub read_children: read_children::Dependencies,
     pub update_children: update_children::Dependencies,

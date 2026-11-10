@@ -27,7 +27,13 @@ import {
   parseProviderConnection,
   validAuthorizationUrl,
 } from "./authorization.js";
-import { parseChildResult, parseChildren, parseExecution } from "./children.js";
+import {
+  parseChildInstruction,
+  parseChildResult,
+  parseChildren,
+  parseExecution,
+  parseScopeAmendment,
+} from "./children.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
 import { parseDeciders, parseDecision } from "./decisions.js";
 import { PresentationError } from "./errors.js";
@@ -414,6 +420,74 @@ export function connectAgent() {
       ),
     );
   }
+  async function changeScope(
+    operation: "request" | "approve",
+    sessionId: string,
+    args: Record<string, unknown>,
+  ) {
+    const value = await childRequest(
+      `_harness/children/scope/${operation}`,
+      { ...args, sessionId },
+      undefined,
+      true,
+    );
+    if (!value || typeof value !== "object" || !("scope" in value))
+      throw new PresentationError("Invalid durable scope response.");
+    return parseScopeAmendment(value.scope);
+  }
+
+  async function resumeChild(sessionId: string) {
+    await viewConversation(sessionId);
+    return childRequest(
+      "_harness/agent/resume",
+      { sessionId },
+      undefined,
+      true,
+    );
+  }
+
+  async function answerAgent(
+    sessionId: string,
+    requestRun: string,
+    text: string,
+  ) {
+    await viewConversation(sessionId);
+    return childRequest(
+      "_harness/agent/answer",
+      { sessionId, requestRun, text },
+      undefined,
+      true,
+    );
+  }
+
+  async function steerChild(
+    sessionId: string,
+    executionId: string,
+    id: string,
+    text: string,
+  ) {
+    const value = await childRequest(
+      "_harness/children/steer",
+      { sessionId, executionId, id, text },
+      undefined,
+      true,
+    );
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("instruction" in value) ||
+      !("effectiveBoundary" in value) ||
+      typeof value.effectiveBoundary !== "string"
+    )
+      throw new PresentationError(
+        "Invalid durable child instruction acknowledgement.",
+      );
+    return {
+      instruction: parseChildInstruction(value.instruction),
+      effectiveBoundary: value.effectiveBoundary,
+    };
+  }
+
   async function dispatchChild(
     sessionId: string,
     args: Record<string, unknown>,
@@ -931,6 +1005,22 @@ export function connectAgent() {
     return pending;
   }
 
+  async function stopExecution(id: string): Promise<void> {
+    const initialized = await initialize();
+    if (initialized._meta?.["harness/executionStop"] !== true)
+      throw new PresentationError("Durable execution Stop is unavailable.");
+    const result = await childRequest(
+      "_harness/execution/stop",
+      { sessionId: id },
+      undefined,
+      true,
+    );
+    if (!parseChildren(result))
+      throw new PresentationError(
+        "Missing durable execution Stop acknowledgement.",
+      );
+  }
+
   async function cancelReply(id: string): Promise<void> {
     const reply = replies.get(id);
     if (reply) {
@@ -1011,6 +1101,10 @@ export function connectAgent() {
     childResult,
     controlChildren,
     dispatchChild,
+    steerChild,
+    answerAgent,
+    resumeChild,
+    changeScope,
     adoptResearch,
     viewConversation,
     updateMcp,
@@ -1038,6 +1132,7 @@ export function connectAgent() {
     loadConversation,
     createMessage,
     workspace,
+    stopExecution,
     cancelReply,
     steer,
     close,

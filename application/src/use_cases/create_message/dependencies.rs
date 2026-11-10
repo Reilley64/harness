@@ -16,6 +16,7 @@ use crate::ports::UpdateModelSelection;
 #[derive(Clone)]
 pub struct Dependencies {
     pub(crate) child_runtime: ChildRuntime,
+    pub(crate) lock_execution: ports::LockExecution,
     pub(crate) create_execution_diagnostics: ports::CreateExecutionDiagnostics,
     pub(crate) create_research: ports::CreateResearch,
     pub(crate) read_coordination: ports::ReadCoordination,
@@ -34,7 +35,7 @@ pub struct Dependencies {
     pub(crate) read_provider_connection: ReadProviderConnection,
     pub(crate) read_conversation: ReadConversation,
     pub(crate) read_instructions: ports::ReadInstructions,
-    pub(super) lock_conversation: LockConversation,
+    pub(crate) lock_conversation: LockConversation,
     pub(super) update_conversation: UpdateConversation,
     pub(crate) read_models: ReadModels,
     pub(crate) create_model_step_factory: CreateModelStepFactory,

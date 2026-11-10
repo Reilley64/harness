@@ -10,6 +10,7 @@ use crate::create_process;
 use crate::create_research;
 use crate::create_tool_output;
 use crate::lock_conversation;
+use crate::lock_execution;
 use crate::mcp::Connections;
 use crate::read_agent;
 use crate::read_code_matches;
@@ -61,6 +62,8 @@ pub struct Dependencies {
     settings: Settings,
     create_assignment: application::use_cases::create_assignment::Dependencies,
     child_runtime: application::child_runtime::ChildRuntime,
+    read_children: application::use_cases::read_children::Dependencies,
+    delete_execution: application::use_cases::delete_execution::Dependencies,
     create_execution_diagnostics: ports::CreateExecutionDiagnostics,
     create_research: ports::CreateResearch,
     read_coordination: ports::ReadCoordination,
@@ -108,6 +111,7 @@ pub struct Dependencies {
     read_conversation: ports::ReadConversation,
     update_conversation: ports::UpdateConversation,
     lock_conversation: ports::LockConversation,
+    lock_execution: ports::LockExecution,
     read_provider_connection: ports::ReadProviderConnection,
     create_model_step_factory: ports::CreateModelStepFactory,
     create_provider_connection_factory: ports::CreateProviderConnectionFactory,
@@ -185,10 +189,12 @@ impl Dependencies {
                 let implementation = create_execution_diagnostics::create_execution_diagnostics(
                     &settings.app_data_path.join("coordination/diagnostics"),
                 );
-                ports::CreateExecutionDiagnostics::new(move |parent, execution, diagnostics| {
-                    let result = implementation(parent, execution, diagnostics);
-                    Box::pin(async move { Ok(result.await?) })
-                })
+                ports::CreateExecutionDiagnostics::new(
+                    move |parent, execution, run, diagnostics| {
+                        let result = implementation(parent, execution, run, diagnostics);
+                        Box::pin(async move { Ok(result.await?) })
+                    },
+                )
             })
             .create_research(|deps| {
                 let settings: &Settings = deps.as_ref();
@@ -426,6 +432,16 @@ impl Dependencies {
                     Box::pin(async move { Ok(result.await?) })
                 })
             })
+            .lock_execution(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = lock_execution::lock_execution(
+                    &settings.app_data_path.join("coordination/owners"),
+                );
+                ports::LockExecution::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { result.await.map_err(lock_execution::error) })
+                })
+            })
             .lock_conversation(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let implementation = lock_conversation::lock_conversation(
@@ -654,6 +670,8 @@ impl Dependencies {
                 );
                 ports::CreateNativeDecision::new(implementation)
             })
+            .read_children(|deps| deps.into())
+            .delete_execution(|deps| deps.into())
             .create_assignment(|deps| deps.into())
             .create_work(|deps| deps.into())
             .build()

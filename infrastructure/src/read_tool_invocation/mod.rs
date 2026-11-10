@@ -1,3 +1,5 @@
+pub(crate) mod human_input;
+
 use crate::create_file;
 use crate::create_mcp_call;
 use crate::create_process;
@@ -34,6 +36,7 @@ pub fn read_tool_invocation()
             domain::Tool::Grep => read_text_matches::decode(&arguments),
             domain::Tool::AstSearch => read_code_matches::decode(&arguments),
             domain::Tool::WebSearch => read_web_search::decode(&arguments),
+            domain::Tool::RequestHumanInput => human_input::decode(&arguments),
             domain::Tool::PublishWork => read_work_proposal::decode(&arguments),
             domain::Tool::PrepareAssignment => update_decision::decode(&arguments),
             domain::Tool::DispatchResearch => create_research::decode(&arguments),

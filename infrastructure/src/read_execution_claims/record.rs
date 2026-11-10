@@ -287,6 +287,8 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
             controller: value.controller,
             status: status(&value.status)?,
             stop_requested: value.stop_requested,
+            resume_required: false,
+            recovery_notice: None,
             outcome: value
                 .outcome
                 .map(|value| {
@@ -303,6 +305,7 @@ impl TryFrom<ChildRecord> for domain::ChildExecution {
                 .transpose()?,
             delivered_to: value.delivered_to,
             follow_up_completed_by: value.follow_up_completed_by,
+            history: Vec::new(),
         };
         child.validate()?;
         Ok(child)

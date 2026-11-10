@@ -19,6 +19,11 @@ macro_rules! port {
     };
 }
 
+mod lock_execution;
+pub use lock_execution::ExecutionGuard;
+pub use lock_execution::LockExecution;
+pub use lock_execution::LockExecutionError;
+
 mod create_execution_diagnostics;
 pub use create_execution_diagnostics::CreateExecutionDiagnostics;
 pub use create_execution_diagnostics::CreateExecutionDiagnosticsError;

@@ -22,6 +22,7 @@ pub(crate) fn receive(
     history: read_conversation::Dependencies,
     sessions: conversations::Sessions,
     resume: bool,
+    answer_run: Option<String>,
 ) -> Result<(), Error> {
     let selection = match conversations::selection(request.meta.as_ref()) {
         Ok(selection) => selection,
@@ -80,6 +81,24 @@ pub(crate) fn receive(
                     running.cancellation.clone(),
                 )
                 .await
+                .map_err(conversations::error)
+            } else if let Some(request_run) = answer_run {
+                application::use_cases::create_answer::call(
+                    application::use_cases::create_answer::Dependencies::new(dependencies),
+                    id,
+                    request_run,
+                    text,
+                    present,
+                    steering,
+                    running.workspace.clone(),
+                    running.cancellation.clone(),
+                )
+                .await
+                .map(|output| create_message::Output {
+                    conversation: output.conversation,
+                    tool_errors: output.tool_errors,
+                })
+                .map_err(conversations::error)
             } else {
                 create_message::call(
                     dependencies,
@@ -92,6 +111,7 @@ pub(crate) fn receive(
                     running.cancellation.clone(),
                 )
                 .await
+                .map_err(conversations::error)
             }
         };
         tokio::pin!(result);
@@ -128,6 +148,16 @@ pub(crate) fn receive(
                         Some(domain::MessageStatus::Cancelled) => StopReason::Cancelled,
                         Some(domain::MessageStatus::Refused) => StopReason::Refusal,
                         Some(domain::MessageStatus::Limited) => StopReason::MaxTurnRequests,
+                        Some(domain::MessageStatus::Incomplete)
+                            if output.conversation.messages.last().is_some_and(|reply| {
+                                reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
+                                    call.name == domain::Tool::RequestHumanInput.as_str()
+                                        && call.status == domain::ToolStatus::Succeeded
+                                })
+                            }) =>
+                        {
+                            StopReason::EndTurn
+                        }
                         Some(domain::MessageStatus::Incomplete) => StopReason::MaxTokens,
                         _ => StopReason::EndTurn,
                     }
@@ -137,7 +167,7 @@ pub(crate) fn receive(
                         .meta(conversations::metadata(&output.conversation)),
                 )
             }
-            Err(error) => responder.respond_with_error(conversations::error(error)),
+            Err(error) => responder.respond_with_error(error),
         }
     })
 }

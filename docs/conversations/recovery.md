@@ -116,11 +116,22 @@ input, not as factory completion. Model steps and generations remain the existin
 durable message-level records.
 
 A recovered in-progress reply/run becomes Interrupted and requires explicit
-Resume. Read/load/start never dispatch inference or tools. An ordinary prompt
+Resume. A parent already ended for human input is also gated if its actual owned
+work lost its controller. [Idle-owner recovery](../managed-dispatch.md#idle-owner-recovery)
+uses per-execution ownership leases, not PID death as proof of unsent work.
+Explicit Resume at that ended boundary restores the existing question without
+inference; only its matching later answer starts a new run. Read/load/start never dispatch inference or tools. An ordinary prompt
 cannot bypass the gate. `/resume` uses the public Resume operation, preserving the
 same run/reply and saved model while continuing only from recorded provider items
 and honest results. It keeps generation/execution budgets across recovery and
-never re-executes pending/interrupted calls.
+never re-executes pending/interrupted calls. If the saved last checkpoint already
+contains a successful typed human-input request, explicit Resume restores that
+request without inference instead of generating through it. Only the subsequent
+matching typed answer begins a later run; the question is not silently dropped.
+A staged answer whose owner still retains the exact original input receipt can
+restore that question only under the [unadmitted-answer proof](../managed-dispatch.md#typed-human-input-and-later-runs).
+An interrupted restoration preserves its Resume gate; missing generation-accounting
+facts or any started work prevent destructive reconciliation.
 
 Unknown tool outcomes block direct continuation. `/resume inspect` explicitly
 acknowledges the interruption **without inference**, allowing a new human
@@ -132,11 +143,13 @@ reconciliation or an exactly-once remote-effect guarantee.
 Agent/run metadata commits in the same bounded atomic conversation replacement
 as its messages and tool checkpoints. The existing per-conversation process lock
 also serializes repository creation and execution; concurrent owners are rejected.
-This leaf recovery path does not own managed child wake/restart or subtree
-expansion. Approved handoff records a separate CoS and its creator, not execution
+This leaf recovery path does not own managed child wake/restart. A durable
+[ownership-scoped Stop](../managed-dispatch.md#ownership-scoped-stop) cannot be
+reopened by same-run Resume; inspect/acknowledge first, preserving old execution
+fences before a later human instruction. Approved handoff records a separate CoS and its creator, not execution
 ownership. [Managed dispatch](../managed-dispatch.md#compatibility-and-recovery-limits)
-owns the current child-execution boundary; complete subtree and later-run recovery
-remain separate integration.
+owns the current child-execution boundary; typed later-run and child Resume controls are owned by managed dispatch; their
+complete composed qualification remains a separate evidence obligation.
 
 ## Fresh-session model preference
 

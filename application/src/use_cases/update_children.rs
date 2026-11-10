@@ -6,6 +6,8 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
 
+use crate::use_cases::delete_execution;
+
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     agent_id: String,
@@ -13,39 +15,31 @@ pub async fn call(
     cancellation: tokio_util::sync::CancellationToken,
 ) -> Result<Output, Error> {
     let d = dependencies.into();
+    if let domain::ChildrenControl::Stop { execution_id } = &control {
+        let output = delete_execution::call(
+            d.delete_execution,
+            agent_id,
+            Some(execution_id.clone()),
+            cancellation,
+        )
+        .await
+        .map_err(Error::caused_by)?;
+        return Ok(Output {
+            coordination: output.coordination,
+        });
+    }
     let conversation = d
         .read_conversation
         .call(agent_id.clone())
         .await
         .map_err(Error::caused_by)?;
-    if let domain::ChildrenControl::Stop { execution_id } = &control {
-        let state = d
-            .read_coordination
-            .call(agent_id.clone())
-            .await
-            .map_err(Error::caused_by)?
-            .ok_or_else(|| Error::caused_by("Parent coordination is missing"))?;
-        let response = d
-            .update_coordination
-            .call(
-                agent_id,
-                domain::CoordinationCommand::StopChild {
-                    execution_id: execution_id.clone(),
-                },
-                Some(state.revision),
-                cancellation,
-            )
-            .await
-            .map_err(Error::caused_by)?;
-        return Ok(Output {
-            coordination: response.coordination,
-        });
-    }
     if conversation.resume_required
         || conversation.agent.as_ref().is_none_or(|agent| {
             !matches!(
                 agent.role,
-                domain::AgentRole::ChiefOfStaff | domain::AgentRole::Griller
+                domain::AgentRole::ChiefOfStaff
+                    | domain::AgentRole::Griller
+                    | domain::AgentRole::Research
             )
         })
     {

@@ -36,6 +36,12 @@ async fn run() -> Result<(), AppError> {
                 (&dependencies).into(),
             )
         })
+        .create_instruction(|_| (&dependencies).into())
+        .create_scope(|_| (&dependencies).into())
+        .update_scope(|_| {
+            application::use_cases::update_scope::Dependencies::new((&dependencies).into())
+        })
+        .delete_execution(|_| (&dependencies).into())
         .delete_executions(|_| (&dependencies).into())
         .read_children(|_| (&dependencies).into())
         .update_children(|_| (&dependencies).into())

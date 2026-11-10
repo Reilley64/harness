@@ -296,9 +296,117 @@ export function HarnessScreen({
     const command = value.trim();
     if (!command.startsWith("/guidance")) guidance.close();
     if (command !== "/setup") setup.close();
+    if (command.startsWith("/answer ")) {
+      try {
+        const args: unknown = JSON.parse(command.slice("/answer ".length));
+        if (
+          !args ||
+          typeof args !== "object" ||
+          !("requestRun" in args) ||
+          typeof args.requestRun !== "string" ||
+          !("text" in args) ||
+          typeof args.text !== "string"
+        )
+          throw new Error("Expected answer JSON with requestRun and text.");
+        const requestRun = args.requestRun;
+        const text = args.text;
+        draft.submit(value, async () => ({
+          accepted: !!(await children.answer(null, requestRun, text)),
+        }));
+      } catch (error) {
+        setNotice(errorMessage(error));
+      }
+      return;
+    }
     if (command === "/children" || command.startsWith("/children ")) {
-      draft.change("");
       setMap(false);
+      if (
+        command.startsWith("/children scope ") ||
+        command.startsWith("/children approve ")
+      ) {
+        const operation = command.startsWith("/children scope ")
+          ? "request"
+          : "approve";
+        const prefix =
+          operation === "request" ? "/children scope " : "/children approve ";
+        try {
+          const args: unknown = JSON.parse(command.slice(prefix.length));
+          if (!args || typeof args !== "object" || Array.isArray(args))
+            throw new Error("Expected an exact scope command JSON object.");
+          draft.submit(value, async () => ({
+            accepted: !!(await children.scope(
+              operation,
+              args as Record<string, unknown>,
+            )),
+          }));
+        } catch (error) {
+          setNotice(errorMessage(error));
+        }
+        return;
+      }
+      if (command.startsWith("/children resume ")) {
+        const executionId = command.slice("/children resume ".length);
+        draft.submit(value, async () => ({
+          accepted: !!(await children.resume(executionId)),
+        }));
+        return;
+      }
+      if (command.startsWith("/children answer ")) {
+        try {
+          const args: unknown = JSON.parse(
+            command.slice("/children answer ".length),
+          );
+          if (
+            !args ||
+            typeof args !== "object" ||
+            !("executionId" in args) ||
+            typeof args.executionId !== "string" ||
+            !("requestRun" in args) ||
+            typeof args.requestRun !== "string" ||
+            !("text" in args) ||
+            typeof args.text !== "string"
+          )
+            throw new Error(
+              "Expected input-answer JSON with executionId, requestRun and text.",
+            );
+          const executionId = args.executionId;
+          const requestRun = args.requestRun;
+          const text = args.text;
+          draft.submit(value, async () => ({
+            accepted: !!(await children.answer(executionId, requestRun, text)),
+          }));
+        } catch (error) {
+          setNotice(errorMessage(error));
+        }
+        return;
+      }
+      if (command.startsWith("/children steer ")) {
+        try {
+          const args: unknown = JSON.parse(
+            command.slice("/children steer ".length),
+          );
+          if (
+            !args ||
+            typeof args !== "object" ||
+            !("executionId" in args) ||
+            typeof args.executionId !== "string" ||
+            !("text" in args) ||
+            typeof args.text !== "string"
+          )
+            throw new Error(
+              "Expected child instruction JSON with executionId and text.",
+            );
+          const executionId = args.executionId;
+          const text = args.text;
+          draft.submit(value, async () => ({
+            accepted: !!(await children.steer(executionId, text)),
+          }));
+        } catch (error) {
+          setNotice(errorMessage(error));
+        }
+        return;
+      }
+      draft.change("");
       if (command.startsWith("/children guidance "))
         void children.inspectGuidance(
           command.slice("/children guidance ".length),
@@ -499,7 +607,7 @@ export function HarnessScreen({
       )}
       {stopConfirmation && (
         <TerminalText>
-          {`Stop ${role === "chief_of_staff" ? "Chief of Staff" : role === "setup" ? "Setup" : role === "research" ? "Research" : "Griller"}'s active run? Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
+          {`Stop ${role === "chief_of_staff" ? "Chief of Staff" : role === "setup" ? "Setup" : role === "research" ? "Research" : "Griller"}'s ${role === "setup" || !chat.conversation?.agent ? "active run" : "owned execution subtree, including background descendants but not siblings"}? Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
         </TerminalText>
       )}
       {children.visible && (

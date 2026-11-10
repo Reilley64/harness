@@ -1,6 +1,8 @@
 use super::Dependencies;
 use super::Error;
 use crate::error_context::ErrorContext;
+use crate::execution_ancestry;
+use crate::ports::ReadCoordination;
 use crate::ports::UpdateCoordination;
 use crate::turn_control::SteeringRequest;
 use crate::use_cases::read_children;
@@ -17,7 +19,9 @@ pub(super) fn parent(conversation: &domain::Conversation) -> bool {
     conversation.agent.as_ref().is_some_and(|agent| {
         matches!(
             agent.role,
-            domain::AgentRole::ChiefOfStaff | domain::AgentRole::Griller
+            domain::AgentRole::ChiefOfStaff
+                | domain::AgentRole::Griller
+                | domain::AgentRole::Research
         )
     })
 }
@@ -124,6 +128,114 @@ pub(super) async fn claim(
     Ok(Some(Lease { controller, run_id }))
 }
 
+pub(super) async fn disposition(
+    d: &Dependencies,
+    conversation: &domain::Conversation,
+) -> Result<domain::CoordinationGate, Error> {
+    let mut gate = domain::CoordinationGate::Open;
+    if let Some(state) = d
+        .read_coordination
+        .call(conversation.id.clone())
+        .await
+        .map_err(Error::caused_by)?
+    {
+        if conversation
+            .agent
+            .as_ref()
+            .is_none_or(|agent| agent.id.0 != state.agent_id)
+            || state
+                .run_id
+                .as_ref()
+                .is_some_and(|id| conversation.runs.last().is_none_or(|run| run.id != *id))
+        {
+            return Err(Error::caused_by(
+                "Stop disposition ownership differs from its durable run",
+            ));
+        }
+        if state.gate == domain::CoordinationGate::Stopped {
+            return Ok(domain::CoordinationGate::Stopped);
+        }
+        gate = state.gate;
+    }
+    if let Some(research) = &conversation.research {
+        let ancestor = execution_ancestry::gate(
+            &d.read_coordination,
+            &d.read_conversation,
+            &conversation.id,
+            research,
+        )
+        .await
+        .map_err(Error::caused_by)?;
+        if matches!(
+            ancestor,
+            domain::CoordinationGate::Stopped | domain::CoordinationGate::ResumeRequired
+        ) {
+            return Ok(ancestor);
+        }
+    }
+    Ok(gate)
+}
+
+pub(super) async fn monitor(
+    read: &ReadCoordination,
+    conversation_id: String,
+    run_id: String,
+) -> Result<(), Error> {
+    let mut admitted = false;
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        let state = read
+            .call(conversation_id.clone())
+            .await
+            .map_err(Error::caused_by)?;
+        match state {
+            Some(state) if state.run_id.as_deref() == Some(run_id.as_str()) => {
+                admitted = true;
+                if state.gate == domain::CoordinationGate::Stopped {
+                    return Ok(());
+                }
+                if state.gate != domain::CoordinationGate::Open {
+                    return Err(Error::caused_by(
+                        "Execution gate closed; results remain retained without continuation",
+                    ));
+                }
+            }
+            _ if admitted => {
+                return Err(Error::caused_by(
+                    "Controlling execution disappeared or changed; inspect without replay",
+                ));
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(super) async fn admit(
+    d: &Dependencies,
+    conversation_id: &str,
+    lease: Option<&Lease>,
+) -> Result<(), Error> {
+    let Some(lease) = lease else { return Ok(()) };
+    let state = d
+        .read_coordination
+        .call(conversation_id.into())
+        .await
+        .map_err(Error::caused_by)?
+        .ok_or_else(|| {
+            Error::caused_by("Required execution coordination is missing before tool admission")
+        })?;
+    if state.gate != domain::CoordinationGate::Open
+        || state.controller.as_deref() != Some(lease.controller.as_str())
+        || state.run_id.as_deref() != Some(lease.run_id.as_str())
+        || !state.authority_complete
+    {
+        return Err(Error::caused_by(
+            "Execution is stopped, gated or has a different controller; no new tool admitted",
+        ));
+    }
+    Ok(())
+}
+
 async fn transition(
     update: &UpdateCoordination,
     state: &domain::Coordination,
@@ -177,8 +289,9 @@ pub(super) async fn prepare(
             outcomes: state
                 .children
                 .iter()
-                .filter(|child| child.delivered_to.is_none())
-                .filter_map(|child| child.outcome.as_ref().map(|outcome| outcome.id.clone()))
+                .flat_map(|child| child.receipts())
+                .filter(|(_, delivered, _)| delivered.is_none())
+                .map(|(outcome, _, _)| outcome.id.clone())
                 .collect(),
         };
         let (revision, command, view) = tokio::task::spawn_blocking(move || {
@@ -231,6 +344,9 @@ pub(super) async fn wait(
         if cancellation.is_cancelled() {
             return Ok(false);
         }
+        super::instructions::wait(d, conversation, cancellation).await?;
+        let newly_steered =
+            super::instructions::synchronize(d, conversation, buffer, cancellation).await?;
         let state = d
             .read_coordination
             .call(conversation.id.clone())
@@ -245,29 +361,36 @@ pub(super) async fn wait(
             ));
         }
         let eligible = state.eligible(&lease.run_id).map_err(Error::caused_by)?;
+        if after_response && eligible && newly_steered {
+            return Ok(true);
+        }
         if !after_response && eligible {
             return Ok(false);
         }
-        let required = state
-            .children
-            .iter()
-            .any(|child| child.follow_up_completed_by.is_none());
+        let required = state.children.iter().any(|child| {
+            child.outcome.is_none()
+                || child
+                    .receipts()
+                    .any(|(_, _, completed)| completed.is_none())
+        });
         if after_response && !required {
             return Ok(false);
         }
         if eligible
-            && state
-                .children
-                .iter()
-                .any(|child| child.outcome.is_some() && child.delivered_to.is_none())
+            && state.children.iter().any(|child| {
+                child
+                    .receipts()
+                    .any(|(_, delivered, _)| delivered.is_none())
+            })
         {
             return Ok(true);
         }
         if after_response
-            && state
-                .children
-                .iter()
-                .any(|child| child.delivered_to.is_some() && child.follow_up_completed_by.is_none())
+            && state.children.iter().any(|child| {
+                child
+                    .receipts()
+                    .any(|(_, delivered, completed)| delivered.is_some() && completed.is_none())
+            })
         {
             return Ok(false);
         }

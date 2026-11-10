@@ -162,7 +162,36 @@ brief described by [ACP](../acp/children.md). These controls remain available
 during parent work without cancelling/resending it. Exit waits for pending child
 operations and owned backend draining before closing stdio.
 
-This inspector is not general child steering/input, durable child drafts, a
+`/children steer {"executionId":"<owned execution>","text":"<instruction>"}`
+submits a distinct targeted instruction, not another parent message. The inspector
+shows its persisted order and effective-boundary acknowledgement, plus the latest
+accepted/applied instructions for the selected child. Rejected commands retain
+their editor text. No cancellation/resend, assignment restart or later-run enqueue
+implements this control.
+
+`/children answer {"executionId":"<owned execution>","requestRun":"<input run>","text":"<answer>"}`
+answers that exact retained child request through the typed backend interface.
+`/answer {"requestRun":"<input run>","text":"<answer>"}` answers the selected
+durable agent. Answers start later runs, not replacement agents or assignments.
+`/children scope {"executionId":"<owned execution>","id":"<request UUID>","text":"<criteria>","replaces":null,"supersedesRun":null}`
+persists a targeted amendment. Replace null with the exact predecessor and obsolete
+input-run identities when applicable; prose cannot silently supersede them.
+The acknowledgement shows its assigned exact version.
+`/children approve {"id":"<request UUID>","version":"<exact version>","approvalId":"<approval UUID>"}`
+is the separate trusted approval control. Inspect first; stale versions fail.
+V in the child inspector pages the full criteria and approval identities;
+Left/Right there selects retained scope versions. Escape navigates only.
+Commands use the existing rejected-draft queue, so delayed acknowledgements cannot
+erase a newer draft or another agent's editor.
+
+`/children resume <execution UUID>` explicitly resumes an eligible recovered
+child after its owner has been explicitly resumed. Stop and Unknown tool outcomes
+cannot be cleared by this command. Recovered children show a Resume-required flag.
+Rejected answers retain editor text. Inspector Stop remains available while an
+answer is executing; Escape still navigates without cancelling it.
+
+Child Stop traverses [retained execution ownership](../managed-dispatch.md#ownership-scoped-stop).
+This inspector does not provide durable child drafts, a
 growing creation-arrow map, managed Implementer workspaces or complete subtree
 recovery. [Managed dispatch](../managed-dispatch.md) owns runtime authority,
 recovery, limits and diagnostic retention.
@@ -202,13 +231,25 @@ mounted behind the map to retain its anchor and unsent drafts are untouched.
 
 Escape closes a picker, Stop confirmation or authentication flow, or navigates
 between conversation and map; it never stops a run. Use `/stop` or Ctrl+X on the
-map for selected-run Stop confirmation. Y/Enter confirms; Escape/N closes without
-cancelling. Confirmation explains that completed effects remain and uncertainty
-is not rollback. Ctrl+X inside the editor cuts its current logical line, not the
+map for selected-scope Stop confirmation. Y/Enter confirms; Escape/N closes without
+cancelling. For managed agents, the confirmation identifies the owned execution
+subtree including background descendants, excluding siblings; the hook requests
+[durable ownership-scoped Stop](../managed-dispatch.md#ownership-scoped-stop)
+before acknowledgement. It also works while the selected parent is idle.
+Setup and unassociated pilot conversations retain selected-run cancellation.
+A failed durable fence is visible even if local cancellation succeeds; no empty
+subtree acknowledgement is invented. Confirmation explains that completed effects
+remain and uncertainty is not rollback. Ctrl+X inside the editor cuts its current logical line, not the
 run. ACP cancellation remains available without adding a human approval gate
 to backend/tool authority.
 
-Interrupted work displays Resume-required state. `/resume` explicitly continues
+Interrupted work displays Resume-required state. This includes an idle parent
+whose background ownership was lost: a typed answer alone cannot bypass restart.
+At an ended input boundary, `/resume` restores the same question without inference;
+use its matching answer afterwards. Live owners in another backend are not treated
+as dead just because the inspector reads them.
+
+Interrupted active work displays Resume-required state. `/resume` explicitly continues
 the same run. For uncertain effects, `/resume inspect` acknowledges the interruption
 without generation, retaining Unknown results and permitting a new inspection
 instruction. Reopening, map navigation or ordinary prompts cannot start recovered

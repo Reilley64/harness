@@ -1,5 +1,7 @@
 use crate::Agent;
 use crate::AgentRole;
+use crate::ChildExecutionStatus;
+use crate::Coordination;
 use crate::InstructionSnapshot;
 use crate::MAX_MODEL_STEPS;
 use crate::Message;
@@ -12,6 +14,7 @@ use crate::ResearchAssignment;
 use crate::Run;
 use crate::RunStatus;
 use crate::SteeringInstruction;
+use crate::Tool;
 use crate::ToolCall;
 use crate::ToolStatus;
 use crate::UsageSummary;
@@ -233,6 +236,139 @@ impl Conversation {
         Ok(())
     }
 
+    pub fn restore_pending_input(&mut self, owner: &Coordination) -> Result<bool, &'static str> {
+        let Some(research) = &self.research else {
+            return Ok(false);
+        };
+        owner.validate()?;
+        if !owner.authority_complete
+            || owner.conversation_id != research.parent_id
+            || owner.agent_id != research.parent_agent_id
+        {
+            return Err("Pending input recovery requires complete exact execution ownership");
+        }
+        let child = owner
+            .children
+            .iter()
+            .find(|child| child.execution_id == research.execution_id)
+            .ok_or("Pending input execution owner is missing")?;
+        if child.agent_id != self.id
+            || child.assignment_id != research.assignment_id
+            || child.intent != research.intent
+        {
+            return Err("Pending input belongs to a different execution or assignment");
+        }
+        let Some(receipt) = &child.outcome else {
+            return Ok(false);
+        };
+        if receipt.status != ChildExecutionStatus::NeedsHuman {
+            return Ok(false);
+        }
+        let run = self.runs.last().ok_or("Pending input has no durable run")?;
+        if receipt.run_id.as_deref() == Some(run.id.as_str()) {
+            return Ok(false);
+        }
+        let prior = self
+            .runs
+            .len()
+            .checked_sub(2)
+            .and_then(|index| self.runs.get(index))
+            .ok_or("Pending input recovery lacks its original run")?;
+        let reply = self
+            .messages
+            .last()
+            .ok_or("Unadmitted answer reply is missing")?;
+        let user = self
+            .messages
+            .len()
+            .checked_sub(2)
+            .and_then(|index| self.messages.get(index))
+            .ok_or("Unadmitted answer message is missing")?;
+        let question = self
+            .messages
+            .len()
+            .checked_sub(3)
+            .and_then(|index| self.messages.get(index))
+            .ok_or("Original input question is missing")?;
+        if prior.status != RunStatus::NeedsHuman
+            || receipt.conversation_id != self.id
+            || self
+                .agent
+                .as_ref()
+                .is_none_or(|agent| agent.id != run.agent_id || agent.id != prior.agent_id)
+            || receipt.run_id.as_deref() != Some(prior.id.as_str())
+            || receipt.reply_id.as_deref() != Some(prior.reply_id.as_str())
+            || question.id != prior.reply_id
+            || question.role != MessageRole::Assistant
+            || matches!(
+                question.status,
+                MessageStatus::InProgress | MessageStatus::Interrupted
+            )
+            || run.reply_id != reply.id
+            || !matches!(run.status, RunStatus::Running | RunStatus::Interrupted)
+            || reply.role != MessageRole::Assistant
+            || !matches!(
+                reply.status,
+                MessageStatus::InProgress | MessageStatus::Interrupted
+            )
+            || !reply.content.is_empty()
+            || !reply.steps.is_empty()
+            || !reply.steering.is_empty()
+            || !reply.generation_usage.as_ref().is_some_and(Vec::is_empty)
+            || user.role != MessageRole::User
+            || user.status != MessageStatus::Completed
+            || !user.steps.is_empty()
+        {
+            return Err(
+                "Unadmitted answer cannot be discarded without its exact untouched input boundary",
+            );
+        }
+
+        self.messages.truncate(self.messages.len() - 2);
+        self.runs.pop();
+        Ok(true)
+    }
+
+    pub fn resume_input(&mut self) -> Result<bool, &'static str> {
+        let Some(reply) = self.messages.last_mut() else {
+            return Ok(false);
+        };
+        let Some(run) = self.runs.last_mut() else {
+            return Ok(false);
+        };
+        let ended = run.status == RunStatus::NeedsHuman
+            && !matches!(
+                reply.status,
+                MessageStatus::InProgress | MessageStatus::Interrupted
+            );
+        let checkpointed_input = run.status == RunStatus::Interrupted
+            && reply.status == MessageStatus::Interrupted
+            && reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
+                call.name == Tool::RequestHumanInput.as_str()
+                    && call.status == ToolStatus::Succeeded
+            });
+        if !self.resume_required || !(ended || checkpointed_input) {
+            return Ok(false);
+        }
+        if reply
+            .steps
+            .iter()
+            .flat_map(|step| &step.calls)
+            .any(|call| call.status == ToolStatus::Unknown)
+        {
+            return Err("Uncertain effects require inspection before answering recovered input");
+        }
+        if run.reply_id != reply.id {
+            return Err("Recovered input does not match its durable run");
+        }
+        if checkpointed_input {
+            reply.status = MessageStatus::Incomplete;
+            run.status = RunStatus::NeedsHuman;
+        }
+        self.resume_required = false;
+        Ok(true)
+    }
+
     pub fn resume(&mut self) -> Result<(), &'static str> {
         if !self.resume_required {
             return Err("There is no interrupted work to Resume");
@@ -290,6 +426,9 @@ impl Conversation {
         }
         reply.content = content;
         reply.status = status;
+        if status == MessageStatus::Interrupted {
+            self.resume_required = true;
+        }
         if let Some(run) = self.runs.last_mut() {
             run.status = match status {
                 MessageStatus::Cancelled => RunStatus::Stopped,

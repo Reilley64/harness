@@ -18,6 +18,7 @@ pub mod dependencies;
 mod http;
 mod instructions;
 pub mod lock_conversation;
+pub mod lock_execution;
 pub mod mcp;
 mod read_agent;
 pub mod read_code_matches;

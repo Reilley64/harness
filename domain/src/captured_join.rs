@@ -28,6 +28,9 @@ impl CapturedJoin {
                 .iter()
                 .find(|child| &child.execution_id == id)
                 .ok_or("Captured join is missing a required execution; inspect coordination")?;
+            if !child.history.is_empty() {
+                return Ok(true);
+            }
             if child.status.terminal() {
                 if child.status != ChildExecutionStatus::Completed {
                     return Ok(true);

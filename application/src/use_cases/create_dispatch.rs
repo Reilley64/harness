@@ -146,11 +146,13 @@ async fn dispatch(
         .filter(|agent| {
             matches!(
                 agent.role,
-                domain::AgentRole::Griller | domain::AgentRole::ChiefOfStaff
+                domain::AgentRole::Griller
+                    | domain::AgentRole::ChiefOfStaff
+                    | domain::AgentRole::Research
             )
         })
         .ok_or_else(|| {
-            Error::caused_by("Research must be dispatched by its actual Griller or Chief of Staff")
+            Error::caused_by("Research requires its actual permitted execution owner; creation lineage alone is not authority")
         })?;
     if parent.revision != parent_revision || parent.resume_required {
         return Err(Error::caused_by(
@@ -206,7 +208,44 @@ async fn dispatch(
             decision.parent_revision,
         )
     } else {
-        if agent.role != domain::AgentRole::Griller {
+        if agent.role == domain::AgentRole::Research {
+            let research = parent
+                .research
+                .as_ref()
+                .ok_or_else(|| Error::caused_by("Research has no retained execution owner"))?;
+            let owner = d
+                .read_coordination
+                .call(research.parent_id.clone())
+                .await
+                .map_err(Error::caused_by)?
+                .ok_or_else(|| {
+                    Error::caused_by("Research ownership is missing before descendant dispatch")
+                })?;
+            let claim = owner
+                .children
+                .iter()
+                .find(|child| child.execution_id == research.execution_id)
+                .ok_or_else(|| {
+                    Error::caused_by("Research execution is missing before descendant dispatch")
+                })?;
+            if claim.work_id.is_some() {
+                return Err(Error::caused_by(
+                    "Approved CoS Research cannot infer descendant approval; dispatch from the approved coordinator",
+                ));
+            }
+            research_access::read(
+                &d.read_coordination,
+                &d.read_work,
+                parent.research.as_ref(),
+                &parent.id,
+                &parent.model,
+                parent.effort,
+                &parent.provider_connection_id,
+                parent.selected_instructions.as_deref(),
+            )
+            .await
+            .map_err(Error::caused_by)?;
+        } else if agent.role != domain::AgentRole::Griller {
             return Err(Error::caused_by(
                 "Chief of Staff Research requires its prepared native selection",
             ));
@@ -344,11 +383,14 @@ async fn dispatch(
         controller: uuid::Uuid::new_v4().to_string(),
         status: domain::ChildExecutionStatus::Held,
         stop_requested: false,
+        resume_required: false,
+        recovery_notice: None,
 
         outcome: None,
 
         delivered_to: None,
         follow_up_completed_by: None,
+        history: Vec::new(),
     };
     let response = d
         .update_coordination
@@ -376,11 +418,17 @@ async fn dispatch(
     if cancellation.is_cancelled() {
         return stopped_before_spawn(&d,accepted,diagnostics,response.coordination.revision,"Dispatch stopped after durable admission and before a child future was created. No child inference or tools started.").await;
     }
+    let owner = d
+        .lock_execution
+        .call(accepted.execution_id.clone())
+        .await
+        .map_err(Error::caused_by)?;
     let worker = d.clone();
     let child = accepted.clone();
     let token = CancellationToken::new();
     let execution_token = token.clone();
     let task = Box::pin(async move {
+        let _owner = owner;
         let result = execute(worker.clone(), child.clone(), workspace, execution_token).await;
         if let Err(original) = result {
             let fenced = worker
@@ -515,8 +563,8 @@ async fn execute(
                 _ = controls.tick() => {
                     match d.read_coordination.call(child.parent_id.clone()).await {
                         Ok(Some(state)) => {
-                            if !matches!(state.gate,domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman | domain::CoordinationGate::Stopped) { observations.push("Parent continuation requires explicit reconciliation; no child was replayed".into()); }
-                            if !matches!(state.gate,domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman) || state.children.iter().any(|entry| entry.execution_id == child.execution_id && entry.stop_requested) {
+                            if !matches!(state.gate,domain::CoordinationGate::Open | domain::CoordinationGate::NeedsHuman | domain::CoordinationGate::Stopped | domain::CoordinationGate::ResumeRequired) { observations.push("Parent continuation requires explicit reconciliation; no child was replayed".into()); }
+                            if state.gate == domain::CoordinationGate::Stopped || state.children.iter().any(|entry| entry.execution_id == child.execution_id && entry.stop_requested) {
                                 cancellation.cancel();
                             }
                         }
@@ -569,11 +617,27 @@ async fn execute(
             .call(
                 child.parent_id.clone(),
                 child.execution_id.clone(),
+                None,
                 std::mem::take(&mut diagnostics),
             )
             .await
             .map_err(Error::caused_by)?;
     }
+    if conversation
+        .as_ref()
+        .is_some_and(|source| source.resume_required)
+    {
+        return Ok(());
+    }
+    let unsettled = match conversation.as_ref() {
+        Some(conversation) => d
+            .read_coordination
+            .call(conversation.id.clone())
+            .await
+            .map_err(Error::caused_by)?
+            .is_some_and(|state| !state.settled()),
+        None => true,
+    };
     let outcome_id = child.execution_id.clone();
     let conversation_id = child.agent_id.clone();
     let outcome = tokio::task::spawn_blocking(move || {
@@ -581,7 +645,7 @@ async fn execute(
         let uncertain = conversation.as_ref().is_some_and(|conversation| conversation.messages.iter().flat_map(|message| &message.steps).flat_map(|step| &step.calls).any(|call| call.status == domain::ToolStatus::Unknown));
         let status = if uncertain || control_unknown {
             domain::ChildExecutionStatus::Unknown
-        } else if !failed && reply.is_some_and(|reply| reply.status == domain::MessageStatus::Completed) {
+        } else if !failed && !unsettled && reply.is_some_and(|reply| reply.status == domain::MessageStatus::Completed) {
             domain::ChildExecutionStatus::Completed
         } else if stopped {
             domain::ChildExecutionStatus::Stopped
@@ -589,7 +653,7 @@ async fn execute(
             domain::ChildExecutionStatus::Failed
         } else {
             match reply.map(|reply| reply.status) {
-                Some(domain::MessageStatus::Completed) => domain::ChildExecutionStatus::Completed,
+                Some(domain::MessageStatus::Completed) if !unsettled => domain::ChildExecutionStatus::Completed,
                 Some(domain::MessageStatus::Cancelled) => domain::ChildExecutionStatus::Stopped,
                 _ => domain::ChildExecutionStatus::NeedsHuman,
             }

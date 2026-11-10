@@ -2,8 +2,12 @@ import type { Key } from "ink";
 import { usePaste } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../services/acp.js";
-import { errorMessage } from "../services/errors.js";
-import type { ChildResult, Children } from "../types/children.js";
+import { errorMessage, PresentationError } from "../services/errors.js";
+import type {
+  ChildResult,
+  Children,
+  ScopeAmendment,
+} from "../types/children.js";
 import type { Conversation } from "../types/conversation.js";
 import type { Guidance } from "../types/guidance.js";
 
@@ -15,11 +19,13 @@ export function useChildren(agent: Agent, parentId?: string) {
   const [join, setJoin] = useState(0);
   const [history, setHistory] = useState<Conversation | null>(null);
   const [result, setResult] = useState<ChildResult | null>(null);
+  const [scopeView, setScopeView] = useState<ScopeAmendment | null>(null);
   const [guidance, setGuidance] = useState<Guidance | null>(null);
   const [intent, setIntent] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acknowledgement, setAcknowledgement] = useState<string | null>(null);
   const generation = useRef(0);
   const owner = useRef(parentId);
   const controller = useRef<AbortController | null>(null);
@@ -35,6 +41,7 @@ export function useChildren(agent: Agent, parentId?: string) {
     setResult(null);
     setGuidance(null);
     setConfirmation(false);
+    setScopeView(null);
   }, []);
 
   useEffect(
@@ -122,6 +129,90 @@ export function useChildren(agent: Agent, parentId?: string) {
     )
       await refresh();
   }
+  async function scope(
+    operation: "request" | "approve",
+    args: Record<string, unknown>,
+  ) {
+    setVisible(true);
+    setScopeView(null);
+    return run(async (id, signal) => {
+      const retained = await agent.changeScope(operation, id, args);
+      if (signal.aborted || target.current !== id) return;
+      setAcknowledgement(
+        `Retained scope request ${retained.id} · exact version ${retained.version} · ${retained.approvedBy ? "approved" : "approval required"}. Inspect the latest durable scope before acting.`,
+      );
+      const snapshot = await agent.readChildren(id);
+      if (!signal.aborted && target.current === id)
+        setState((current) =>
+          !current || !snapshot || snapshot.revision >= current.revision
+            ? snapshot
+            : current,
+        );
+    });
+  }
+
+  async function resume(executionId: string) {
+    setVisible(true);
+    return run(async (id, signal) => {
+      const snapshot = await agent.readChildren(id);
+      const child = snapshot?.children.find(
+        (child) => child.executionId === executionId,
+      );
+      if (!child)
+        throw new PresentationError(
+          "Recovered execution is not owned by this parent.",
+        );
+      await agent.resumeChild(child.agentId);
+      if (signal.aborted || target.current !== id) return;
+      setAcknowledgement(
+        "Explicit child Resume completed; inspect its retained outcome and effects.",
+      );
+    });
+  }
+  async function answer(
+    executionId: string | null,
+    requestRun: string,
+    text: string,
+  ) {
+    setVisible(true);
+    setAcknowledgement(null);
+    return run(async (id, signal) => {
+      let targetId = id;
+      if (executionId) {
+        const snapshot = await agent.readChildren(id);
+        const target = snapshot?.children.find(
+          (child) => child.executionId === executionId,
+        );
+        if (!target)
+          throw new PresentationError(
+            "The input request is not owned by this parent.",
+          );
+        targetId = target.agentId;
+      }
+      await agent.answerAgent(targetId, requestRun, text);
+      if (signal.aborted || target.current !== id) return;
+      setAcknowledgement(
+        "The typed answer continued the same durable agent in a later run; inspect the retained source and receipt.",
+      );
+    });
+  }
+  async function steer(executionId: string, text: string) {
+    const instructionId = crypto.randomUUID();
+    setVisible(true);
+    setAcknowledgement(null);
+    return run(async (id, signal) => {
+      const accepted = await agent.steerChild(
+        id,
+        executionId,
+        instructionId,
+        text,
+      );
+      if (signal.aborted || target.current !== id) return;
+      setAcknowledgement(
+        `Instruction ${accepted.instruction.id}, durable order ${accepted.instruction.order}. ${accepted.effectiveBoundary}`,
+      );
+    });
+  }
   const child = state?.children.find((c) => c.executionId === selected);
   const captured = state?.joins[join % Math.max(1, state.joins.length)];
   async function control(
@@ -191,6 +282,7 @@ export function useChildren(agent: Agent, parentId?: string) {
     if (key.eventType === "release" || key.eventType === "repeat") return;
     if (key.escape) {
       if (confirmation) setConfirmation(false);
+      else if (scopeView) setScopeView(null);
       else if (history || result || guidance) {
         setHistory(null);
         setResult(null);
@@ -198,7 +290,7 @@ export function useChildren(agent: Agent, parentId?: string) {
       } else close();
       return;
     }
-    if (busy) return;
+    if (busy && value !== "x" && !confirmation) return;
     if (confirmation) {
       if (value === "y" || key.return) {
         setConfirmation(false);
@@ -226,6 +318,18 @@ export function useChildren(agent: Agent, parentId?: string) {
     }
     if (value === "x" && child) {
       setConfirmation(true);
+      return;
+    }
+    if (scopeView) {
+      const versions =
+        state?.scopes.filter(
+          (scope) => scope.executionId === scopeView.executionId,
+        ) ?? [];
+      const index = versions.findIndex((scope) => scope.id === scopeView.id);
+      if (key.leftArrow || key.rightArrow) {
+        const next = versions[index + (key.leftArrow ? -1 : 1)];
+        if (next) setScopeView(next);
+      }
       return;
     }
     if (history) {
@@ -257,6 +361,12 @@ export function useChildren(agent: Agent, parentId?: string) {
     else if (value === "r") void refresh();
     else if (key.return) void openHistory();
     else if (value === "o") void openResult();
+    else if (value === "v" && child)
+      setScopeView(
+        state?.scopes.findLast(
+          (scope) => scope.executionId === child.executionId,
+        ) ?? null,
+      );
     else if ((value === "a" || value === "l") && members.size)
       void control("join", {
         id: crypto.randomUUID(),
@@ -284,6 +394,12 @@ export function useChildren(agent: Agent, parentId?: string) {
     inspect,
     inspectGuidance,
     dispatch,
+    steer,
+    answer,
+    resume,
+    scope,
+    scopeView,
+    acknowledgement,
     close,
   };
 }

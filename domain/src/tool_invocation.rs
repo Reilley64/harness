@@ -26,6 +26,7 @@ pub enum ToolInvocation {
     ReadTextMatches(ReadTextMatchesArguments),
     ReadCodeMatches(ReadCodeMatchesArguments),
     ReadWebSearch(ReadWebSearchArguments),
+    RequestHumanInput(String),
     PublishWork(PublishWorkArguments),
     PrepareAssignment(AssignmentBrief),
     DispatchResearch(AssignmentBrief, bool),
