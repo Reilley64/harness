@@ -240,6 +240,7 @@ impl Conversation {
         let Some(research) = &self.research else {
             return Ok(false);
         };
+        owner.validate()?;
         if !owner.authority_complete
             || owner.conversation_id != research.parent_id
             || owner.agent_id != research.parent_agent_id
@@ -290,9 +291,19 @@ impl Conversation {
             .and_then(|index| self.messages.get(index))
             .ok_or("Original input question is missing")?;
         if prior.status != RunStatus::NeedsHuman
+            || receipt.conversation_id != self.id
+            || self
+                .agent
+                .as_ref()
+                .is_none_or(|agent| agent.id != run.agent_id || agent.id != prior.agent_id)
             || receipt.run_id.as_deref() != Some(prior.id.as_str())
             || receipt.reply_id.as_deref() != Some(prior.reply_id.as_str())
             || question.id != prior.reply_id
+            || question.role != MessageRole::Assistant
+            || matches!(
+                question.status,
+                MessageStatus::InProgress | MessageStatus::Interrupted
+            )
             || run.reply_id != reply.id
             || !matches!(run.status, RunStatus::Running | RunStatus::Interrupted)
             || reply.role != MessageRole::Assistant
