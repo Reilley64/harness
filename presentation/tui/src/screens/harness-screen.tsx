@@ -180,6 +180,14 @@ export function HarnessScreen({
       exit();
       return;
     }
+    if (chat.loading) {
+      if (key.escape) {
+        chat.cancelOpen();
+        creation.focus(chat.conversation?.agent?.id);
+        setMap(true);
+      }
+      return;
+    }
     if (children.visible) {
       children.input(input, key);
       return;
@@ -362,6 +370,7 @@ export function HarnessScreen({
       .catch((error) => setNotice(errorMessage(error)));
   }
   function submit(value: string) {
+    if (chat.loading) return;
     chat.cancelOpen();
     const command = value.trim();
     if (!command.startsWith("/guidance")) guidance.close();
@@ -676,6 +685,9 @@ export function HarnessScreen({
       }
     >
       {chat.sessions}
+      {chat.loading && (
+        <TerminalText>Opening conversation… Esc back</TerminalText>
+      )}
       {connectionError && (
         <TerminalText color="red" wrap="truncate-end">
           {connectionError}

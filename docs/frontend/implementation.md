@@ -111,7 +111,10 @@ Event-loop scheduling, queued frame handling, React commit/effects and rendering
 latency are separate. The owner yields and obtains an explicit React commit
 acknowledgement between routed frames; public render flushing alone is not a
 focus/handler commit barrier. This keeps modal/navigation transitions ahead of
-later queued frames without an unconditional delay on complete input.
+later queued frames without an unconditional delay on complete input. Distinct
+complete parser events retain their boundaries in the queue; adjacent printable
+frames are not concatenated into one Ink key callback. Paste remains a framed
+literal payload, and complete Unicode text frames are not split into code units.
 
 ### Geometry and shutdown
 

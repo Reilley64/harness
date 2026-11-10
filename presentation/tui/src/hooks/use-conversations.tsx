@@ -14,7 +14,9 @@ import type { ModelSelection } from "../types/model.js";
 import { useConversation } from "./use-conversation.js";
 
 type Controller = ReturnType<typeof useConversation>;
+
 type Session = { id: string; initial: Conversation };
+
 type Store = {
   values: Map<string, Controller>;
   publish: (id: string, value: Controller) => void;
@@ -83,6 +85,7 @@ export function useConversations(
 ) {
   const root = useConversation(agent, initial);
   const [selected, setSelected] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [, redraw] = useReducer((value: number) => value + 1, 0);
   const mounted = useRef(true);
@@ -100,6 +103,7 @@ export function useConversations(
   const cancelOpen = useCallback(() => {
     navigation.current?.abort();
     navigation.current = null;
+    if (mounted.current) setOpening(false);
   }, []);
   useEffect(() => {
     mounted.current = true;
@@ -118,6 +122,7 @@ export function useConversations(
     cancelOpen();
     const controller = new AbortController();
     navigation.current = controller;
+    setOpening(true);
     const owns = () =>
       mounted.current &&
       navigation.current === controller &&
@@ -176,7 +181,10 @@ export function useConversations(
       if (owns()) throw error;
       return null;
     } finally {
-      if (navigation.current === controller) navigation.current = null;
+      if (navigation.current === controller) {
+        navigation.current = null;
+        if (mounted.current) setOpening(false);
+      }
     }
   }
 
@@ -198,7 +206,7 @@ export function useConversations(
     error: chat.error ?? (selected === null ? rootError : null),
     open,
     cancelOpen,
-    loading: !controller,
+    loading: opening || !controller,
     sessions: sessions.map((session) => (
       <ConversationSession
         key={session.id}

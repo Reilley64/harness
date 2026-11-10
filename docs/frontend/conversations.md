@@ -13,7 +13,12 @@ again to adopt against the current conversation. Durable commits are not rolled
 back by these presentation guards. `useConversations` keeps the selected controller and retained background
 controllers separate. It opens existing agents through read-only conversation
 views, restores their model snapshots on explicit selection, and invalidates
-superseded navigation. Selection does not cancel or replace another controller. Interruption acknowledgements require the same
+superseded navigation. While a conversation open is pending, the previous view
+remains visible but its editor and commands are inactive. Following editing input
+is ignored, not submitted to the previous agent or queued for replay. Escape
+cancels the pending open and returns to the map. Only the current successful open
+changes the selected conversation and model; failure restores editing with its
+error visible. Selection does not cancel or replace another controller. Interruption acknowledgements require the same
 selected actor, current navigation ownership and a non-older revision; a durable
 acknowledgement cannot overwrite newer history or another actor's context/model.
 The first send creates a session; opening a picker or choosing a model does not.

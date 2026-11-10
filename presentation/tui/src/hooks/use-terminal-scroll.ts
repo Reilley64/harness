@@ -21,6 +21,7 @@ export function useTerminalScroll(
       }),
     [input],
   );
+
   useEffect(() => {
     if (active) return input.acquireMouse();
   }, [input, active]);

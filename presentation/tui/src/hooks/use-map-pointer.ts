@@ -49,6 +49,7 @@ export function useMapPointer(
       validity: validity.current,
     };
   }, [bounds, layout, pan, select, open, scroll, target]);
+
   useEffect(() => {
     let clicked: {
       id: string;

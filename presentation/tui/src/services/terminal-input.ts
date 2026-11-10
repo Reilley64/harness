@@ -126,13 +126,6 @@ export function createTerminalInput(source: ReadStream, output: WriteStream) {
     }
     stream.push(event === "\x1b" ? "\x1b[27u" : event);
   };
-  const plain = (event: InputEvent): event is string =>
-    typeof event === "string" &&
-    event.length > 0 &&
-    [...event].every(
-      (character) =>
-        (character.codePointAt(0) ?? 0) >= 32 && character !== "\x7f",
-    );
   const pump = async () => {
     if (pumping || !started) return;
     pumping = true;
@@ -140,15 +133,6 @@ export function createTerminalInput(source: ReadStream, output: WriteStream) {
       while (queue.length && !closed && !failed) {
         const next = queue.shift();
         if (!next) break;
-        if (plain(next.event)) {
-          while (queue[0] && plain(queue[0].event)) {
-            const following = queue.shift();
-            if (following && typeof following.event === "string") {
-              next.event += following.event;
-              next.receivedAt = following.receivedAt;
-            }
-          }
-        }
         route(next);
         await new Promise<void>((resolve) => setImmediate(resolve));
         if (!closed && !failed) await acknowledge();

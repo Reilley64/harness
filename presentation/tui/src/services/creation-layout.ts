@@ -6,6 +6,7 @@ const generationGap = 5;
 const rowGap = 2;
 
 export type CreationPosition = { x: number; y: number };
+
 export type CreationLayout = {
   visible: CreationNode[];
   positions: Map<string, CreationPosition>;
