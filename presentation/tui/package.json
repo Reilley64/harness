@@ -17,12 +17,15 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^2.4.0",
-    "ink": "^8.0.0",
+    "ink": "8.0.0",
     "lowlight": "^3.3.0",
     "open": "^11.0.4",
     "react": "^19.3.1",
     "string-width": "^8.3.0",
     "wrap-ansi": "^9"
+  },
+  "patchedDependencies": {
+    "ink@8.0.0": "patches/ink@8.0.0.patch"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.5",

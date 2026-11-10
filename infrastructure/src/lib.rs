@@ -21,6 +21,7 @@ pub mod lock_conversation;
 pub mod lock_execution;
 pub mod mcp;
 mod read_agent;
+mod read_agent_index;
 pub mod read_code_matches;
 pub mod read_conversation;
 pub mod read_coordination;

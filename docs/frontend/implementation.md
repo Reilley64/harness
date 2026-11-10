@@ -62,6 +62,80 @@ intentionally inspect control bytes. Unrelated framework and test domains are no
 Node-compatible APIs are used for child processes and stdio streams; no Bun-only
 transport implementation is necessary.
 
+## Terminal input
+
+`services/terminal-input.ts` owns the physical stdin data/error listener, UTF-8
+decoding and framing. Ink consumes its virtual public stdin stream. Context
+navigation and pointer/wheel hooks subscribe to normalized events instead of
+adding physical readers or independent escape parsers. Keys and paste continue
+through public Ink hooks; terminal replies/focus and SGR mouse reports cannot
+become hidden editor text or function-key commands inside paste.
+
+The project pins Ink 8.0.0 and applies `patches/ink@8.0.0.patch` through Bun's
+`patchedDependencies` and committed lockfile. The maintained patch exposes
+`createInputParser`, `InputEvent` and `InputParser` at Ink's public entry and adds
+delimited OSC/DCS/APC framing plus pending-control length reporting. Application
+code imports no private Ink module. Normal locked installation applies the patch;
+`bun install --frozen-lockfile --offline` is also reproducible with the exact locked
+packages already cached. A cache miss is an install failure, not permission to
+silently fetch or modify installed files. Do not edit `node_modules` or substitute
+an absolute forwarding path. Preserve upstream source/types/license and patch
+identity when updating this dependency; repeat compatibility and real stock
+native checks before selecting another version.
+
+### Approved legacy Escape window
+
+The ambiguity policy is **150 ms of idle time while an escape prefix is pending**:
+
+- The timer starts when a consumed physical chunk leaves a pending prefix.
+- Each subsequent consumed chunk clears the old timer; if a prefix remains,
+  another 150 ms idle timer starts. A completed frame clears it immediately.
+- The frame retains the first consumed fragment's start time. A later new prefix
+  in the same chunk starts its own timing, not the previous frame's timestamp.
+- Complete/unambiguous keys, reports and paste do not wait for this timer.
+  Recognized bracketed paste is not escape-timeout-flushed.
+- Expired standalone Escape is forwarded as the existing Kitty Escape encoding,
+  avoiding another legacy disambiguation delay in the downstream Ink parser.
+
+This is a bounded legacy tradeoff, not arbitrary-delay fragmentation support.
+The first-ESC/100 ms SGR split is supported; retained 300 ms-gap counterexamples
+are outside the bound and must not be relabeled successful. After expiry, an
+Escape can have already navigated and subsequent bytes are new input; no promise
+is made to reconstruct that old report. Delimited control frames are consumed as
+replies rather than editor content. Pending or complete escape controls exceeding
+4096 UTF-16 code units fail input handling visibly without replaying their tail
+as editor text. This control limit is not a paste-length or model-token estimate.
+
+The 150 ms interval is a timer threshold, not an exact wall-clock navigation SLA.
+Event-loop scheduling, queued frame handling, React commit/effects and rendering
+latency are separate. The owner yields and obtains an explicit React commit
+acknowledgement between routed frames; public render flushing alone is not a
+focus/handler commit barrier. This keeps modal/navigation transitions ahead of
+later queued frames without an unconditional delay on complete input.
+
+### Geometry and shutdown
+
+Pointer targeting uses public `measureElement` after layout to accumulate ancestor
+offsets, plus public box-metric updates. `useBoxMetrics.left/top` are parent-relative
+and cannot directly be compared with terminal mouse coordinates. HarnessLayout
+fills the alternate-screen live region and has no preceding Static region or
+ancestor content offsets; introducing either requires an explicit public
+live-region coordinate conversion, not a private renderer assumption.
+
+Identity-targeted gestures retain their geometry epoch and are rejected if they
+began before resize, pan or graph reflow. Opening requires both matching
+press/release pairs, not a held second down. Wheel movement is relative to the
+active viewport: coalesced wheel reports remain cumulative instead of the first
+pan incorrectly invalidating the rest of the burst.
+
+Ink pairs its existing Kitty, paste, cursor and alternate-screen requests with
+cleanup. The shared owner pairs mouse leases, cancels pending framing work,
+removes its physical listeners and restores the prior raw mode on normal or
+handled-failure exit. Real direct-PTY cleanup checks and real terminal-emulator
+cell/gesture checks are distinct from human visual, physical desktop, live-model
+or assembled-MVP acceptance. Scripted provider boundaries must remain labelled;
+stock frontend/backend execution does not turn scripted inference into live proof.
+
 ## TanStack AI
 
 TanStack AI can fit this architecture without replacing ACP or moving provider

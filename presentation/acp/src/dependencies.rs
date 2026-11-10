@@ -10,6 +10,7 @@ use application::use_cases::delete_executions;
 use application::use_cases::read_agent;
 use application::use_cases::read_children;
 use application::use_cases::read_conversation;
+use application::use_cases::read_creation_map;
 use application::use_cases::read_deciders;
 use application::use_cases::read_decision;
 use application::use_cases::read_guidance;
@@ -60,6 +61,7 @@ pub struct Dependencies {
     pub read_setup: read_setup::Dependencies,
     pub update_setup: update_setup::Dependencies,
     pub read_agent: read_agent::Dependencies,
+    pub read_creation_map: read_creation_map::Dependencies,
     pub read_guidance: read_guidance::Dependencies,
     pub update_guidance: update_guidance::Dependencies,
     pub update_agent: update_agent::Dependencies,

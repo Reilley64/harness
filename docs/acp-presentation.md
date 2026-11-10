@@ -46,6 +46,7 @@ authentication methods, and includes:
     "harness/tools": true,
     "harness/steering": true,
     "harness/agents": true,
+    "harness/creationMap": true,
     "harness/guidance": true,
     "harness/approvedWork": true,
     "harness/setup": true,
@@ -64,6 +65,11 @@ before requesting providers, and checks the model marker before requesting model
 ## Repository-agent extension
 
 See [Repository-agent extension](acp/conversations.md#repository-agent-extension).
+
+## Creation-map extension
+
+See [the bounded, read-only durable-agent inventory](acp/creation-map.md).
+Creation arrows describe recorded creators, never execution ownership or Stop scope.
 
 ## Approved-work extension
 

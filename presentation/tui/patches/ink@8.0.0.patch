@@ -1,0 +1,71 @@
+diff --git a/build/index.js b/build/index.js
+--- a/build/index.js
++++ b/build/index.js
+@@ -21,4 +21,5 @@
+ export { default as useBoxMetrics } from './hooks/use-box-metrics.js';
+ export { default as measureElement } from './measure-element.js';
+ export { kittyFlags, kittyModifiers } from './kitty-keyboard.js';
++export { createInputParser } from './input-parser.js';
+ //# sourceMappingURL=index.js.mapdiff --git a/build/index.d.ts b/build/index.d.ts
+--- a/build/index.d.ts
++++ b/build/index.d.ts
+@@ -41,3 +41,5 @@
+ export type { DOMElement } from './dom.js';
+ export { kittyFlags, kittyModifiers } from './kitty-keyboard.js';
+ export type { KittyKeyboardOptions, KittyFlagName } from './kitty-keyboard.js';
++export { createInputParser } from './input-parser.js';
++export type { InputEvent, InputParser } from './input-parser.js';
+diff --git a/build/input-parser.js b/build/input-parser.js
+--- a/build/input-parser.js
++++ b/build/input-parser.js
+@@ -50,6 +50,19 @@
+     }
+     return 'pending';
+ };
++const parseDelimitedControlSequence = (input, startIndex, prefixLength, osc) => {
++    for (let index = startIndex + prefixLength + 1; index < input.length; index++) {
++        const character = input[index];
++        const cancelled = character === '\u0018' || character === '\u001a';
++        if (cancelled || (osc && character === '\u0007')) {
++            return { sequence: input.slice(startIndex, index + 1), nextIndex: index + 1 };
++        }
++        if (character === '\u001b' && input[index + 1] === '\\') {
++            return { sequence: input.slice(startIndex, index + 2), nextIndex: index + 2 };
++        }
++    }
++    return 'pending';
++};
+ const parseControlSequence = (input, startIndex, prefixLength) => {
+     const sequenceType = input[startIndex + prefixLength];
+     if (sequenceType === undefined) {
+@@ -57,6 +70,9 @@
+     }
+     if (sequenceType === '[') {
+         return parseCsiSequence(input, startIndex, prefixLength);
++    }
++    if (sequenceType === ']' || sequenceType === 'P' || sequenceType === '_') {
++        return parseDelimitedControlSequence(input, startIndex, prefixLength, sequenceType === ']');
+     }
+     return sequenceType === 'O'
+         ? parseSs3Sequence(input, startIndex, prefixLength)
+@@ -194,6 +210,9 @@
+             pending = '';
+             return pendingEscape;
+         },
++        pendingControlLength() {
++            return pending.startsWith(escape) && !pending.startsWith(pasteStart) ? pending.length : 0;
++        },
+         reset() {
+             pending = '';
+         },
+diff --git a/build/input-parser.d.ts b/build/input-parser.d.ts
+--- a/build/input-parser.d.ts
++++ b/build/input-parser.d.ts
+@@ -9,6 +9,7 @@
+     push: (chunk: string) => InputEvent[];
+     hasPendingEscape: () => boolean;
+     flushPendingEscape: () => string | undefined;
++    pendingControlLength: () => number;
+     reset: () => void;
+ };
+ export declare const createInputParser: () => InputParser;

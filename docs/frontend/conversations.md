@@ -10,9 +10,10 @@ at a non-older revision; a delayed reply cannot erase a newer completed turn or
 regress the map's run state. A stale initial Griller-creation acknowledgement is
 rejected before adopting instructions, without replacing newer history; inspect
 again to adopt against the current conversation. Durable commits are not rolled
-back by these presentation guards. The hook also owns Griller lookup through
-conversation load and model restoration, aborting/invalidation on replacement,
-navigation, send and unmount. Interruption acknowledgements require the same
+back by these presentation guards. `useConversations` keeps the selected controller and retained background
+controllers separate. It opens existing agents through read-only conversation
+views, restores their model snapshots on explicit selection, and invalidates
+superseded navigation. Selection does not cancel or replace another controller. Interruption acknowledgements require the same
 selected actor, current navigation ownership and a non-older revision; a durable
 acknowledgement cannot overwrite newer history or another actor's context/model.
 The first send creates a session; opening a picker or choosing a model does not.
@@ -130,9 +131,11 @@ Explicit resume takes precedence and does not overwrite this default just by
 reading a conversation. A missing preference is normal; an invalid one produces
 a nonfatal warning and can be replaced by choosing a model. Picker commits are
 serialized through `_harness/model-selection/update`; exit waits for these saves.
-`/open <conversation-id>` opens an existing saved conversation while idle;
-`F3` or `/griller` returns to the repository Griller. No general conversation
-picker or background conversation switching is implemented here.
+`/open <conversation-id>` opens an existing saved conversation;
+`F3` or `/griller` selects the repository Griller. Existing-agent navigation is
+available while another agent works; it does not resume, restart or stop that
+agent. The creation map is the durable-agent navigator, not a general picker for
+unassociated conversation history.
 
 The ACP service translates standard sessions/prompts/updates/cancellation, parses
 safe conversation metadata, and never receives credentials. On exit it cancels
@@ -173,6 +176,9 @@ implements this control.
 answers that exact retained child request through the typed backend interface.
 `/answer {"requestRun":"<input run>","text":"<answer>"}` answers the selected
 durable agent. Answers start later runs, not replacement agents or assignments.
+The retained-result inspector opens after the answer; Esc closes it before chat
+editing or F2 navigation. Ordinary chat/update text cannot answer the question,
+approve scope or settle work.
 `/children scope {"executionId":"<owned execution>","id":"<request UUID>","text":"<criteria>","replaces":null,"supersedesRun":null}`
 persists a targeted amendment. Replace null with the exact predecessor and obsolete
 input-run identities when applicable; prose cannot silently supersede them.
@@ -191,43 +197,77 @@ Rejected answers retain editor text. Inspector Stop remains available while an
 answer is executing; Escape still navigates without cancelling it.
 
 Child Stop traverses [retained execution ownership](../managed-dispatch.md#ownership-scoped-stop).
-This inspector does not provide durable child drafts, a
-growing creation-arrow map, managed Implementer workspaces or complete subtree
-recovery. [Managed dispatch](../managed-dispatch.md) owns runtime authority,
+The inspector remains a read-only history/report surface. The creation map can
+open the same existing child as an editable agent context with independent
+in-session drafts and scroll state. Neither surface provisions managed Implementer
+workspaces or expands runtime recovery authority. [Managed dispatch](../managed-dispatch.md) owns runtime authority,
 recovery, limits and diagnostic retention.
 
-## One-agent context and navigation
+## Agent contexts and creation-map navigation
 
-The native map contains the actual repository Griller identity returned by Rust,
-not a static role roster. The node persists across human answers, model changes,
-stopped/completed runs and reloads. It shows the latest run status (or live local
-work status) and an explicitly unknown creator; no creation arrow or descendant
-is fabricated. While local work is pending, unavailable live run details are
-explicitly marked pending; saved run identity/model/status are labelled historical
-rather than presented as the active run. Legacy pilot conversations remain
-unassociated. Multi-agent growth, pan/collapse and complete execution-subtree integration belong
-to later slices. The map currently describes only the selected actor; it does not
-assert that managed Research children are absent.
+The native map reads the [durable-agent inventory](../acp/creation-map.md), not a
+static role roster or an execution tree. One node identifies an actual recorded
+agent, independently of its runs. Human answers, model changes, stopped/completed
+runs and reloads do not create replacement nodes. AgentId and ConversationId are
+separate identities; map selection uses the former and opening/Stop addresses the
+latter. Unassociated pilot conversations are not invented into agents.
+
+Recorded creator arrows can cross execution-root boundaries: a Griller-created
+CoS can own Research work without being in the Griller's Stop subtree. Missing
+creator metadata remains unknown. A terminal owned-assignment outcome is shown as
+completed/failed/stopped even when its agent's generic next-turn gate is
+needs-human. Restart/unknown authority still takes precedence. Without live
+coordination or an owning execution, run status is explicitly labelled saved;
+absence of a recorded run says `no saved run`, never fabricated readiness.
+Pending-result and required-follow-up counters come from retained owned-child
+receipts. Completed child work does not settle the parent or approved spec.
+
+Arrows pan the clipped canvas; Tab/Shift+Tab selects visible agents and centres a
+selection when necessary. C collapses/expands the selected creator branch without
+changing agents, executions or captured membership. Home centres the selected
+node. Growth preserves a visible card's cell anchor when follow is off, rather
+than moving the viewport to every new agent. New-agent counts accumulate since
+explicit acknowledgement; N reveals the latest observed addition and acknowledges
+the batch. F explicitly toggles follow of new additions. Follow pans only: it does
+not select an agent, change the chat/title or erase a draft. Manual pan does not
+silently toggle the user's follow preference.
+
+The selected conversation retains its own draft, rejected-draft queue, line-ID
+scroll anchor and tool expansion for the current frontend session. Reading another
+agent leaves background controllers mounted. Returning to CoS while A works can
+accept another instruction and dispatch B without restarting A. This is not
+persistent draft/viewport restoration across frontend restarts.
 
 Plain Left from the empty focused editor invalidates any pending conversation
 open before showing the map; whitespace, modifiers,
 paste and picker input retain their editing meaning. Function-key-shaped bytes
 inside bracketed paste never execute navigation, including fragmented markers
 and large paste chunks. Paste tracking survives picker activation changes.
-Ink retains its 20 ms ambiguity timeout for incomplete escape prefixes; recognized
-bracketed paste is not timeout-flushed. Synchronous event-batch
-editing state prevents coalesced space-plus-Left from navigating accidentally.
-F2 toggles chat/map; F3 returns to chat in the one-Griller context. Enter opens
-the sole selected node; Tab/arrows retain that selection. A single mouse click
-selects it; a same-node double-click within 400 ms opens it. Ink-measured hit bounds
-handle split SGR reports and invalidate pending double-clicks on geometry changes.
+The [shared input owner](implementation.md#terminal-input) applies the approved
+150 ms legacy Escape idle window before forwarding complete key/paste frames to
+Ink. Complete unambiguous frames do not wait for that timer. Synchronous editing
+state and committed-context acknowledgement keep coalesced space-plus-Left and
+navigation batches out of hidden editors. F2 toggles chat/map; F3 selects Griller
+without stopping the current agent. Enter opens the selected existing node.
+
+A single mouse click selects a real card. Opening requires two matching
+press/release pairs on the same card within 400 ms. Empty space, interrupted
+gestures and reports begun before a geometry change cannot open another agent.
+Public Ink measurements accumulate ancestor offsets in the full alternate-screen
+live region; parent-relative offsets are not terminal coordinates. Wheel reports
+move the canvas three rows each and remain cumulative when coalesced; they do not
+select a card. Resizing, panning and growth invalidate identity-targeted gestures,
+not safe relative wheel movement.
 
 Titles are exactly `harness - Griller`, `harness - Setup`, `harness - Research`,
 `harness - Chief of Staff`, `harness - Children` and `harness - Agent map`; an explicitly
 loaded unassociated pilot uses `harness - Conversation`. Only static context labels
 enter title escapes. Background updates cannot change selection/title. Title,
-mouse and raw/alternate-screen modes pair with cleanup. The transcript stays
-mounted behind the map to retain its anchor and unsent drafts are untouched.
+mouse and raw/alternate-screen modes pair with cleanup. Conversation controllers and per-conversation viewport state survive map visits;
+the transcript need not remain mounted to retain its line anchor. Unsaved drafts
+are untouched. Anchors identify the viewport's last visible logical line, so
+adding/removing a chrome row may expose an extra older line without moving that
+anchor.
 
 Escape closes a picker, Stop confirmation or authentication flow, or navigates
 between conversation and map; it never stops a run. Use `/stop` or Ctrl+X on the

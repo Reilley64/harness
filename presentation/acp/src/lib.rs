@@ -2,6 +2,7 @@ mod agents;
 mod authentication;
 mod children;
 mod conversations;
+mod creation_map;
 mod decisions;
 mod dependencies;
 mod executions;
@@ -92,6 +93,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         models,
         create_agent,
         read_agent,
+        read_creation_map,
         read_setup,
         update_setup,
         update_agent,
@@ -149,6 +151,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     ("harness/steering".into(), serde_json::json!(true)),
                     ("harness/usage".into(), serde_json::json!(true)),
                     ("harness/agents".into(), serde_json::json!(true)),
+                    ("harness/creationMap".into(), serde_json::json!(true)),
                     ("harness/guidance".into(), serde_json::json!(true)),
                     ("harness/approvedWork".into(), serde_json::json!(true)),
                     ("harness/nativeDecider".into(), serde_json::json!(true)),
@@ -263,6 +266,25 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 connection.spawn(async move {
                     match application::use_cases::delete_executions::call(d).await {
                         Ok(output) => responder.respond(children::DrainResponse { stopped: output.stopped }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: creation_map::Request, responder, connection| {
+                let dependencies = read_creation_map.clone();
+                connection.spawn(async move {
+                    let token = tokio_util::sync::CancellationToken::new();
+                    let future = application::use_cases::read_creation_map::call(dependencies, request.cwd, request.after, token.clone());
+                    tokio::pin!(future);
+                    let cancelled = responder.cancellation();
+                    let result = tokio::select! { result = &mut future => result, _ = cancelled.cancelled() => { token.cancel(); future.await } };
+                    match result {
+                        Ok(output) => match tokio::task::spawn_blocking(move || creation_map::response(output)).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
                         Err(error) => responder.respond_with_error(conversations::error(error)),
                     }
                 })

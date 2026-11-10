@@ -8,9 +8,10 @@ contracts and feature documents own runtime policy.
 - [Configure providers, models, MCP and inspect work](frontend/configuration.md).
 - [Develop the frontend](frontend/implementation.md): ownership, tools and deferred integrations.
 
-Native byte probes do not establish human visual acceptance. The inherited
-20 ms incomplete-escape-prefix ambiguity remains unwaived. See the interaction
-reference for terminal modes, paste, geometry and cancellation details.
+Native byte probes do not establish human visual acceptance. Terminal input uses
+the approved bounded 150 ms legacy Escape policy and a single shared input owner.
+See the [input contract](frontend/implementation.md#terminal-input) for timer,
+framing and unsupported-fragmentation limits.
 
 ## MCP configuration
 
@@ -44,9 +45,9 @@ See [Conversations](frontend/conversations.md#conversations).
 
 See [Model permission settings](frontend/configuration.md#model-permission-settings).
 
-## One-agent context and navigation
+## Agent contexts and creation-map navigation
 
-See [One-agent context and navigation](frontend/conversations.md#one-agent-context-and-navigation).
+See [Agent contexts and creation-map navigation](frontend/conversations.md#agent-contexts-and-creation-map-navigation).
 
 ## Instruction provenance
 

@@ -6,7 +6,7 @@
       "name": "@harness/tui",
       "dependencies": {
         "@agentclientprotocol/sdk": "^2.4.0",
-        "ink": "^8.0.0",
+        "ink": "8.0.0",
         "lowlight": "^3.3.0",
         "open": "^11.0.4",
         "react": "^19.3.1",
@@ -20,6 +20,9 @@
         "typescript": "^6.0.0",
       },
     },
+  },
+  "patchedDependencies": {
+    "ink@8.0.0": "patches/ink@8.0.0.patch",
   },
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@2.4.0", "", { "peerDependencies": { "@modelcontextprotocol/server": "^2.4.0", "zod": "^3.25.76 || ^4.0.0" }, "optionalPeers": ["@modelcontextprotocol/server"] }, "sha512-7qJ8nnyj7WesC5ve185ioTpB2/svQoeGV4HA4nLEhgDUrcmBe54/08VcXc/oL4p14tDbxxECZzdYmUYQ+4l+Wg=="],
