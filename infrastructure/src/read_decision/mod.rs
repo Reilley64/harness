@@ -22,7 +22,7 @@ pub fn read_decision(
                 Err(e) => return Err(e.into()),
                 Ok(_) => {}
             }
-            let bytes = storage::read_private(&path, 2 * 1024 * 1024).await?;
+            let bytes = storage::read_private(&path, 64 * 1024 * 1024).await?;
             tokio::task::spawn_blocking(move || {
                 let r: Record = serde_json::from_slice(&bytes)?;
                 let d: domain::AssignmentDecision = r.try_into()?;

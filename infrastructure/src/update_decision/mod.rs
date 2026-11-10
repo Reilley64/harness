@@ -68,7 +68,7 @@ pub fn update_decision(
                 }
             };
             let bytes = match tokio::fs::symlink_metadata(&path).await {
-                Ok(_) => Some(storage::read_private(&path, 2 * 1024 * 1024).await?),
+                Ok(_) => Some(storage::read_private(&path, 64 * 1024 * 1024).await?),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
                 Err(e) => return Err(e.into()),
             };
@@ -105,14 +105,14 @@ pub fn update_decision(
                         }
                         prior.validate_transition(&decision)?;
                     }
-                } else if revision.is_some() || decision.revision != 0 || decision.phase != domain::DecisionPhase::Prepared {
+                } else if revision.is_some() || decision.revision != 0 || decision.phase != domain::DecisionPhase::Prepared || decision.legacy {
                     return Err("Invalid initial assignment claim".into());
                 }
 
                 decision.validate()?;
                 decision.revision = decision.revision.checked_add(1).ok_or("Decision revision exhausted")?;
 
-                let encoded = encode_bounded(&Record::from(decision.clone()), 2 * 1024 * 1024)?;
+                let encoded = encode_bounded(&Record::from(decision.clone()), 64 * 1024 * 1024)?;
                 let _: domain::AssignmentDecision = serde_json::from_slice::<Record>(&encoded)?.try_into()?;
 
                 Ok((decision, Some(encoded)))

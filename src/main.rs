@@ -47,6 +47,7 @@ async fn run() -> Result<(), AppError> {
         .update_children(|_| (&dependencies).into())
         .read_decision(|_| (&dependencies).into())
         .update_decision(|_| (&dependencies).into())
+        .update_routing_evidence(|_| (&dependencies).into())
         .read_deciders(|_| (&dependencies).into())
         .update_decider(|_| (&dependencies).into())
         .read_work(|_| (&dependencies).into())

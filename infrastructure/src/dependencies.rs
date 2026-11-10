@@ -1,6 +1,7 @@
 use crate::create_agent;
 use crate::create_conversation;
 use crate::create_coordinator;
+use crate::create_decision_inputs;
 use crate::create_execution_diagnostics;
 use crate::create_file;
 use crate::create_mcp_call;
@@ -29,6 +30,7 @@ use crate::read_model_selection;
 use crate::read_paths;
 use crate::read_provider_connection;
 use crate::read_research_guidance;
+use crate::read_routing_evidence;
 use crate::read_setup;
 use crate::read_setup_draft;
 use crate::read_text_matches;
@@ -76,6 +78,8 @@ pub struct Dependencies {
     read_decision: ports::ReadDecision,
     update_decision: ports::UpdateDecision,
     create_native_decision: ports::CreateNativeDecision,
+    create_decision_inputs: ports::CreateDecisionInputs,
+    read_routing_evidence: ports::ReadRoutingEvidence,
     read_decider: ports::ReadDecider,
     update_decider: ports::UpdateDecider,
     create_work: application::use_cases::create_work::Dependencies,
@@ -271,6 +275,30 @@ impl Dependencies {
                                 .downcast_ref::<update_coordination::RevisionConflict>()
                                 .is_some();
                             ports::UpdateCoordinationError::from(error).with_conflict(conflict)
+                        })
+                    })
+                })
+            })
+            .create_decision_inputs(|_| {
+                let implementation = create_decision_inputs::create_decision_inputs();
+                ports::CreateDecisionInputs::new(move |decision, members, level| {
+                    let result = implementation(decision, members, level);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_routing_evidence(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_routing_evidence::read_routing_evidence(
+                    &settings.models.url,
+                    &settings.app_data_path.join("routing-evidence.json"),
+                );
+                ports::ReadRoutingEvidence::new(move |candidates, now, refresh, cancellation| {
+                    let result = implementation(candidates, now, refresh, cancellation);
+                    Box::pin(async move {
+                        let response = result.await?;
+                        Ok(ports::RoutingEvidenceResponse {
+                            evidence: response.evidence,
+                            diagnostics: response.diagnostics,
                         })
                     })
                 })

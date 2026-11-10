@@ -85,6 +85,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         update_research_guidance,
         read_decision,
         update_decision,
+        update_routing_evidence,
         read_deciders,
         update_decider,
         read_work,
@@ -412,7 +413,10 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 let d = read_decision.clone();
                 connection.spawn(async move {
                     match application::use_cases::read_decision::call(d, request.id).await {
-                        Ok(o) => responder.respond(decisions::Response { decision: o.decision.as_ref().map(decisions::summary), blocked: o.blocked }),
+                        Ok(o) => match decisions::project(o.decision, o.blocked).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
                         Err(e) => responder.respond_with_error(conversations::error(e)),
                     }
                 })
@@ -441,6 +445,28 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
             }, agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
+            async move |request: decisions::RefreshRequest, responder, connection| {
+                let d = update_routing_evidence.clone();
+                connection.spawn(async move {
+                    let token = tokio_util::sync::CancellationToken::new();
+                    let future = application::use_cases::update_routing_evidence::call(d, request.id, token.clone());
+                    tokio::pin!(future);
+                    let cancel = responder.cancellation();
+                    let result = tokio::select! { result = &mut future => result, _ = cancel.cancelled() => { token.cancel(); future.await } };
+                    match result {
+                        Ok(output) => match tokio::task::spawn_blocking(move || decisions::RefreshResponse {
+                            checked_at:output.checked_at,refresh_failed:!output.diagnostics.is_empty(),
+                            evidence:serde_json::json!(output.evidence.iter().map(|(key,facts)| serde_json::json!({"key":key,"facts":facts.iter().map(|e|decisions::evidence(e,output.checked_at)).collect::<Vec<_>>()})).collect::<Vec<_>>()),
+                        }).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
             async move |request: decisions::SelectRequest, responder, connection| {
                 let d = update_decision.clone();
                 let active = selecting_decisions.clone();
@@ -462,7 +488,10 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     };
                     if owner { active.lock().expect("decision control").remove(&request.id); }
                     match result {
-                        Ok(o) => responder.respond(decisions::Response { decision: Some(decisions::summary(&o.decision)), blocked: o.blocked }),
+                        Ok(o) => match decisions::project(Some(o.decision), o.blocked).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
                         Err(e) => responder.respond_with_error(conversations::error(e)),
                     }
                 })
@@ -474,7 +503,10 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 if let Some(token) = stopping_decisions.lock().expect("decision control").get(&request.id) { token.cancel(); }
                 connection.spawn(async move {
                     match application::use_cases::update_decision::call(d, request.id, true, tokio_util::sync::CancellationToken::new()).await {
-                        Ok(o) => responder.respond(decisions::Response { decision: Some(decisions::summary(&o.decision)), blocked: o.blocked }),
+                        Ok(o) => match decisions::project(Some(o.decision), o.blocked).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
                         Err(e) => responder.respond_with_error(conversations::error(e)),
                     }
                 })

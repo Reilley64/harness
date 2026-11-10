@@ -29,6 +29,7 @@ use application::use_cases::update_mcp_configuration;
 use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
 use application::use_cases::update_research_guidance;
+use application::use_cases::update_routing_evidence;
 use application::use_cases::update_scope;
 use application::use_cases::update_setup;
 use application::use_cases::update_work;
@@ -47,6 +48,7 @@ pub struct Dependencies {
 
     pub read_decision: read_decision::Dependencies,
     pub update_decision: update_decision::Dependencies,
+    pub update_routing_evidence: update_routing_evidence::Dependencies,
     pub read_deciders: read_deciders::Dependencies,
     pub update_decider: update_decider::Dependencies,
     pub read_work: read_work::Dependencies,
