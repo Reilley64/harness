@@ -58,6 +58,7 @@ fn walk(
             return Err("Recovery ownership is cyclic or exceeds its bounded walk; inspect narrower owned scopes without inference".into());
         }
         remaining -= 1;
+        conversation = super::restore_answer(&read, &update, &save, conversation).await?;
         visited.push(conversation.id.clone());
         if forced_notice.is_some() && !conversation.resume_required {
             conversation.resume_required = true;

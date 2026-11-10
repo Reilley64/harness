@@ -193,6 +193,22 @@ gate; neither receipt delivery nor parent follow-up clears it. The answer
 starts a fresh run using the accepted assignment, pair and guidance. It does not
 create another durable agent or re-dispatch the assignment.
 
+Before replacing the pending question, answer admission validates the actual
+owner/ancestry gates and the exact requesting receipt. The conversation and owner
+checkpoints remain separate. If a gate closes between them, the retained original
+NeedsHuman receipt can restore the pending boundary only when the staged later
+reply has explicit empty generation accounting, no steps, prose or steering, and
+exact adjacent run/message identities. No accepted run, reported usage or tool
+result is removed. A confirmed owner transition after a lost acknowledgement is
+retained with the original storage error; ambiguous facts block rather than
+invent acceptance. This narrow input-boundary reconciliation is not a general
+unsent-effect classifier or effect replay.
+
+After a real interruption, restoring that unadmitted question retains an explicit
+Resume gate and recovery notice before any later answer. A normally rejected
+answer does not replace the original question or clear owner Stop/restart/scope
+fences. Only the matching later answer can then create one admitted run.
+
 Prior receipts retain their source run/reply, delivery and follow-up separately.
 The latest receipt uses the later run UUID; the original execution and ownership
 remain stable. Captured joins retain the original execution's terminal boundary;

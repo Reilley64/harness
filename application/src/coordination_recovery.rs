@@ -2,10 +2,75 @@ mod idle;
 pub(crate) use idle::restore;
 
 use crate::ports::ReadCoordination;
+use crate::ports::UpdateConversation;
 use crate::ports::UpdateCoordination;
 use tokio_util::sync::CancellationToken;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
+
+pub(crate) async fn restore_answer(
+    read: &ReadCoordination,
+    update: &UpdateCoordination,
+    save: &UpdateConversation,
+    conversation: domain::Conversation,
+) -> Result<domain::Conversation, Error> {
+    let Some(research) = &conversation.research else {
+        return Ok(conversation);
+    };
+    if conversation.runs.last().is_none_or(|run| {
+        !matches!(
+            run.status,
+            domain::RunStatus::Running | domain::RunStatus::Interrupted
+        )
+    }) {
+        return Ok(conversation);
+    }
+    let owner = read
+        .call(research.parent_id.clone())
+        .await?
+        .ok_or("Pending answer recovery lost its execution ownership")?;
+    let notice = conversation
+        .runs
+        .last()
+        .ok_or("Pending answer run is missing")?
+        .id
+        .clone();
+    let (conversation, changed) = tokio::task::spawn_blocking(move || {
+        let mut conversation = conversation;
+        let changed = conversation.restore_pending_input(&owner)?;
+        Ok::<_, Error>((conversation, changed))
+    })
+    .await??;
+    if !changed {
+        return Ok(conversation);
+    }
+
+    if conversation.resume_required {
+        let own = read
+            .call(conversation.id.clone())
+            .await?
+            .ok_or("Interrupted answer recovery lost its own coordination")?;
+        update
+            .call(
+                conversation.id.clone(),
+                domain::CoordinationCommand::RetainRecovery {
+                    agent_id: conversation
+                        .agent
+                        .as_ref()
+                        .ok_or("Pending input has no durable agent")?
+                        .id
+                        .0
+                        .clone(),
+                    notices: vec![notice],
+                    idle: true,
+                },
+                Some(own.revision),
+                CancellationToken::new(),
+            )
+            .await?;
+    }
+    Ok(save.call(conversation).await?)
+}
 
 pub(crate) async fn pause(
     read: &ReadCoordination,

@@ -2,6 +2,7 @@ use crate::error_context;
 use crate::error_context::ResultExt;
 use crate::ports::CreateModelStep;
 use crate::use_cases::update_mcp_configuration;
+mod answers;
 mod dependencies;
 mod error;
 mod instructions;
@@ -390,6 +391,16 @@ async fn coordinate(
             tool_errors: Vec::new(),
         });
     }
+    if let Some(request_run) = &answer_run {
+        answers::validate(
+            &dependencies,
+            &conversation,
+            request_run,
+            scope_approval.as_deref(),
+        )
+        .await?;
+    }
+
     if let Some(content) = content {
         conversation
             .begin_message(
@@ -430,21 +441,32 @@ async fn coordinate(
         .call(conversation)
         .await
         .map_err(Error::caused_by)?;
-    if let (Some(request_run), Some(research)) = (answer_run, conversation.research.as_ref()) {
-        dependencies
+    let mut tool_errors = Vec::new();
+    if let (Some(request_run), Some(research)) = (answer_run, conversation.research.clone()) {
+        if let Err(original) = dependencies
             .update_coordination
             .call(
                 research.parent_id.clone(),
                 domain::CoordinationCommand::AnswerChild {
                     execution_id: research.execution_id.clone(),
-                    request_run,
+                    request_run: request_run.clone(),
                     approval_id: scope_approval,
                 },
                 None,
                 cancellation.clone(),
             )
             .await
-            .map_err(Error::caused_by)?;
+        {
+            conversation = answers::reconcile(
+                &dependencies,
+                conversation,
+                &research,
+                &request_run,
+                original,
+                &mut tool_errors,
+            )
+            .await?;
+        }
     }
     let buffer = Arc::new(Mutex::new(
         conversation
@@ -470,7 +492,6 @@ async fn coordinate(
         visible.call(event)
     });
     let turn_cancellation = cancellation.child_token();
-    let mut tool_errors = Vec::new();
     let managed_parent = managed::parent(&conversation);
     let monitored_conversation = conversation.id.clone();
     let monitored_run = conversation.runs.last().map(|run| run.id.clone());

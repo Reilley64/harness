@@ -128,6 +128,10 @@ never re-executes pending/interrupted calls. If the saved last checkpoint alread
 contains a successful typed human-input request, explicit Resume restores that
 request without inference instead of generating through it. Only the subsequent
 matching typed answer begins a later run; the question is not silently dropped.
+A staged answer whose owner still retains the exact original input receipt can
+restore that question only under the [unadmitted-answer proof](../managed-dispatch.md#typed-human-input-and-later-runs).
+An interrupted restoration preserves its Resume gate; missing generation-accounting
+facts or any started work prevent destructive reconciliation.
 
 Unknown tool outcomes block direct continuation. `/resume inspect` explicitly
 acknowledges the interruption **without inference**, allowing a new human
