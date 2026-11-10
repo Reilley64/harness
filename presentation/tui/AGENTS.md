@@ -21,6 +21,9 @@ Follow [the repository coding standards](../../CODING_STANDARDS.md).
 - Enter submits or steers; Escape closes or back-navigates while preserving drafts.
   Use explicit scoped Stop; Ctrl+X in the editor remains cut. Retain
   Alt+Enter/Ctrl+J newline fallbacks for terminals without Shift+Enter.
+- Route terminal input through the shared owner and public Ink APIs; hooks consume
+  normalized events. Before changing framing, focus routing or pointer geometry,
+  read [terminal input](../../docs/frontend/implementation.md#terminal-input).
 - Keep terminal modes and asynchronous resources paired with cleanup. Verify
   startup/input changes in a real PTY; component snapshots cannot detect echoed
   capability replies or raw-mode leaks.

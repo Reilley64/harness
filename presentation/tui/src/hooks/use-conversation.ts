@@ -85,6 +85,25 @@ export function useConversation(
       setError("Prompt exceeds 1 MiB of UTF-8 text; your draft was preserved.");
       return { accepted: false, draft: content };
     }
+    if (
+      !active.current &&
+      current.current?.messages.some(
+        (message) => message.status === "in_progress",
+      )
+    ) {
+      const target = current.current.id;
+      try {
+        const accepted = await agent.steerExisting(target, content);
+        if (!accepted)
+          setError(
+            "The execution could not accept that instruction; your draft was preserved.",
+          );
+        return { accepted, draft: content };
+      } catch (error) {
+        setError(errorMessage(error));
+        return { accepted: false, draft: content };
+      }
+    }
     if (active.current) {
       try {
         const id = await sessionReady.current;

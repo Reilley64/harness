@@ -23,8 +23,9 @@ import { useApprovedWork } from "../hooks/use-approved-work.js";
 import { useChildren } from "../hooks/use-children.js";
 import { useContextNavigation } from "../hooks/use-context-navigation.js";
 import { useContextTitle } from "../hooks/use-context-title.js";
-import { useConversation } from "../hooks/use-conversation.js";
+import { useConversations } from "../hooks/use-conversations.js";
 import { useCreateProviderConnection } from "../hooks/use-create-provider-connection.js";
+import { useCreationMap } from "../hooks/use-creation-map.js";
 import { useGitBranch } from "../hooks/use-git-branch.js";
 import { useGuidance } from "../hooks/use-guidance.js";
 import { useMcp } from "../hooks/use-mcp.js";
@@ -65,9 +66,12 @@ export function HarnessScreen({
       : initialSelection,
     initialModelError,
   );
-  const chat = useConversation(agent, initialConversation, (next) => {
+  const chat = useConversations(agent, initialConversation, (next) => {
     models.restore({ model: next.model, effort: next.effort });
   });
+  const mapWidth = Math.max(1, columns - 2);
+  const mapHeight = Math.max(4, rows - 10);
+  const creation = useCreationMap(agent, mapWidth, mapHeight);
   const children = useChildren(agent, chat.conversation?.id);
   const childViewport = useTranscriptViewport(
     children.history?.id ?? "child-initial",
@@ -105,7 +109,13 @@ export function HarnessScreen({
 
   const [map, setMap] = useState(false);
   const [stopConfirmation, setStopConfirmation] = useState(false);
+  const [stopTarget, setStopTarget] = useState<{
+    id: string | null;
+    label: string;
+    managed: boolean;
+  } | null>(null);
   const modal =
+    chat.loading ||
     !!models.picker ||
     !!providers.picker ||
     connection.busy ||
@@ -122,7 +132,11 @@ export function HarnessScreen({
       guidance.close();
       approved.close();
       setup.close();
-      setMap((value) => !value);
+      if (map) openMapConversation();
+      else {
+        creation.focus(chat.conversation?.agent?.id);
+        setMap(true);
+      }
     },
     () => {
       chat.cancelOpen();
@@ -164,6 +178,14 @@ export function HarnessScreen({
     if (key.eventType === "release") return;
     if (key.ctrl && (input === "q" || input === "c")) {
       exit();
+      return;
+    }
+    if (chat.loading) {
+      if (key.escape) {
+        chat.cancelOpen();
+        creation.focus(chat.conversation?.agent?.id);
+        setMap(true);
+      }
       return;
     }
     if (children.visible) {
@@ -210,19 +232,50 @@ export function HarnessScreen({
       if (key.escape || input === "n") setStopConfirmation(false);
       else if (input === "y" || key.return) {
         setStopConfirmation(false);
-        chat.cancel();
+        const target = stopTarget;
+        if (
+          !target ||
+          target.id === chat.conversation?.id ||
+          target.id === null
+        )
+          chat.cancel();
+        else {
+          void agent
+            .viewConversation(target.id)
+            .then(() =>
+              target.managed
+                ? agent.stopExecution(target.id ?? "")
+                : agent.cancelReply(target.id ?? ""),
+            )
+            .catch((error) => setNotice(errorMessage(error)));
+        }
       }
       return;
     }
     if (map && !modal) {
       guidance.close();
-      if (key.escape || key.return) setMap(false);
-      else if (key.ctrl && input === "x") setStopConfirmation(true);
+      if (key.escape) setMap(false);
+      else if (key.return && key.eventType !== "repeat") openMapConversation();
+      else if (key.ctrl && input === "x") {
+        const node = creation.selected;
+        if (node) requestStop(node.conversationId, node.role);
+      } else if (key.upArrow) creation.move(0, -3);
+      else if (key.downArrow) creation.move(0, 3);
+      else if (key.leftArrow) creation.move(-3, 0);
+      else if (key.rightArrow) creation.move(3, 0);
+      else if (key.tab) creation.moveSelection(key.shift ? -1 : 1);
+      else if (key.home) creation.centre();
+      else if (!key.ctrl && !key.meta) {
+        if (input.toLowerCase() === "c") creation.collapse();
+        else if (input.toLowerCase() === "n") creation.jumpNew();
+        else if (input.toLowerCase() === "f") creation.toggleFollow();
+      }
       return;
     }
     if (key.escape && !modal) {
       chat.cancelOpen();
       guidance.close();
+      creation.focus(chat.conversation?.agent?.id);
       setMap(true);
       return;
     }
@@ -278,6 +331,31 @@ export function HarnessScreen({
     }
   });
 
+  function requestStop(
+    id: string | null = chat.conversation?.id ?? null,
+    targetRole: string = role,
+  ) {
+    const label =
+      targetRole === "chief_of_staff"
+        ? "Chief of Staff"
+        : targetRole === "research"
+          ? "Research"
+          : targetRole === "setup"
+            ? "Setup"
+            : "Griller";
+    setStopTarget({
+      id,
+      label,
+      managed:
+        targetRole !== "setup" && !!(id && (map || chat.conversation?.agent)),
+    });
+    setStopConfirmation(true);
+  }
+  function openMapConversation(id: string | null = creation.selectedId()) {
+    const node = creation.nodes.find((node) => node.id === id);
+    if (node) openConversation(node.conversationId);
+    else setMap(false);
+  }
   function openConversation(
     id?: string,
     role: "setup" | "griller" = "griller",
@@ -292,6 +370,7 @@ export function HarnessScreen({
       .catch((error) => setNotice(errorMessage(error)));
   }
   function submit(value: string) {
+    if (chat.loading) return;
     chat.cancelOpen();
     const command = value.trim();
     if (!command.startsWith("/guidance")) guidance.close();
@@ -432,6 +511,9 @@ export function HarnessScreen({
       command !== "/exit" &&
       command !== "/stop" &&
       command !== "/map" &&
+      !command.startsWith("/open ") &&
+      command !== "/griller" &&
+      command !== "/setup chat" &&
       command !== "/guidance" &&
       command !== "/setup"
     ) {
@@ -447,9 +529,10 @@ export function HarnessScreen({
       exit();
     } else if (command === "/stop") {
       draft.change("");
-      setStopConfirmation(true);
+      requestStop();
     } else if (command === "/map") {
       draft.change("");
+      creation.focus(chat.conversation?.agent?.id);
       setMap(true);
     } else if (command === "/decider" || command.startsWith("/decision ")) {
       draft.change("");
@@ -594,12 +677,17 @@ export function HarnessScreen({
             guidance.close();
             approved.close();
             setup.close();
+            creation.focus(chat.conversation?.agent?.id);
             setMap(true);
           }}
           focused={!modal && !map && !stopConfirmation}
         />
       }
     >
+      {chat.sessions}
+      {chat.loading && (
+        <TerminalText>Opening conversation… Esc back</TerminalText>
+      )}
       {connectionError && (
         <TerminalText color="red" wrap="truncate-end">
           {connectionError}
@@ -607,7 +695,7 @@ export function HarnessScreen({
       )}
       {stopConfirmation && (
         <TerminalText>
-          {`Stop ${role === "chief_of_staff" ? "Chief of Staff" : role === "setup" ? "Setup" : role === "research" ? "Research" : "Griller"}'s ${role === "setup" || !chat.conversation?.agent ? "active run" : "owned execution subtree, including background descendants but not siblings"}? Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
+          {`Stop ${stopTarget?.label ?? "selected agent"} ${stopTarget?.id ?? "pending session"}'s ${stopTarget?.managed ? "owned execution subtree, including background descendants but not siblings" : "active run"}? Creation arrows do not determine this scope. Completed effects remain; uncertain effects are not rolled back. Y/Enter Stop · Esc close`}
         </TerminalText>
       )}
       {children.visible && (
@@ -690,12 +778,10 @@ export function HarnessScreen({
         !setup.open &&
         !approved.open && (
           <AgentMap
-            conversation={chat.conversation}
-            busy={chat.busy}
-            open={() => {
-              guidance.close();
-              setMap(false);
-            }}
+            state={creation}
+            width={mapWidth}
+            height={mapHeight}
+            open={openMapConversation}
           />
         )}
       <Box
@@ -795,6 +881,9 @@ export function HarnessScreen({
             )}
             {notice && (
               <TerminalText wrap="truncate-end">{notice}</TerminalText>
+            )}
+            {creation.unseen.size > 0 && (
+              <TerminalText wrap="truncate-end">{`${creation.unseen.size} new agent(s) · /map to inspect; selected conversation unchanged.`}</TerminalText>
             )}
             {draft.notice && <TerminalText>{draft.notice}</TerminalText>}
           </>

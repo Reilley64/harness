@@ -35,6 +35,7 @@ import {
   parseScopeAmendment,
 } from "./children.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
+import { parseCreationPage } from "./creation-map.js";
 import { parseDeciders, parseDecision } from "./decisions.js";
 import { PresentationError } from "./errors.js";
 import { parseGuidance } from "./guidance.js";
@@ -746,6 +747,38 @@ export function connectAgent() {
     return pending.finally(() => pendingSelections--);
   }
 
+  async function readCreationPage(after: string | null, signal?: AbortSignal) {
+    const init = await initialize();
+    signal?.throwIfAborted();
+    if (closing || init._meta?.["harness/creationMap"] !== true)
+      throw new PresentationError("Creation-map reads are unavailable.");
+    return parseCreationPage(
+      await connection.agent.request<unknown>(
+        "_harness/agents/map",
+        { cwd: workspace, after },
+        { cancellationSignal: signal },
+      ),
+    );
+  }
+
+  async function steerExisting(id: string, text: string): Promise<boolean> {
+    await viewConversation(id);
+    const value = await childRequest(
+      "_harness/conversation/steer",
+      { sessionId: id, id: randomUUID(), text },
+      undefined,
+      true,
+    );
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("accepted" in value) ||
+      typeof value.accepted !== "boolean"
+    )
+      throw new PresentationError("Invalid steering acknowledgement.");
+    return value.accepted;
+  }
+
   async function readAgent(
     role?: "setup" | "griller",
     signal?: AbortSignal,
@@ -1124,6 +1157,8 @@ export function connectAgent() {
     readSetup,
     updateSetup,
     readAgent,
+    readCreationPage,
+    steerExisting,
     startAgent,
     acknowledgeInterruption,
     readGuidance,

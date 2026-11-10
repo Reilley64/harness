@@ -13,6 +13,7 @@ use crate::lock_conversation;
 use crate::lock_execution;
 use crate::mcp::Connections;
 use crate::read_agent;
+use crate::read_agent_index;
 use crate::read_code_matches;
 use crate::read_conversation;
 use crate::read_coordination;
@@ -106,6 +107,7 @@ pub struct Dependencies {
     update_setup_draft: ports::UpdateSetupDraft,
     read_setup: ports::ReadSetup,
     read_agent: ports::ReadAgent,
+    read_agent_index: ports::ReadAgentIndex,
     read_instructions: ports::ReadInstructions,
     create_conversation: ports::CreateConversation,
     read_conversation: ports::ReadConversation,
@@ -391,6 +393,16 @@ impl Dependencies {
                 let read = read_agent::read_agent(&settings.app_data_path.join("conversations"));
                 ports::ReadAgent::new(move |workspace, role| {
                     let result = read(workspace, role);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_agent_index(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_agent_index::read_agent_index(
+                    &settings.app_data_path.join("conversations"),
+                );
+                ports::ReadAgentIndex::new(move |workspace, after, cancellation| {
+                    let result = read(workspace, after, cancellation);
                     Box::pin(async move { Ok(result.await?) })
                 })
             })
