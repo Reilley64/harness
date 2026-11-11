@@ -128,6 +128,9 @@ unknown-reset `/resume`, or exhausted `/retry extend <n>`. `/usage`,
 `/usage run <id>` and `/usage spec <work-id>` read reported/estimated/unknown
 accounting without inference, including while waiting. Live quota Resume and
 trusted explicit extension update the suspended controller, not a second prompt.
+Initial allowances of zero or one remain visible in live wait updates and reloaded
+history. Exhaustion uses the same explicit extension control; presentation does
+not reject these policies or replace them with the default allowance.
 After restart `/resume` still uses ordinary recovery; idle `/retry abandon`
 retains the episode history and clears no independent gate. No local
 character-to-token guesses or fabricated model limits are used.

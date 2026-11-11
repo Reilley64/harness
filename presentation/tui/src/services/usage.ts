@@ -37,7 +37,7 @@ export function parseUsage(value: unknown): Usage {
       !("allowance" in wait) ||
       typeof wait.allowance !== "number" ||
       !Number.isSafeInteger(wait.allowance) ||
-      wait.allowance < 2 ||
+      wait.allowance < 0 ||
       !("retryAt" in wait) ||
       (wait.retryAt !== null &&
         (typeof wait.retryAt !== "number" ||
