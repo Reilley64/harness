@@ -267,7 +267,8 @@ Coordination with amendments writes format six, requiring scope history,
 instruction/recovery arrays and explicit child history/Resume facts. Formats two
 through five remain readable only with their exact historical field sets.
 Amendments are never removed to downmigrate a record. Immutable claim format two,
-conversation schemas six/seven and native decision schema one are unchanged.
+conversation schemas six/seven are unchanged. Native decision record compatibility
+is owned by [native selection](native-decider.md#failure-stop-and-recovery).
 The current-work bound can visibly block oversized retained scope history rather
 than deleting original criteria or treating missing facts as an empty scope.
 
@@ -346,7 +347,8 @@ instruction snapshots and exact approved-work authority remain readable.
 Older executables reject schema-seven Research records rather than inventing a
 legacy association or destructively downmigrating them. Coordination format two
 is additive; no existing provider, preference, decision or approved-work records
-are rewritten by its creation. The native decision record remains schema one. Earlier unaccepted development
+are rewritten by its creation. Native decision record compatibility is owned by
+[native selection](native-decider.md#failure-stop-and-recovery). Earlier unaccepted development
 coordination/claim format-one records are rejected unchanged rather than inferring
 missing durable agent-versus-conversation identity or downmigrating them.
 

@@ -228,6 +228,7 @@ impl From<domain::RoutingEvidence> for EvidenceRecord {
         }
     }
 }
+
 impl From<domain::DecisionResponse> for ResponseRecord {
     fn from(r: domain::DecisionResponse) -> Self {
         Self {
@@ -242,6 +243,7 @@ impl From<domain::DecisionResponse> for ResponseRecord {
         }
     }
 }
+
 impl From<domain::DecisionStage> for StageRecord {
     fn from(s: domain::DecisionStage) -> Self {
         Self {

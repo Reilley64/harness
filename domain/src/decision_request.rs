@@ -59,7 +59,7 @@ impl DecisionRequest {
                 .iter()
                 .find(|c| &c.key == key)
                 .ok_or("Evidence is not bound to a candidate")?;
-            if !evidence_keys.insert(key) || facts.len() > 32 {
+            if !evidence_keys.insert(key) || facts.len() > 35 {
                 return Err("Duplicate or oversized candidate evidence");
             }
             for fact in facts {

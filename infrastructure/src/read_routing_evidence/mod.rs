@@ -175,6 +175,8 @@ pub fn read_routing_evidence(
         let url = url.clone();
         let path = path.clone();
         Box::pin(async move {
+            let destination = checked_url(&url)?;
+
             let mut cached = match tokio::fs::symlink_metadata(&path).await {
                 Ok(_) => {
                     let bytes = storage::read_private(&path, LIMIT).await?;
@@ -201,7 +203,6 @@ pub fn read_routing_evidence(
             let mut diagnostics = Vec::new();
             if due {
                 let fetched = async {
-                    let destination = checked_url(&url)?;
                     let client = reqwest::Client::builder()
                         .redirect(reqwest::redirect::Policy::none())
                         .retry(reqwest::retry::never())

@@ -124,9 +124,15 @@ Pricing values must be nonnegative and use `USD per million tokens`; no
 implicit conversion or subscription incremental-cost inference occurs. Preserve
 primary-source attribution and applicable licenses when publishing observations.
 There are at most 32 observations per row; source bodies and private caches are
-bounded at 16 MiB. Invalid sourced observations are a source failure, not silently
+bounded at 16 MiB. Each candidate retains every compatible observation plus one
+explicit unknown for each missing category: at most 35 expanded facts, or four
+unknowns when no observation matches. Native envelope bounds still apply without
+truncating facts. Invalid sourced observations are a source failure, not silently
 accepted current evidence. The source adapter uses HTTPS or explicit loopback
 fixtures, no URL credentials, redirects or retries, and no provider credentials.
+Invalid configured URLs fail before cache access or recoverable source fetching;
+the rejected raw URL never becomes a public unknown observation. Valid-source
+fetch failures still retain honest cached or unknown observations.
 
 See [native selection](native-decider.md#sourced-evidence-and-refresh) for the
 24-hour/seven-day freshness rules, on-demand refresh and immutable decision

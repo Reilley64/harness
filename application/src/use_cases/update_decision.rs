@@ -243,7 +243,7 @@ async fn select(
         }
     };
 
-    let (mut decision, received, unsupported_input) =
+    let (mut decision, hierarchy_completed, unsupported_input) =
         run_hierarchy(&d, decision, diagnostics, cancellation.clone()).await?;
     if decision.phase == domain::DecisionPhase::Stopped {
         return Ok(Output {
@@ -299,7 +299,7 @@ async fn select(
         "Native request failed; usage is unknown. Exact eligible parent recovery only."
     }
     .to_owned();
-    if received {
+    if hierarchy_completed {
         let (restored, validation, candidate) = tokio::task::spawn_blocking(move || {
             let request = decision
                 .request
