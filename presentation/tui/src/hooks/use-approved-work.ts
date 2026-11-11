@@ -25,6 +25,7 @@ export function useApprovedWork(
     work: ApprovedWork;
     conversation: Conversation;
     intent: string;
+    transientRetryAllowance: number | undefined;
   } | null>(null);
 
   const close = useCallback(() => {
@@ -80,11 +81,21 @@ export function useApprovedWork(
     }
   }
 
-  async function approve() {
+  async function approve(transientRetryAllowance?: number) {
     if (!work || !conversation || saving || loading) return;
     if (work.sessionId !== conversation.id) {
       setError(
         "Open this work's Griller before approving its exact selection.",
+      );
+      return;
+    }
+
+    if (
+      last.current &&
+      last.current.transientRetryAllowance !== transientRetryAllowance
+    ) {
+      setError(
+        "Retry must retain the original initial allowance. Reload work to reconcile this approval.",
       );
       return;
     }
@@ -96,6 +107,7 @@ export function useApprovedWork(
       work,
       conversation,
       intent: intent.current ?? crypto.randomUUID(),
+      transientRetryAllowance,
     };
     last.current = payload;
     setSaving(true);
@@ -105,6 +117,7 @@ export function useApprovedWork(
         payload.work,
         payload.conversation,
         payload.intent,
+        payload.transientRetryAllowance,
       );
       if (
         mounted.current &&

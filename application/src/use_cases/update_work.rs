@@ -16,6 +16,7 @@ pub async fn call(
     version: String,
     intent: String,
     selection: domain::ModelSelection,
+    transient_retry_allowance: Option<u32>,
     session_revision: u64,
 ) -> Result<Output, Error> {
     let d = dependencies.into();
@@ -28,6 +29,14 @@ pub async fn call(
         ));
     }
 
+    if transient_retry_allowance
+        .is_some_and(|allowance| allowance > domain::ProviderRetry::MAX_INITIAL_ALLOWANCE)
+    {
+        return Err(Error::caused_by(
+            "Initial transient retry allowance must be within 0..64",
+        ));
+    }
+
     let mut work = d
         .read_work
         .call(id)
@@ -37,7 +46,10 @@ pub async fn call(
     let coordinator_id = uuid::Uuid::new_v5(&namespace, intent.as_bytes()).to_string();
     let prior = work.approvals.iter().find(|a| a.intent == intent).cloned();
     if let Some(prior) = &prior
-        && (prior.version != version || prior.revision != revision || prior.selection != selection)
+        && (prior.version != version
+            || prior.revision != revision
+            || prior.selection != selection
+            || prior.transient_retry_allowance != transient_retry_allowance)
     {
         return Err("Assignment intent is bound to a different approval payload").context("Assignment intent conflict: retry the exact original payload or explicitly choose a distinct intent").map_err(Error::caused_by);
     }
@@ -104,6 +116,7 @@ pub async fn call(
             version: version.clone(),
             revision,
             selection,
+            transient_retry_allowance,
             coordinator_id: coordinator_id.clone(),
             approved_at: now,
             delivered: false,

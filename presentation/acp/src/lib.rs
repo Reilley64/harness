@@ -558,7 +558,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 let d=update_work.clone();
                 connection.spawn(async move {
                     let selection=domain::ModelSelection {provider_id:domain::ProviderId(request.provider_id),model_id:request.model_id,effort:request.effort.map(|e|match e {models::ModelEffort::Low=>domain::ModelEffort::Low,models::ModelEffort::Medium=>domain::ModelEffort::Medium,models::ModelEffort::High=>domain::ModelEffort::High,models::ModelEffort::ExtraHigh=>domain::ModelEffort::ExtraHigh})};
-                    match application::use_cases::update_work::call(d,request.id,request.revision,request.version,request.intent,selection,request.session_revision).await {
+                    match application::use_cases::update_work::call(d,request.id,request.revision,request.version,request.intent,selection,request.transient_retry_allowance,request.session_revision).await {
                         Ok(o)=>responder.respond(work::Response {work:Some(work::summary(&o.work)),conversation_id:Some(o.conversation_id)}),
                         Err(e)=>responder.respond_with_error(conversations::error(e)),
                     }

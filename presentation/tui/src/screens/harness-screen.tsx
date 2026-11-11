@@ -775,7 +775,7 @@ export function HarnessScreen({
       {mcp.visible && <McpPanel state={mcp} rows={rows} />}
       {approved.open && (
         <ApprovedWorkPanel
-          key={approved.work?.revision ?? "loading"}
+          key={`${approved.work?.id ?? "loading"}:${approved.work?.revision ?? 0}`}
           work={approved.work}
           conversation={chat.conversation}
           loading={approved.loading}
@@ -784,7 +784,7 @@ export function HarnessScreen({
           coordinator={approved.coordinator}
           columns={columns}
           rows={rows}
-          approve={() => void approved.approve()}
+          approve={(allowance) => void approved.approve(allowance)}
           openCoordinator={() => {
             const id = approved.coordinator;
             if (id) openConversation(id);

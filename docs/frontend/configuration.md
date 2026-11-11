@@ -187,7 +187,16 @@ start inference; active runs continue with their captured snapshot.
 `/work <work-id>` opens a scrollable exact-source/version/scope/criteria proposal
 inspector. `a` then `y` records trusted approval and hands off to a separate durable
 CoS through real ACP/application operations; `n`/Escape declines/dismisses. No
-chat/prose/model tool is approval. `o` opens the delivered CoS without inference.
+chat/prose/model tool is approval. Before confirmation, `-`/`+` adjust the initial
+automatic transient-retry allowance within 0–64, and `d` restores omitted/default
+two. The inspector and confirmation show both the count and default/explicit
+provenance. Zero means no automatic transient retry after the initial request.
+An existing current approval shows its immutable recorded value; the controls
+cannot edit that approval. A pending or ambiguous write retries its original
+policy/intent, not a newly displayed choice: reload work to reconcile first.
+These controls do not extend an already exhausted episode; use the separate
+[wait controls](../provider-waits.md#live-waits-recovery-and-human-controls).
+`o` opens the delivered CoS without inference.
 The title is `harness - Chief of Staff` for that conversation. `F3` returns to
 Griller, and per-conversation draft buckets retain unsubmitted and rejected text.
 Stale read/open/approval results cannot take over a newer target/view. Admitted

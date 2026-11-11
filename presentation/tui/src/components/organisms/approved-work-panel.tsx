@@ -24,11 +24,18 @@ export function ApprovedWorkPanel({
   coordinator: string | null;
   columns: number;
   rows: number;
-  approve: () => void;
+  approve: (transientRetryAllowance?: number) => void;
   openCoordinator: () => void;
 }) {
   const [offset, setOffset] = useState(0),
-    [confirm, setConfirm] = useState(false);
+    [confirm, setConfirm] = useState(false),
+    [retryDraft, setRetryDraft] = useState<number | undefined>(undefined);
+  const currentApproval = work?.approvals.find((approval) => approval.current);
+  const retryAllowance = currentApproval
+    ? (currentApproval.transientRetryAllowance ?? undefined)
+    : retryDraft;
+  const retryLabel = `${retryAllowance ?? 2} (${retryAllowance === undefined ? "default" : "explicit"})`;
+
   const lines = useMemo(() => {
     const publication = work?.publications.at(-1);
     const content = [
@@ -47,6 +54,11 @@ export function ApprovedWorkPanel({
                   " · " +
                   (conversation.effort ?? "no effort")
                 : "unavailable"),
+            "Initial automatic transient retries: " +
+              retryLabel +
+              (currentApproval
+                ? " · recorded approval (immutable)"
+                : " · -/+ adjust 0..64 · d default"),
             "Approval authorizes ONLY this version's implementation scope; no live auth, provisioning or merge consent is implied. Managed child execution is unavailable.",
             ...work.approvals.map(
               (a) =>
@@ -75,7 +87,7 @@ export function ApprovedWorkPanel({
         : saving
           ? "Saving durable approval/handoff… Escape may dismiss but does not undo an admitted save."
           : confirm
-            ? "Confirm the exact version and scope above? y APPROVE · n back"
+            ? `Confirm exact version/scope and initial transient retries ${retryLabel}? y APPROVE · n back`
             : "a review approval confirmation · Esc close · ↑↓/PgUp/PgDn inspect",
     ];
     const counts = new Map<string, number>();
@@ -101,6 +113,8 @@ export function ApprovedWorkPanel({
     coordinator,
     columns,
     confirm,
+    currentApproval,
+    retryLabel,
   ]);
   const height = Math.max(1, rows - 6),
     start = Math.min(offset, Math.max(0, lines.length - height));
@@ -109,7 +123,23 @@ export function ApprovedWorkPanel({
     if (confirm && input === "n") setConfirm(false);
     else if (confirm && input === "y" && !saving && !loading) {
       setConfirm(false);
-      approve();
+      approve(retryAllowance);
+    } else if (
+      !confirm &&
+      !saving &&
+      !loading &&
+      !currentApproval &&
+      work &&
+      (input === "+" || input === "-" || input === "d")
+    ) {
+      setRetryDraft(
+        input === "d"
+          ? undefined
+          : Math.max(
+              0,
+              Math.min(64, (retryAllowance ?? 2) + (input === "+" ? 1 : -1)),
+            ),
+      );
     } else if (input === "a" && work && !saving && !loading) setConfirm(true);
     else if (input === "o" && coordinator && !saving) openCoordinator();
     else if (key.upArrow || key.downArrow || key.pageUp || key.pageDown) {
@@ -137,10 +167,10 @@ export function ApprovedWorkPanel({
       ))}
       <TerminalText>
         {confirm
-          ? "y APPROVE exact displayed version · n back"
+          ? `y APPROVE exact version · retries ${retryLabel} · n back`
           : saving
             ? "Saving…"
-            : "a approve exact version · o open delivered CoS"}
+            : `retries ${retryLabel} · -/+ adjust · d default · a approve · o CoS`}
       </TerminalText>
     </Box>
   );

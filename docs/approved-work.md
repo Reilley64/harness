@@ -100,6 +100,16 @@ inference. No router, default model, lowered effort or credential substitution i
 used. A previously recorded exact intent can be retried with its original facts;
 a different payload conflicts even if it would otherwise be eligible.
 
+Approval also binds an optional initial transient-retry allowance, 0–64, to the
+same exact intent/version. Omitted policy retains default two, including old
+approvals; explicit zero and explicit two remain distinguishable from omission.
+New CoS and authorized Research retry episodes use that recorded value, without
+resetting any existing episode. This is not a whole-work time/spend cap, quota
+permission, native-Decider retry, or substitute for later human extension. The
+[frontend](frontend/configuration.md#approved-work-and-cos) owns selection and
+confirmation controls; [ACP](acp/conversations.md#approved-work-extension) owns
+the optional typed request field.
+
 Approval and the assignment-intent claim are committed before CoS creation.
 Each explicit assignment intent has a deterministic UUID, separate from its work
 identity; same key/payload reuses that identity across processes/restart. A new
@@ -174,6 +184,10 @@ are at most 256 KiB; pointers are at most 4096 bytes with at most 32 artifacts.
 Every record read checks exact document/decoded-field/hash equivalence, IDs,
 versions, original authority and assignment references. CAS rejects a stale write;
 updates cannot remove/change immutable original facts or regress delivery status.
+The optional retry-policy field is range-checked independently by each work codec;
+absence remains absent on writes, and old approvals are not rewritten as explicit
+human choices. Existing serialized fields and proposal document fingerprints keep
+their order and meaning.
 There is no automatic deletion or compaction.
 
 Conversation schema 6 adds optional approved assignment/CoS metadata while

@@ -29,6 +29,9 @@ struct ApprovalRecord {
     provider: String,
     model: String,
     effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transient_retry_allowance: Option<u32>,
+
     coordinator_id: String,
     approved_at: u64,
     delivered: bool,
@@ -131,6 +134,8 @@ impl From<domain::ApprovedWork> for Record {
                         }
                         .into()
                     }),
+                    transient_retry_allowance: a.transient_retry_allowance,
+
                     coordinator_id: a.coordinator_id,
                     approved_at: a.approved_at,
                     delivered: a.delivered,
@@ -175,6 +180,9 @@ impl TryFrom<Record> for domain::ApprovedWork {
                 || a.revision == 0
                 || a.revision >= r.revision
                 || !publications.iter().any(|p| p.proposal.version == a.version)
+                || a.transient_retry_allowance.is_some_and(|allowance| {
+                    allowance > domain::ProviderRetry::MAX_INITIAL_ALLOWANCE
+                })
                 || a.model.is_empty()
                 || a.model.len() > 512
                 || !matches!(a.provider.as_str(), "openai" | "openrouter")
@@ -203,6 +211,7 @@ impl TryFrom<Record> for domain::ApprovedWork {
                     model_id: a.model,
                     effort,
                 },
+                transient_retry_allowance: a.transient_retry_allowance,
                 coordinator_id: a.coordinator_id,
                 approved_at: a.approved_at,
                 delivered: a.delivered,

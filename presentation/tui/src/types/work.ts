@@ -10,6 +10,7 @@ export type WorkApproval = {
   providerId: string;
   modelId: string;
   effort: string | null;
+  transientRetryAllowance?: number | null;
   conversationId: string;
   approvedAt: number;
   delivered: boolean;

@@ -616,6 +616,7 @@ export function connectAgent() {
     work: ApprovedWork,
     conversation: Conversation,
     intent: string,
+    transientRetryAllowance?: number,
   ): Promise<WorkResponse> {
     if (closing)
       return Promise.reject(new PresentationError("The agent is closing."));
@@ -633,6 +634,9 @@ export function connectAgent() {
           revision: prior?.revision ?? work.revision,
           version: prior?.version ?? publication.version,
           intent,
+          transientRetryAllowance: prior
+            ? prior.transientRetryAllowance
+            : transientRetryAllowance,
           sessionRevision: conversation.revision,
           providerId: conversation.model.providerId,
           modelId: conversation.model.id,

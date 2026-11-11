@@ -13,23 +13,30 @@ pub struct ProviderRetry {
 }
 
 impl ProviderRetry {
+    pub const DEFAULT_ALLOWANCE: u32 = 2;
+    pub const MAX_INITIAL_ALLOWANCE: u32 = 64;
     pub const MAX_RETRY_AT: u64 = 253_402_300_799_999;
 
     pub fn failed(
         previous: Option<Self>,
         reply_id: String,
         failure: ProviderFailure,
+        initial_allowance: u32,
         now: u64,
         jitter: u64,
     ) -> Result<Self, &'static str> {
         if failure.kind == ProviderFailureKind::Permanent {
             return Err("Permanent provider failures cannot enter automatic retry");
         }
+        if previous.is_none() && initial_allowance > Self::MAX_INITIAL_ALLOWANCE {
+            return Err("Initial transient retry allowance must be within 0..64");
+        }
+
         let mut state = previous.unwrap_or_else(|| Self {
             reply_id: reply_id.clone(),
             failure: failure.clone(),
             failures: 0,
-            allowance: 2,
+            allowance: initial_allowance,
             extensions: Vec::new(),
             retry_at: None,
             waiting: true,
@@ -108,8 +115,7 @@ impl ProviderRetry {
             || self.failure.connection_id.is_empty()
             || self.failure.model_id.is_empty()
             || self.failures == 0
-            || self.allowance < 2
-            || self.allowance > 4_098
+            || self.allowance > Self::MAX_INITIAL_ALLOWANCE + 64 * 64
             || self.extensions.len() > 64
             || self
                 .extensions

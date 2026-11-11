@@ -68,6 +68,12 @@ pub(super) async fn failed(
     failure: domain::ProviderFailure,
     present: &PresentTurnEvent,
 ) -> Result<(), Error> {
+    let initial_allowance = if conversation.provider_retry.is_none() {
+        initial_allowance(dependencies, conversation).await?
+    } else {
+        domain::ProviderRetry::DEFAULT_ALLOWANCE
+    };
+
     let retry = domain::ProviderRetry::failed(
         conversation.provider_retry.clone(),
         conversation
@@ -76,6 +82,7 @@ pub(super) async fn failed(
             .id
             .clone(),
         failure,
+        initial_allowance,
         now()?,
         uuid::Uuid::new_v4().as_u128() as u64,
     )
@@ -90,4 +97,77 @@ pub(super) async fn failed(
             usage: conversation.usage(),
         })
         .map_err(Error::caused_by)
+}
+
+async fn initial_allowance(
+    dependencies: &Dependencies,
+    conversation: &domain::Conversation,
+) -> Result<u32, Error> {
+    if let Some(assignment) = &conversation.assignment {
+        let work = dependencies
+            .read_work
+            .call(assignment.work_id.clone())
+            .await
+            .map_err(Error::caused_by)?
+            .ok_or_else(|| Error::caused_by("Approved retry work is unavailable"))?;
+
+        work.authorize_assignment(assignment, &conversation.id)
+            .map_err(Error::caused_by)?;
+        let approval = work
+            .authorize(&assignment.intent, &assignment.proposal.version)
+            .map_err(Error::caused_by)?;
+        return Ok(approval
+            .transient_retry_allowance
+            .unwrap_or(domain::ProviderRetry::DEFAULT_ALLOWANCE));
+    }
+
+    if let Some(research) = &conversation.research {
+        let state = dependencies
+            .read_coordination
+            .call(research.parent_id.clone())
+            .await
+            .map_err(Error::caused_by)?
+            .ok_or_else(|| Error::caused_by("Retry execution ownership is unavailable"))?;
+
+        let child = state
+            .children
+            .iter()
+            .find(|child| child.execution_id == research.execution_id)
+            .ok_or_else(|| Error::caused_by("Retry execution ownership is missing"))?;
+        if !state.authority_complete
+            || state.agent_id != research.parent_agent_id
+            || child.agent_id != conversation.id
+            || child.assignment_id != research.assignment_id
+            || child.intent != research.intent
+        {
+            return Err(Error::caused_by("Retry execution authority changed"));
+        }
+        if let Some(work_id) = &child.work_id {
+            let work = dependencies
+                .read_work
+                .call(work_id.clone())
+                .await
+                .map_err(Error::caused_by)?
+                .ok_or_else(|| Error::caused_by("Approved retry work is unavailable"))?;
+
+            child.authorize_work(&work).map_err(Error::caused_by)?;
+            let approval = work
+                .authorize(
+                    child
+                        .work_intent
+                        .as_deref()
+                        .ok_or_else(|| Error::caused_by("Retry approval intent is missing"))?,
+                    child
+                        .work_version
+                        .as_deref()
+                        .ok_or_else(|| Error::caused_by("Retry approval version is missing"))?,
+                )
+                .map_err(Error::caused_by)?;
+            return Ok(approval
+                .transient_retry_allowance
+                .unwrap_or(domain::ProviderRetry::DEFAULT_ALLOWANCE));
+        }
+    }
+
+    Ok(domain::ProviderRetry::DEFAULT_ALLOWANCE)
 }

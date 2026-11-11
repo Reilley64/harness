@@ -44,6 +44,15 @@ schemas, native approval, role metadata, persistence/admission and recovery. The
 approval method is never an advertised model tool; ordinary chat/status cannot
 authorize it. A delivered CoS uses the ordinary session/prompt/Resume/tool paths.
 
+`_harness/work/approve` additionally accepts optional `transientRetryAllowance`:
+an integer in 0–64 or null/omitted for default two. It is part of the exact trusted
+approval payload, not a model tool parameter, and a changed same-intent value
+conflicts. The public approval summary retains that nullable field so explicit
+zero/two can be distinguished from default. Existing approval facts remain
+immutable; new retry episodes read the exact authorized work policy rather than
+mutable prose. This method performs no inference and cannot change an already
+retained retry episode or bypass post-exhaustion extension/admission gates.
+
 ## Native Decider extension
 
 `harness/nativeDecider: true` advertises the separate native-release preferences,

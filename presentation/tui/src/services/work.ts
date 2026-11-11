@@ -41,6 +41,11 @@ export function parseWork(value: unknown): WorkResponse {
         !record(a) ||
         typeof a.intent !== "string" ||
         typeof a.version !== "string" ||
+        (a.transientRetryAllowance != null &&
+          (typeof a.transientRetryAllowance !== "number" ||
+            !Number.isSafeInteger(a.transientRetryAllowance) ||
+            a.transientRetryAllowance < 0 ||
+            a.transientRetryAllowance > 64)) ||
         typeof a.conversationId !== "string" ||
         typeof a.delivered !== "boolean" ||
         typeof a.current !== "boolean"

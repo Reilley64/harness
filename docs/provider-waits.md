@@ -31,7 +31,19 @@ no invented reset or ETA and waits for explicit human Resume. Known reset timing
 permits continuation only while the existing controller remains eligible.
 
 The default is at most **two automatic transient retries after the initial
-failure**. The allowance and failure count are checkpointed with the exact reply,
+failure**. Trusted approval can explicitly configure an initial allowance of
+0–64 for its exact approved work; omission and older approvals retain default two.
+Zero disables automatic transient retries, not the initial request or explicit
+quota Resume. The immutable approval intent/version binds this choice alongside
+the model pair; changing it requires a deliberately new approval intent, not prose.
+CoS and its authorized Research executions initialize new episodes from that
+recorded policy. Existing episodes retain their original counts/allowances even
+if current work changes, and ordinary admission still gates any continuation.
+Post-exhaustion extensions remain separate human operations. See
+[approved work](approved-work.md#trusted-approval-and-handoff) and the
+[approval UI](frontend/configuration.md#approved-work-and-cos).
+
+The allowance and failure count are checkpointed with the exact reply,
 selected pair and its existing assignment/approved-work association. Steering,
 model changes, a later run, reconnecting or reopening cannot clear an outstanding
 wait or reset its allowance. A successful model step retires that retry episode

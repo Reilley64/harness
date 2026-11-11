@@ -1,3 +1,4 @@
+use crate::ProviderRetry;
 use crate::WorkApproval;
 use crate::WorkAssignment;
 use crate::WorkProposal;
@@ -47,10 +48,18 @@ impl ApprovedWork {
         Ok(true)
     }
     pub fn approve(&mut self, approval: WorkApproval) -> Result<bool, &'static str> {
+        if approval
+            .transient_retry_allowance
+            .is_some_and(|allowance| allowance > ProviderRetry::MAX_INITIAL_ALLOWANCE)
+        {
+            return Err("Initial transient retry allowance must be within 0..64");
+        }
+
         if let Some(prior) = self.approvals.iter().find(|a| a.intent == approval.intent) {
             return if prior.version == approval.version
                 && prior.revision == approval.revision
                 && prior.selection == approval.selection
+                && prior.transient_retry_allowance == approval.transient_retry_allowance
                 && prior.coordinator_id == approval.coordinator_id
             {
                 Ok(false)
