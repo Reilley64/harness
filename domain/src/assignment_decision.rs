@@ -12,6 +12,7 @@ pub struct AssignmentDecision {
     pub parent_id: String,
     pub parent_agent_id: String,
     pub parent_revision: u64,
+    pub parent_run_id: Option<String>,
     pub parent: ModelSelection,
     pub parent_connection_id: String,
     pub work_id: String,
@@ -78,6 +79,7 @@ impl AssignmentDecision {
             || self.parent != stopped.parent
             || self.parent_connection_id != stopped.parent_connection_id
             || self.parent_revision != stopped.parent_revision
+            || self.parent_run_id != stopped.parent_run_id
             || self.legacy != stopped.legacy
             || stopped.revision > self.revision
             || stopped
@@ -108,6 +110,7 @@ impl AssignmentDecision {
             || self.parent != completed.parent
             || self.parent_connection_id != completed.parent_connection_id
             || self.parent_revision != completed.parent_revision
+            || self.parent_run_id != completed.parent_run_id
             || self.legacy != completed.legacy
             || self.request != completed.request
         {
@@ -333,6 +336,7 @@ impl AssignmentDecision {
             || self.parent != next.parent
             || self.parent_connection_id != next.parent_connection_id
             || self.parent_revision != next.parent_revision
+            || self.parent_run_id != next.parent_run_id
             || self.revision != next.revision
             || self.legacy != next.legacy
             || self.phase != DecisionPhase::Prepared && self.phase != DecisionPhase::Pending

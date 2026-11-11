@@ -10,6 +10,7 @@ use crate::MessageStatus;
 use crate::Model;
 use crate::ModelEffort;
 use crate::ModelStep;
+use crate::ProviderRetry;
 use crate::ResearchAssignment;
 use crate::Run;
 use crate::RunStatus;
@@ -39,6 +40,8 @@ pub struct Conversation {
     pub runs: Vec<Run>,
     pub current_work: Option<String>,
     pub resume_required: bool,
+    pub provider_retry: Option<ProviderRetry>,
+    pub provider_retry_history: Vec<ProviderRetry>,
 
     pub created_at: u64,
     pub updated_at: u64,
@@ -157,6 +160,13 @@ impl Conversation {
             context_tokens,
             model_id,
             partial,
+            provider_retry: self.provider_retry.clone().filter(|retry| {
+                retry.waiting
+                    && self.messages.last().is_some_and(|reply| {
+                        reply.status == MessageStatus::InProgress
+                            || reply.status == MessageStatus::Interrupted && self.resume_required
+                    })
+            }),
         }
     }
 
@@ -166,8 +176,10 @@ impl Conversation {
         reply_id: String,
         content: String,
     ) -> Result<(), &'static str> {
-        if self.resume_required {
-            return Err("Interrupted work requires explicit Resume before another prompt");
+        if self.resume_required || self.provider_retry.is_some() {
+            return Err(
+                "Interrupted work or a provider wait requires explicit Resume before another prompt",
+            );
         }
         if content.trim().is_empty() {
             return Err("A message cannot be empty");
@@ -204,6 +216,7 @@ impl Conversation {
                 steps: Vec::new(),
                 steering: Vec::new(),
                 generation_usage: (role == MessageRole::Assistant).then(Vec::new),
+                generation_accounting: (role == MessageRole::Assistant).then(Vec::new),
             });
         }
         Ok(())

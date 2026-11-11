@@ -1,5 +1,20 @@
 use super::ModelStepError;
 
+pub(super) fn cost(event: &serde_json::Value) -> Result<Option<f64>, ModelStepError> {
+    let Some(value) = event
+        .pointer("/response/usage/cost")
+        .filter(|value| !value.is_null())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
+        value
+            .as_f64()
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .ok_or("Invalid reported provider cost")?,
+    ))
+}
+
 pub(super) fn read(
     event: &serde_json::Value,
 ) -> Result<Option<domain::TokenUsage>, ModelStepError> {

@@ -143,7 +143,11 @@ The optional source schema is documented in
 Inspection exposes the original complete pool, captured facts/ages, each input,
 stage membership, successful/failed/pending outcome and all available per-stage
 usage, cost and native serving provenance. Missing reports/costs stay unknown;
-the top-level response is not an additional billable stage. Captured evidence
+the top-level response is not an additional billable stage. The ordinary
+[usage query](provider-waits.md#durable-accounting) projects those exact stage
+identities without rewriting records, retrying or inferring missing historical
+parent runs. Newly prepared intents capture the actual parent run where available;
+policy-A legacy records acquire no invented run/stage provenance. Captured evidence
 ages describe the snapshot, not a claim that an old decision is fresh today.
 
 The response must contain exactly the requested native `choice` or `refusal`

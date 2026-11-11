@@ -947,7 +947,7 @@ impl Coordination {
             CoordinationCommand::Wait { controller, run_id } => {
                 self.controls(&controller, &run_id)?;
                 if self.gate != CoordinationGate::Open {
-                    return Err("A closed gate cannot begin a delegated wait");
+                    return Err("A closed gate cannot begin an execution wait");
                 }
                 if self.waiting {
                     return Ok(false);

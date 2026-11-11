@@ -203,7 +203,9 @@ reporting is enabled. The prompt remains full-sized and editable.
 - 64 KiB arguments; 4 MiB SSE events; 1 MiB continuation per step/4 MiB per turn.
 - 1 MiB each for user text, total assistant text, and accepted steering text.
 - 64 steering instructions; bounded 32-entry control channel.
-- 20-minute turn deadline; bash default 120 seconds/max 600 seconds.
+- 20-minute active-turn budget checked at admission boundaries; suspended joins
+  and provider waits are excluded. Admitted model/tool operations retain their
+  individual limits. Bash defaults to 120 seconds/max 600 seconds.
 - Searches: default/max 100 matches; native walks max 100,000 entries/10 seconds.
 - AST search: 10 seconds; DDG: 15 seconds, 2 MiB response, max 10 results.
 - Captured process stdout and stderr: up to 1 MiB each, then drain/discard.

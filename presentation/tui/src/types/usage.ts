@@ -4,4 +4,10 @@ export type Usage = {
   contextTokens: number | null;
   modelId: string | null;
   partial: boolean;
+  providerWait?: {
+    kind: "transient" | "quota";
+    failures: number;
+    allowance: number;
+    retryAt: number | null;
+  } | null;
 };

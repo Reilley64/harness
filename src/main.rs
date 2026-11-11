@@ -50,6 +50,8 @@ async fn run() -> Result<(), AppError> {
         .update_routing_evidence(|_| (&dependencies).into())
         .read_deciders(|_| (&dependencies).into())
         .update_decider(|_| (&dependencies).into())
+        .read_usage(|_| (&dependencies).into())
+        .update_provider_retry(|_| (&dependencies).into())
         .read_work(|_| (&dependencies).into())
         .update_work(|_| (&dependencies).into())
         .authentication(|_| (&dependencies).into())

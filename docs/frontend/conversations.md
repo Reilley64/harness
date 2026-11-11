@@ -122,7 +122,14 @@ quota. It excludes unsent drafts and changes since that reported request. Unknow
 usage/capacity displays `—`; missing generation reports and historical gaps mark
 known totals with `≥`. Reported superseded or cancelled generations still count;
 steering does not itself make complete reports partial.
-Per-step reports update live and are restored from durable history. No local
+Per-step reports update live and are restored from durable history. The same
+footer also shows [provider waits](../provider-waits.md): timed retry/quota,
+unknown-reset `/resume`, or exhausted `/retry extend <n>`. `/usage`,
+`/usage run <id>` and `/usage spec <work-id>` read reported/estimated/unknown
+accounting without inference, including while waiting. Live quota Resume and
+trusted explicit extension update the suspended controller, not a second prompt.
+After restart `/resume` still uses ordinary recovery; idle `/retry abandon`
+retains the episode history and clears no independent gate. No local
 character-to-token guesses or fabricated model limits are used.
 
 The entry point accepts `--resume <conversation-id>` and loads it before rendering.

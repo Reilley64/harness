@@ -88,6 +88,8 @@ pub fn create_coordinator(
                 runs: Vec::new(),
                 current_work: None,
                 resume_required: false,
+                provider_retry: None,
+                provider_retry_history: Vec::new(),
 
                 created_at: now,
                 updated_at: now,

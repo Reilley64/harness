@@ -18,6 +18,7 @@ import { ProviderPicker } from "../components/organisms/provider-picker.js";
 import { SetupPanel } from "../components/organisms/setup-panel.js";
 import { Transcript } from "../components/organisms/transcript.js";
 import { HarnessLayout } from "../components/templates/harness-layout.js";
+import { useAccounting } from "../hooks/use-accounting.js";
 import { useAgentConnection } from "../hooks/use-agent-connection.js";
 import { useApprovedWork } from "../hooks/use-approved-work.js";
 import { useChildren } from "../hooks/use-children.js";
@@ -69,6 +70,7 @@ export function HarnessScreen({
   const chat = useConversations(agent, initialConversation, (next) => {
     models.restore({ model: next.model, effort: next.effort });
   });
+  const accounting = useAccounting(agent, chat.conversation, chat.reconcile);
   const mapWidth = Math.max(1, columns - 2);
   const mapHeight = Math.max(4, rows - 10);
   const creation = useCreationMap(agent, mapWidth, mapHeight);
@@ -504,6 +506,22 @@ export function HarnessScreen({
       } else void children.inspect();
       return;
     }
+    if (command === "/usage" || command.startsWith("/usage ")) {
+      const args = command.split(" ");
+      if (
+        args.length === 1 ||
+        (args.length === 3 && (args[1] === "run" || args[1] === "spec"))
+      ) {
+        draft.change("");
+        setNotice(null);
+        void accounting.read(
+          args[1] === "run" ? (args[2] ?? null) : null,
+          args[1] === "spec" ? (args[2] ?? null) : null,
+        );
+      } else
+        setNotice("Use /usage, /usage run <id>, or /usage spec <work-id>.");
+      return;
+    }
     if (
       chat.busy &&
       command.startsWith("/") &&
@@ -515,7 +533,11 @@ export function HarnessScreen({
       command !== "/griller" &&
       command !== "/setup chat" &&
       command !== "/guidance" &&
-      command !== "/setup"
+      command !== "/setup" &&
+      !(
+        chat.usage?.providerWait &&
+        (command === "/resume" || command.startsWith("/retry extend "))
+      )
     ) {
       setNotice(
         "Use /stop to stop this Griller before using commands. Escape only navigates.",
@@ -606,9 +628,30 @@ export function HarnessScreen({
           )
           .catch((error) => setNotice(errorMessage(error)));
       }
+    } else if (
+      command === "/retry abandon" ||
+      command.startsWith("/retry extend ")
+    ) {
+      const additional =
+        command === "/retry abandon"
+          ? null
+          : Number(command.slice("/retry extend ".length));
+      if (
+        additional !== null &&
+        (!Number.isSafeInteger(additional) || additional < 1 || additional > 64)
+      ) {
+        setNotice(
+          "Explicit retry extensions require 1..64 additional retries.",
+        );
+      } else {
+        draft.change("");
+        setNotice(null);
+        void accounting.update(additional);
+      }
     } else if (command === "/resume") {
       draft.change("");
-      void chat.resume();
+      if (chat.busy && chat.usage?.providerWait) void accounting.update(0);
+      else void chat.resume();
     } else if (command === "/resume inspect") {
       draft.change("");
       void chat.acknowledge();
@@ -878,6 +921,9 @@ export function HarnessScreen({
                   content: `${mcp.error ?? mcp.configuration?.error ?? "MCP is using its last validated snapshot."} Open /mcp to inspect and reload.`,
                 }}
               />
+            )}
+            {accounting.notice && (
+              <TerminalText>{accounting.notice}</TerminalText>
             )}
             {notice && (
               <TerminalText wrap="truncate-end">{notice}</TerminalText>

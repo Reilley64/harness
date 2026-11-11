@@ -10,6 +10,8 @@ pub(super) struct Record {
     parent_id: String,
     parent_agent_id: String,
     parent_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent_run_id: Option<String>,
     parent: PairRecord,
     parent_connection_id: String,
     work_id: String,
@@ -411,6 +413,7 @@ impl From<domain::AssignmentDecision> for Record {
             parent_id: d.parent_id,
             parent_agent_id: d.parent_agent_id,
             parent_revision: d.parent_revision,
+            parent_run_id: d.parent_run_id,
             parent: d.parent.into(),
             parent_connection_id: d.parent_connection_id,
             work_id: d.work_id,
@@ -490,6 +493,12 @@ impl TryFrom<Record> for domain::AssignmentDecision {
         ] {
             conversations::validate_id(id)?;
         }
+        if let Some(id) = &r.parent_run_id {
+            conversations::validate_id(id)?;
+            if r.format == 1 {
+                return Err("Legacy native records cannot acquire invented run provenance".into());
+            }
+        }
         let legacy = r.format == 1;
         let d = Self {
             legacy,
@@ -497,6 +506,7 @@ impl TryFrom<Record> for domain::AssignmentDecision {
             parent_id: r.parent_id,
             parent_agent_id: r.parent_agent_id,
             parent_revision: r.parent_revision,
+            parent_run_id: r.parent_run_id,
             parent: r.parent.try_into()?,
             parent_connection_id: r.parent_connection_id,
             work_id: r.work_id,

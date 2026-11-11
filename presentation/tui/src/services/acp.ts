@@ -127,6 +127,7 @@ export function connectAgent() {
   const pendingWorkWrites = new Set<Promise<WorkResponse>>();
   const pendingNative = new Set<Promise<unknown>>();
   const pendingChildren = new Set<Promise<unknown>>();
+  const pendingAccounting = new Set<Promise<unknown>>();
   const pendingMcp = new Set<Promise<McpConfiguration>>();
   const mcpControllers = new Set<AbortController>();
   const nativeControllers = new Map<string, AbortController>();
@@ -948,6 +949,51 @@ export function connectAgent() {
     return conversation;
   }
 
+  async function readUsage(
+    sessionId: string | null,
+    runId: string | null,
+    workId: string | null,
+  ): Promise<unknown> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    await initialize();
+    return connection.agent.request("_harness/usage/read", {
+      sessionId,
+      runId,
+      workId,
+    });
+  }
+
+  async function updateProviderRetry(
+    sessionId: string,
+    revision: number,
+    additional: number | null,
+  ): Promise<Conversation> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const pending = (async () => {
+      await initialize();
+      const response = await connection.agent.request<{
+        conversation: unknown;
+      }>("_harness/provider-retry/update", {
+        sessionId,
+        revision,
+        id: randomUUID(),
+        additional,
+      });
+      const conversation = parseConversation(response.conversation);
+      if (conversation.id !== sessionId)
+        throw new PresentationError(
+          "The retry control returned another conversation.",
+        );
+      return conversation;
+    })();
+    pendingAccounting.add(pending);
+    try {
+      return await pending;
+    } finally {
+      pendingAccounting.delete(pending);
+    }
+  }
+
   async function createMessage(
     id: string,
     content: string,
@@ -1078,7 +1124,8 @@ export function connectAgent() {
       pendingWorkWrites.size ||
       pendingNative.size ||
       pendingMcp.size ||
-      pendingChildren.size
+      pendingChildren.size ||
+      pendingAccounting.size
     ) {
       await Promise.allSettled([...replies.keys()].map(cancelReply));
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1092,6 +1139,7 @@ export function connectAgent() {
             ...pendingNative,
             ...pendingMcp,
             ...pendingChildren,
+            ...pendingAccounting,
           ]),
           new Promise<void>((resolve) => {
             timer = setTimeout(resolve, 60000);
@@ -1130,6 +1178,8 @@ export function connectAgent() {
 
   return {
     initialize,
+    readUsage,
+    updateProviderRetry,
     readChildren,
     childResult,
     controlChildren,

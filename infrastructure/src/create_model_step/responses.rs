@@ -51,7 +51,11 @@ where
         let read_model_allowlist = read_model_allowlist.clone();
         Box::pin(async move {
             let mut reported_usage = None;
+            let mut reported_cost = None;
             let mut attempted = false;
+            let mut received_output = false;
+            let mut provider_failure = None;
+            let mut request_scope = None;
             let result: Result<domain::ModelStep, ModelStepError> = async {
             if timeout_seconds == 0 {
                 return Err("Reply timeout must be greater than zero".into());
@@ -76,6 +80,13 @@ where
                     conversation,
                 )
             }).await?;
+            request_scope = Some(domain::ProviderFailure {
+                provider_id: model.provider_id.clone(),
+                connection_id: connection_id.clone(),
+                model_id: model.id.clone(),
+                kind: domain::ProviderFailureKind::Transient,
+                retry_at: None,
+            });
             let (token, body) = prepare(conversation, tools, finalizing, cancellation.clone()).await?;
             if cancellation.is_cancelled() {
                 return Err("Model generation was cancelled".into());
@@ -86,6 +97,7 @@ where
                 async {
                     let http = reqwest::Client::builder()
                         .redirect(reqwest::redirect::Policy::none())
+                        .retry(reqwest::retry::never())
                         .connect_timeout(Duration::from_secs(15))
                         .build()?;
                     let body = tokio::task::spawn_blocking(move || serde_json::to_vec(&body)).await??;
@@ -129,18 +141,43 @@ where
                         .body(body)
                         .send()
                         .await
+                        .inspect_err(|error| {
+                            if error.is_connect() || error.is_timeout() || error.is_request() {
+                                provider_failure = request_scope.clone();
+                            }
+                        })
                         .context("Could not contact the model provider")?;
                     if !response.status().is_success() {
-                        let message = match response.status().as_u16() {
-                            401 => "Model request failed (HTTP 401); sign in with /auth again",
-                            403 => "Model request failed (HTTP 403); check account and model access",
-                            429 => "Model request failed (HTTP 429); check usage limits and retry later",
-                            _ => "The provider rejected the model request; check authentication, model access and usage limits",
-                        };
-                        return Err(format!("Model request failed (HTTP {})", response.status().as_u16()))
-                            .context(message).map_err(Into::into);
+                        let status = response.status().as_u16();
+                        let retry_at = super::failure::retry_at(
+                            response.headers().get(reqwest::header::RETRY_AFTER).and_then(|value| value.to_str().ok()),
+                            super::failure::now()?,
+                        );
+                        provider_failure = request_scope.clone().map(|mut failure| {
+                            failure.kind = super::failure::kind(status, None);
+                            failure.retry_at = retry_at;
+                            failure
+                        });
+                        let body = super::failure::body(&mut response).await?;
+                        provider_failure = request_scope.clone().map(|mut failure| {
+                            failure.kind = super::failure::response_kind(&model.provider_id.0, status, &body);
+                            failure.retry_at = retry_at;
+                            failure
+                        });
+                        let accounting = serde_json::json!({"response": {"usage": body.get("usage")}});
+                        let tokens = super::usage::read(&accounting);
+                        let cost = super::usage::cost(&accounting);
+                        if let Ok(tokens) = &tokens { reported_usage = *tokens; }
+                        if let Ok(cost) = &cost { reported_cost = *cost; }
+                        tokens?;
+                        cost?;
+                        return Err(format!("Model request failed (HTTP {status})"))
+                            .context("The provider rejected the model request; inspect provider wait or authentication and model settings").map_err(Into::into);
                     }
 
+                    if let Some(scope) = &mut request_scope {
+                        scope.retry_at = super::failure::retry_at(response.headers().get(reqwest::header::RETRY_AFTER).and_then(|value| value.to_str().ok()), super::failure::now()?);
+                    }
                     let media_type = response
                         .headers()
                         .get(reqwest::header::CONTENT_TYPE)
@@ -177,6 +214,9 @@ where
                     while let Some(bytes) = response
                         .chunk()
                         .await
+                        .inspect_err(|_| {
+                            if !received_output { provider_failure = request_scope.clone(); }
+                        })
                         .context("Provider stream was interrupted")?
                     {
                         if !received_content
@@ -211,10 +251,22 @@ where
                                 .and_then(serde_json::Value::as_str)
                                 .ok_or("Provider event has no type")?;
                             if matches!(kind, "response.completed" | "response.incomplete" | "response.failed" | "error") {
-                                reported_usage = super::usage::read(&event)?;
+                                if matches!(kind, "response.failed" | "error") && !received_output {
+                                    provider_failure = request_scope.clone().map(|mut failure| {
+                                        failure.kind = super::failure::event_kind(&event);
+                                        failure
+                                    });
+                                }
+                                let tokens = super::usage::read(&event);
+                                let cost = super::usage::cost(&event);
+                                if let Ok(tokens) = &tokens { reported_usage = *tokens; }
+                                if let Ok(cost) = &cost { reported_cost = *cost; }
+                                tokens?;
+                                cost?;
                             }
                             match kind {
                                 "response.output_text.delta" | "response.refusal.delta" => {
+                                    received_output = true;
                                     refused |= kind == "response.refusal.delta";
                                     let delta = event
                                         .get("delta")
@@ -230,6 +282,7 @@ where
                                     })?;
                                 }
                                 "response.output_item.done" => {
+                                    received_output = true;
                                     if let (Some(index), Some(item)) = (
                                         event
                                             .get("output_index")
@@ -303,6 +356,7 @@ where
                                         reply_metadata.as_ref().ok_or("Missing assistant message")?.1,
                                         reported_usage,
                                     )?;
+                                    step.reported_cost = reported_cost;
                                     step.resolved_model_id = resolved_model_id;
                                     step.catalog_canonical_id = current.canonical_id.clone();
                                     step.serving_provider = serving_provider;
@@ -318,6 +372,7 @@ where
                                         calls: Vec::new(),
                                         status: domain::MessageStatus::Incomplete,
                                         usage: reported_usage,
+                                        reported_cost,
                                     });
                                 }
                                 "error" | "response.failed" => {
@@ -334,6 +389,12 @@ where
                                                 })
                                         })
                                         .unwrap_or("generation_failed");
+                                    if !received_output {
+                                        provider_failure = request_scope.clone().map(|mut failure| {
+                                            failure.kind = super::failure::event_kind(&event);
+                                            failure
+                                        });
+                                    }
                                     return Err(format!("Provider reply failed: {code}").into());
                                 }
                                 _ => {}
@@ -354,6 +415,7 @@ where
                         )
                         .into());
                     }
+                    if !received_output { provider_failure = request_scope.clone(); }
                     Err("Missing provider completion")
                         .context("Provider stream ended without a terminal response")
                         .map_err(Into::into)
@@ -361,12 +423,21 @@ where
             );
             tokio::select! {
                 biased;
-                result = stream => result.context("The model reply timed out")?,
+                result = stream => match result {
+                    Ok(result) => result,
+                    Err(error) => {
+                        if attempted && !received_output { provider_failure = request_scope.clone(); }
+                        Err(error).context("The model reply timed out").map_err(Into::into)
+                    }
+                },
                 _ = cancellation.cancelled() => Err("Model generation was cancelled".into()),
             }
             }.await;
             result.map_err(|error| {
-                let error = CreateModelStepError::from(error).with_usage(reported_usage);
+                let mut error = CreateModelStepError::from(error)
+                    .with_usage(reported_usage)
+                    .with_provider_failure(provider_failure);
+                error.reported_cost = reported_cost;
                 if attempted {
                     error
                 } else {

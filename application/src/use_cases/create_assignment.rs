@@ -14,6 +14,7 @@ pub async fn call(
     parent: domain::ModelSelection,
     parent_connection_id: String,
     parent_revision: u64,
+    parent_run_id: Option<String>,
     brief: domain::AssignmentBrief,
     cancellation: tokio_util::sync::CancellationToken,
 ) -> Result<Output, Error> {
@@ -45,6 +46,7 @@ pub async fn call(
         parent_id: sender_id.into(),
         parent_agent_id: agent.id.0.clone(),
         parent_revision,
+        parent_run_id,
         parent,
         parent_connection_id,
         work_id: assignment.work_id.clone(),

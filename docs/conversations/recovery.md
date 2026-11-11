@@ -22,8 +22,11 @@ not converted into permission. This optional metadata preserves version-five
 provider provenance, instruction snapshots and version-six assignment authority.
 Versions one through five remain readable without rewriting; their single stored
 provider is the only
-justified legacy message/run provider when those fields are absent. Non-Research
-mutations write version six; Research writes schema seven with explicit lineage.
+justified legacy message/run provider when those fields are absent. New updates write version eight with explicit provider-retry authority/history and
+generation cost/accounting facts; initial empty records may still be six/seven.
+Older versions remain readable without inventing facts. See
+[provider waits and usage](../provider-waits.md). Research retains its explicit
+schema-seven lineage in eight as well.
 See [managed Research compatibility](../managed-dispatch.md#compatibility-and-recovery-limits),
 [role guidance](../role-guidance.md) and [repository Setup](../repository-setup.md).
 Each run records its own stable identity, agent identity,

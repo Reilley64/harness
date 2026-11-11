@@ -9,6 +9,7 @@ use agent_client_protocol::v1::schema::Meta;
 use tokio_util::sync::CancellationToken;
 
 use crate::models::ModelSummary;
+use crate::provider_retries;
 use crate::tools;
 
 #[derive(Clone, Default)]
@@ -125,6 +126,7 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
         "id": conversation.id,
         "workspace": conversation.workspace,
         "resumeRequired": conversation.resume_required,
+        "providerWait": conversation.provider_retry.as_ref().map(provider_retries::summary),
         "selectedInstructions": conversation.selected_instructions,
         "assignment": conversation.assignment.as_ref().map(|a| serde_json::json!({"workId":a.work_id,"intent":a.intent,"version":a.proposal.version,"creatorId":a.creator_id,"approvedAt":a.approved_at,"document":a.proposal.document})),
         "research": conversation.research.as_ref().map(|research| serde_json::json!({"parentId":research.parent_id,"parentAgentId":research.parent_agent_id,"intent":research.intent,"assignmentId":research.assignment_id,"executionId":research.execution_id})),

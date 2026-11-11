@@ -36,6 +36,7 @@ use crate::read_setup_draft;
 use crate::read_text_matches;
 use crate::read_tool_invocation;
 use crate::read_tools;
+use crate::read_usage_sources;
 use crate::read_web_search;
 use crate::read_work;
 use crate::read_work_proposal;
@@ -112,6 +113,7 @@ pub struct Dependencies {
     read_setup: ports::ReadSetup,
     read_agent: ports::ReadAgent,
     read_agent_index: ports::ReadAgentIndex,
+    read_usage_sources: ports::ReadUsageSources,
     read_instructions: ports::ReadInstructions,
     create_conversation: ports::CreateConversation,
     read_conversation: ports::ReadConversation,
@@ -422,6 +424,14 @@ impl Dependencies {
                 ports::ReadAgent::new(move |workspace, role| {
                     let result = read(workspace, role);
                     Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_usage_sources(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_usage_sources::read_usage_sources(&settings.app_data_path);
+                ports::ReadUsageSources::new(move |cancellation| {
+                    let future = read(cancellation);
+                    Box::pin(async move { future.await.map_err(Into::into) })
                 })
             })
             .read_agent_index(|deps| {

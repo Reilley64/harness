@@ -19,6 +19,7 @@ use application::use_cases::read_model_selection;
 use application::use_cases::read_models;
 use application::use_cases::read_providers;
 use application::use_cases::read_setup;
+use application::use_cases::read_usage;
 use application::use_cases::read_work;
 use application::use_cases::update_agent;
 use application::use_cases::update_children;
@@ -28,6 +29,7 @@ use application::use_cases::update_guidance;
 use application::use_cases::update_mcp_configuration;
 use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
+use application::use_cases::update_provider_retry;
 use application::use_cases::update_research_guidance;
 use application::use_cases::update_routing_evidence;
 use application::use_cases::update_scope;
@@ -52,6 +54,8 @@ pub struct Dependencies {
     pub read_deciders: read_deciders::Dependencies,
     pub update_decider: update_decider::Dependencies,
     pub read_work: read_work::Dependencies,
+    pub read_usage: read_usage::Dependencies,
+    pub update_provider_retry: update_provider_retry::Dependencies,
     pub update_work: update_work::Dependencies,
     pub read_model_allowlist: read_model_allowlist::Dependencies,
     pub update_model_allowlist: update_model_allowlist::Dependencies,

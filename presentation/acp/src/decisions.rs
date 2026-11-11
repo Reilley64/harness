@@ -121,7 +121,7 @@ fn candidate(c: &domain::DecisionCandidate) -> serde_json::Value {
 pub(crate) fn summary(d: &domain::AssignmentDecision) -> serde_json::Value {
     json!({
         "format":if d.legacy {1} else {2},"legacyCompatibility":if d.legacy {"Schema one retained; no migration or native replay. Prepared selection requires a deliberately new normal CoS intent."} else {"Strict complete-pool lifecycle authority"},
-        "id":d.id,"revision":d.revision,"finishedAt":d.finished_at,"parentId":d.parent_id,"parentAgentId":d.parent_agent_id,"parentRevision":d.parent_revision,
+        "id":d.id,"revision":d.revision,"finishedAt":d.finished_at,"parentId":d.parent_id,"parentAgentId":d.parent_agent_id,"parentRevision":d.parent_revision,"parentRunId":d.parent_run_id,
         "parent":pair(&d.parent),"parentConnectionId":d.parent_connection_id,"workId":d.work_id,"workIntent":d.work_intent,"workVersion":d.work_version,
         "brief":{"role":d.brief.role,"task":d.brief.task,"constraints":d.brief.constraints,"toolContext":d.brief.tool_context,"contextTokens":d.brief.context_tokens},
         "phase":match d.phase { domain::DecisionPhase::Prepared => "prepared", domain::DecisionPhase::Pending => "pending", domain::DecisionPhase::Selected => "selected", domain::DecisionPhase::Fallback => "fallback", domain::DecisionPhase::Configuration => "configuration", domain::DecisionPhase::Unsupported => "unsupported", domain::DecisionPhase::Stopped => "stopped" },

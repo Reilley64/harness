@@ -267,7 +267,8 @@ Coordination with amendments writes format six, requiring scope history,
 instruction/recovery arrays and explicit child history/Resume facts. Formats two
 through five remain readable only with their exact historical field sets.
 Amendments are never removed to downmigrate a record. Immutable claim format two,
-conversation schemas six/seven are unchanged. Native decision record compatibility
+conversation schema eight adds [provider waits/accounting](provider-waits.md)
+without replacing six/seven assignment/approval/ownership facts. Native decision record compatibility
 is owned by [native selection](native-decider.md#failure-stop-and-recovery).
 The current-work bound can visibly block oversized retained scope history rather
 than deleting original criteria or treating missing facts as an empty scope.
@@ -341,7 +342,8 @@ at most eight times; mode, owner, no-follow, hardlink and size checks remain int
 ## Compatibility and recovery limits
 
 Research conversations use schema seven for explicit parent/assignment/execution
-provenance. Existing Setup/Griller/CoS mutations continue to write schema six;
+provenance. New conversation updates write schema eight for explicit provider waits and
+accounting, retaining all Setup/Griller/CoS/Research authority;
 versions one through six, private continuation, canonical ownership, usage,
 instruction snapshots and exact approved-work authority remain readable.
 Older executables reject schema-seven Research records rather than inventing a

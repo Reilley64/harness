@@ -224,6 +224,7 @@ pub(super) fn step(
         catalog_canonical_id: None,
         serving_provider: None,
         usage,
+        reported_cost: None,
         calls,
         status,
     })

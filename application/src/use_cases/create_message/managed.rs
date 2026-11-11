@@ -254,6 +254,29 @@ async fn transition(
         .coordination)
 }
 
+pub(super) async fn suspend(
+    d: &Dependencies,
+    conversation: &domain::Conversation,
+    lease: Option<&Lease>,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    if let Some(lease) = lease {
+        d.update_coordination
+            .call(
+                conversation.id.clone(),
+                domain::CoordinationCommand::Wait {
+                    controller: lease.controller.clone(),
+                    run_id: lease.run_id.clone(),
+                },
+                None,
+                cancellation.clone(),
+            )
+            .await
+            .map_err(Error::caused_by)?;
+    }
+    Ok(())
+}
+
 pub(super) async fn prepare(
     d: &Dependencies,
     conversation: &mut domain::Conversation,

@@ -10,7 +10,9 @@ OpenRouter uses its own key with `POST https://openrouter.ai/api/v1/responses`
 through the same Responses HTTP/SSE decoder and existing application tool loop.
 It sends the exact selected nested model ID, `store:false`, `stream:true`,
 `provider:{allow_fallbacks:false,require_parameters:true}` and an empty plugin
-list. No model fallback list, hosted advisor, paid connect probe or retry is added.
+list. No model fallback list, hosted advisor or paid connect probe is added.
+[Provider waits](../provider-waits.md) own explicit, durable application retries;
+HTTP/SDK retries remain disabled.
 A returned OpenRouter model must match the requested ID or its exact catalog
 canonical slug before accepting tools. Available terminal resolved-model and
 serving-provider strings are bounded and retained privately on the model step;
@@ -19,7 +21,9 @@ absence remains unknown, not independently verified execution provenance.
 Completed text pairs are replayed. Turns with real tool calls also retain their
 original request, canonical provider continuation, steering, and honest function
 results after interruption. Unfinished prose is excluded. No provider-side stored
-response IDs, automatic mutation replay, or automatic retries are used. Across
+response IDs or automatic mutation replay are used. Explicitly checkpointed
+provider waits/retries follow the [bounded policy](../provider-waits.md); they do
+not recover discarded private continuation or retry after output begins. Across
 provider or model changes, only ordinary assistant text and reconstructed function
 requests/results are replayed: private reasoning, output item IDs and original
 provider call IDs are omitted. Function request/result pairs use recorded local

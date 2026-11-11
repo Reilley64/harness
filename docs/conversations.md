@@ -58,7 +58,8 @@ wire shapes.
 
 ## Provider requests
 
-See [worker requests, private continuation and accounting](conversations/providers.md).
+See [worker requests, private continuation and accounting](conversations/providers.md)
+and [durable provider waits, retries and agent/run/spec usage](provider-waits.md).
 
 ## Persistence and crash recovery
 

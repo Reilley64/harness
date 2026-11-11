@@ -1,3 +1,6 @@
+mod accounting;
+use self::accounting::Record as AccountingRecord;
+
 #[derive(serde::Serialize)]
 pub(super) struct Record {
     version: u32,
@@ -44,6 +47,8 @@ struct MessageRecord {
     steering: Vec<SteeringRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     generation_usage: Option<Vec<Option<UsageRecord>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generation_accounting: Option<Vec<AccountingRecord>>,
 }
 
 impl From<domain::Conversation> for Record {
@@ -105,6 +110,9 @@ impl From<domain::Conversation> for Record {
                     model_id: message.model_id,
                     provider_id: message.provider_id.0,
                     effort: message.effort.map(Into::into),
+                    generation_accounting: message
+                        .generation_accounting
+                        .map(|reports| reports.into_iter().map(Into::into).collect()),
                     generation_usage: message.generation_usage.map(|reports| {
                         reports
                             .into_iter()
@@ -147,6 +155,7 @@ struct StepRecord {
     serving_provider: Option<String>,
     calls: Vec<CallRecord>,
     usage: Option<UsageRecord>,
+    reported_cost: Option<f64>,
     status: Option<String>,
 }
 #[derive(serde::Serialize)]
@@ -178,6 +187,7 @@ struct UsageRecord {
 impl From<domain::ModelStep> for StepRecord {
     fn from(step: domain::ModelStep) -> Self {
         Self {
+            reported_cost: step.reported_cost,
             id: step.id,
             output: step.output,
             resolved_model_id: step.resolved_model_id,

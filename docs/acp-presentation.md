@@ -119,6 +119,12 @@ See [Provider connection creation](acp/catalogs-and-connections.md#provider-conn
 
 See [Conversations](acp/conversations.md#conversations).
 
+## Provider waits and accounting
+
+See [provider waits](provider-waits.md) for `_harness/usage/read`, trusted
+`_harness/provider-retry/update`, live wait metadata, identities, currencies,
+unknown values, limits and the separate native no-retry policy.
+
 ## Token usage and workspace
 
 See [Token usage and workspace](acp/conversations.md#token-usage-and-workspace).

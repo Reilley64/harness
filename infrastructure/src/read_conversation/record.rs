@@ -1,3 +1,7 @@
+mod accounting;
+mod retry;
+use self::accounting::Record as AccountingRecord;
+use self::retry::Record as RetryRecord;
 use crate::conversations;
 use crate::conversations::StorageError;
 use crate::instructions;
@@ -76,6 +80,10 @@ impl TryFrom<AssignmentRecord> for domain::WorkAssignment {
 #[derive(serde::Deserialize)]
 pub(super) struct Record {
     version: u32,
+    #[serde(default)]
+    provider_retries: Option<Vec<RetryRecord>>,
+    #[serde(default)]
+    provider_retry_history: Option<Vec<RetryRecord>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     research: Option<ResearchRecord>,
     #[serde(default)]
@@ -147,13 +155,15 @@ struct MessageRecord {
     steering: Vec<SteeringRecord>,
     #[serde(default)]
     generation_usage: Option<Vec<Option<UsageRecord>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generation_accounting: Option<Vec<AccountingRecord>>,
 }
 
 impl TryFrom<Record> for domain::Conversation {
     type Error = StorageError;
 
     fn try_from(dto: Record) -> Result<Self, Self::Error> {
-        if !matches!(dto.version, 1..=7) {
+        if !matches!(dto.version, 1..=8) {
             return Err("Unsupported conversation format".into());
         }
         conversations::validate_id(&dto.id)?;
@@ -204,6 +214,15 @@ impl TryFrom<Record> for domain::Conversation {
                         .unwrap_or_else(|| dto.model.provider_id.clone()),
                 ),
                 effort: message.effort.map(Into::into),
+                generation_accounting: message
+                    .generation_accounting
+                    .map(|reports| {
+                        reports
+                            .into_iter()
+                            .map(TryInto::try_into)
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .transpose()?,
                 generation_usage: message
                     .generation_usage
                     .map(|reports| {
@@ -241,6 +260,18 @@ impl TryFrom<Record> for domain::Conversation {
         let mut calls = std::collections::HashSet::new();
         let mut provider_calls = std::collections::HashSet::new();
         for message in &messages {
+            if message
+                .generation_accounting
+                .as_ref()
+                .is_some_and(|reports| {
+                    message
+                        .generation_usage
+                        .as_ref()
+                        .is_none_or(|usage| usage.len() != reports.len())
+                })
+            {
+                return Err("Generation cost accounting does not match attempt identities".into());
+            }
             if message.content.len() > 1_048_576
                 || message.steps.len() > domain::MAX_MODEL_STEPS
                 || message.steering.len() > 64
@@ -254,7 +285,8 @@ impl TryFrom<Record> for domain::Conversation {
             if message.role == domain::MessageRole::User
                 && (!message.steps.is_empty()
                     || !message.steering.is_empty()
-                    || message.generation_usage.is_some())
+                    || message.generation_usage.is_some()
+                    || message.generation_accounting.is_some())
             {
                 return Err("User messages cannot contain tool executions".into());
             }
@@ -463,7 +495,7 @@ impl TryFrom<Record> for domain::Conversation {
             .as_ref()
             .is_some_and(|agent| agent.role == domain::AgentRole::Research)
             != research.is_some()
-            || (dto.version == 7) != research.is_some()
+            || dto.version < 8 && (dto.version == 7) != research.is_some()
         {
             return Err("Invalid Research assignment/role binding".into());
         }
@@ -491,6 +523,42 @@ impl TryFrom<Record> for domain::Conversation {
         {
             return Err("Research instructions require an actual Research assignment".into());
         }
+        if dto.version == 8 && dto.provider_retries.is_none()
+            || dto.version < 8 && dto.provider_retries.is_some()
+            || dto.provider_retries.as_ref().is_some_and(|r| r.len() > 1)
+        {
+            return Err("Missing or incompatible provider retry authority".into());
+        }
+        if dto.version == 8 && dto.provider_retry_history.is_none()
+            || dto.version < 8 && dto.provider_retry_history.is_some()
+            || dto
+                .provider_retry_history
+                .as_ref()
+                .is_some_and(|history| history.len() > 1_024)
+        {
+            return Err("Missing or oversized provider retry history".into());
+        }
+        let provider_retry_history = dto
+            .provider_retry_history
+            .unwrap_or_default()
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()?;
+        let provider_retry: Option<domain::ProviderRetry> = dto
+            .provider_retries
+            .and_then(|r| r.into_iter().next())
+            .map(TryInto::try_into)
+            .transpose()?;
+        if let Some(retry) = &provider_retry
+            && (messages
+                .last()
+                .is_none_or(|reply| reply.id != retry.reply_id)
+                || retry.failure.provider_id.0 != dto.model.provider_id
+                || retry.failure.model_id != dto.model.id
+                || retry.failure.connection_id != dto.provider_connection_id)
+        {
+            return Err("Provider wait does not own this reply and selected pair".into());
+        }
         let model: domain::Model = dto.model.into();
         let effort = dto.effort.map(Into::into);
         model.validate_effort(effort)?;
@@ -512,6 +580,8 @@ impl TryFrom<Record> for domain::Conversation {
             runs,
             current_work: None,
             resume_required: dto.resume_required,
+            provider_retry,
+            provider_retry_history,
 
             created_at: dto.created_at,
             updated_at: dto.updated_at,
@@ -580,6 +650,8 @@ struct StepRecord {
     #[serde(default)]
     usage: Option<UsageRecord>,
     #[serde(default)]
+    reported_cost: Option<f64>,
+    #[serde(default)]
     status: Option<String>,
 }
 #[derive(serde::Deserialize)]
@@ -637,6 +709,12 @@ struct UsageRecord {
 impl TryFrom<StepRecord> for domain::ModelStep {
     type Error = StorageError;
     fn try_from(step: StepRecord) -> Result<Self, Self::Error> {
+        if step
+            .reported_cost
+            .is_some_and(|value| !value.is_finite() || value < 0.0)
+        {
+            return Err("Invalid reported model cost".into());
+        }
         conversations::validate_id(&step.id)?;
         if step
             .resolved_model_id
@@ -703,6 +781,7 @@ impl TryFrom<StepRecord> for domain::ModelStep {
             });
         }
         Ok(Self {
+            reported_cost: step.reported_cost,
             id: step.id,
             output: step.output,
             resolved_model_id: step.resolved_model_id,

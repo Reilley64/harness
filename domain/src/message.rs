@@ -1,3 +1,4 @@
+use crate::GenerationAccounting;
 use crate::MAX_MODEL_STEPS;
 use crate::MessageRole;
 use crate::MessageStatus;
@@ -7,7 +8,7 @@ use crate::ProviderId;
 use crate::SteeringInstruction;
 use crate::TokenUsage;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     pub id: String,
     pub role: MessageRole,
@@ -19,6 +20,7 @@ pub struct Message {
     pub steps: Vec<ModelStep>,
     pub steering: Vec<SteeringInstruction>,
     pub generation_usage: Option<Vec<Option<TokenUsage>>>,
+    pub generation_accounting: Option<Vec<GenerationAccounting>>,
 }
 
 impl Message {
@@ -33,6 +35,10 @@ impl Message {
         if usage.len() >= MAX_MODEL_STEPS {
             return Err("Turn generation budget exceeded");
         }
+        let accounting = self
+            .generation_accounting
+            .get_or_insert_with(|| vec![GenerationAccounting::unknown(); usage.len()]);
+        accounting.push(GenerationAccounting::unknown());
         usage.push(None);
         Ok(())
     }
@@ -49,6 +55,9 @@ impl Message {
             return Err("There is no unattempted generation to discard");
         }
         reports.pop();
+        if let Some(accounting) = &mut self.generation_accounting {
+            accounting.pop();
+        }
         Ok(())
     }
 

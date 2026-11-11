@@ -8,6 +8,7 @@ mod error;
 mod instructions;
 mod managed;
 mod output;
+mod provider_wait;
 mod receipts;
 
 use crate::coordination_recovery;
@@ -296,7 +297,7 @@ async fn coordinate(
         model_id: conversation.model.id.clone(),
         effort: conversation.effort,
     });
-    if conversation.research.is_some()
+    if (conversation.research.is_some() || conversation.provider_retry.is_some())
         && (selection.provider_id != conversation.model.provider_id
             || selection.model_id != conversation.model.id
             || selection.effort != conversation.effort)
@@ -413,6 +414,9 @@ async fn coordinate(
             .begin_run(uuid::Uuid::new_v4().to_string())
             .map_err(Error::caused_by)?;
     } else {
+        if let Some(retry) = &mut conversation.provider_retry {
+            retry.resume().map_err(Error::caused_by)?;
+        }
         conversation.resume().map_err(Error::caused_by)?;
         if let Some(research) = &conversation.research {
             dependencies
@@ -559,7 +563,7 @@ async fn coordinate(
                 }
             }
         } else {
-            tokio::select! {outcome=&mut result=>outcome,_=tokio::time::sleep(std::time::Duration::from_secs(1200))=>{turn_cancellation.cancel();let stopped=result.await;Err(match stopped { Ok(_) => Error::caused_by("Turn exceeded 20 minutes"), Err(original) => error::retain(Error::caused_by("Turn exceeded 20 minutes"), vec![Box::new(original)]) })}}
+            result.await
         }
     };
     let mut durably_paused = false;
@@ -755,6 +759,13 @@ async fn run(
             return Ok(domain::MessageStatus::Cancelled);
         }
         let waiting = std::time::Instant::now();
+        if !provider_wait::wait(dependencies, conversation, buffer, steering, cancellation).await? {
+            return Ok(if cancellation.is_cancelled() {
+                domain::MessageStatus::Cancelled
+            } else {
+                domain::MessageStatus::Interrupted
+            });
+        }
         managed::wait(
             dependencies,
             conversation,
@@ -816,10 +827,26 @@ async fn run(
         if cancellation.is_cancelled() {
             return Ok(domain::MessageStatus::Cancelled);
         }
+        if conversation.provider_retry_history.len() >= 1_024 {
+            return Err(Error::caused_by(
+                "Provider retry history is full; required allowance facts cannot be discarded",
+            ));
+        }
+        if let Some(retry) = &mut conversation.provider_retry {
+            retry.waiting = false;
+        }
+        let generation_connection = conversation.provider_connection_id.clone();
         let current_work = conversation.current_work.take();
         let reply = conversation.active_reply_mut().map_err(Error::caused_by)?;
         reply.content = buffer.lock().clone();
         reply.begin_generation().map_err(Error::caused_by)?;
+        if let Some(report) = reply
+            .generation_accounting
+            .as_mut()
+            .and_then(|reports| reports.last_mut())
+        {
+            report.connection_id = Some(generation_connection);
+        }
         checkpoint(dependencies, conversation).await?;
         conversation.current_work = current_work;
         if cancellation.is_cancelled() {
@@ -905,6 +932,8 @@ async fn run(
                 Err(error) => observation_error = Some(error),
             }
         }
+        let pricing = conversation.model.pricing.clone();
+        let accounting_connection = conversation.provider_connection_id.clone();
         let reply = conversation.active_reply_mut().map_err(Error::caused_by)?;
         if result
             .as_ref()
@@ -914,6 +943,49 @@ async fn run(
                 .discard_generation_before_attempt()
                 .map_err(Error::caused_by)?;
         } else {
+            let (usage, cost) = match &result {
+                Ok(step) => (step.usage, step.reported_cost),
+                Err(error) => (error.reported_usage, error.reported_cost),
+            };
+            let estimated = if reply.provider_id.0 == "openrouter" {
+                usage.zip(pricing.as_ref()).and_then(|(usage, prices)| {
+                    Some(
+                        (usage.input_tokens as f64 * prices.input?
+                            + usage.output_tokens as f64 * prices.output?)
+                            / 1_000_000.0,
+                    )
+                })
+            } else {
+                None
+            }
+            .filter(|value| value.is_finite());
+            if let Some(report) = reply
+                .generation_accounting
+                .as_mut()
+                .and_then(|reports| reports.last_mut())
+            {
+                *report = domain::GenerationAccounting {
+                    connection_id: Some(accounting_connection),
+                    outcome: if restart {
+                        "superseded"
+                    } else if cancellation.is_cancelled() {
+                        "cancelled"
+                    } else if result.is_err() {
+                        "failed"
+                    } else {
+                        "completed"
+                    }
+                    .into(),
+                    reported_usd: (reply.provider_id.0 == "openrouter")
+                        .then_some(cost)
+                        .flatten(),
+                    estimated_usd: estimated,
+                    pricing_source: pricing
+                        .as_ref()
+                        .map(|_| "catalog_static_usd_per_million_tokens".into()),
+                    pricing,
+                };
+            }
             reply
                 .report_generation(match &result {
                     Ok(step) => step.usage,
@@ -930,21 +1002,49 @@ async fn run(
             }
             return Err(error);
         }
+        if !restart
+            && !cancellation.is_cancelled()
+            && let Err(error) = &result
+            && let Some(failure) = &error.provider_failure
+            && failure.kind != domain::ProviderFailureKind::Permanent
+        {
+            let failure = failure.as_ref().clone();
+            if let Err(original) = result {
+                tool_errors.push(Box::new(original));
+            }
+            provider_wait::failed(dependencies, conversation, lease.as_ref(), failure, present)
+                .await?;
+            continue;
+        }
         if restart || cancellation.is_cancelled() || result.is_err() {
-            checkpoint(dependencies, conversation).await?;
-            present
-                .call(domain::TurnEvent::Usage {
-                    usage: conversation.usage(),
-                })
-                .map_err(Error::caused_by)?;
+            let original = result.err().map(Error::caused_by);
+            let saved = async {
+                checkpoint(dependencies, conversation).await?;
+                present
+                    .call(domain::TurnEvent::Usage {
+                        usage: conversation.usage(),
+                    })
+                    .map_err(Error::caused_by)
+            }
+            .await;
+            if let Err(error) = saved {
+                if let Some(original) = original {
+                    tool_errors.push(Box::new(original));
+                }
+                return Err(error);
+            }
             if restart {
+                if let Some(original) = original {
+                    tool_errors.push(Box::new(original));
+                }
                 continue;
             }
-            return result
-                .map(|_| domain::MessageStatus::Cancelled)
-                .map_err(Error::caused_by);
+            return original.map_or(Ok(domain::MessageStatus::Cancelled), Err);
         }
         let step = result.map_err(Error::caused_by)?;
+        if let Some(retry) = conversation.provider_retry.take() {
+            conversation.provider_retry_history.push(retry);
+        }
         let status = step.status;
         let calls = conversation
             .record_step(step, buffer.lock().clone())
@@ -1079,6 +1179,7 @@ async fn run(
                 };
                 let provider_connection_id = conversation.provider_connection_id.clone();
                 let parent_revision = conversation.revision;
+                let parent_run_id = conversation.runs.last().map(|run| run.id.clone());
                 let worker_model = conversation.model.clone();
 
                 let future = async {
@@ -1107,6 +1208,7 @@ async fn run(
                         parent_model,
                         provider_connection_id,
                         parent_revision,
+                        parent_run_id,
                         research.as_ref(),
                         &worker_model,
                         instructions.as_deref(),
@@ -1249,6 +1351,7 @@ async fn execute(
     parent: domain::ModelSelection,
     parent_connection_id: String,
     parent_revision: u64,
+    parent_run_id: Option<String>,
     research: Option<&domain::ResearchAssignment>,
     worker_model: &domain::Model,
     instructions: Option<&str>,
@@ -1310,7 +1413,7 @@ async fn execute(
                 domain::ToolResult::success(output)
             }
             domain::ToolInvocation::PrepareAssignment(brief) => {
-                let output = create_assignment::call(dependencies.create_assignment.clone(), sender_id, sender_agent, assignment, parent, parent_connection_id, parent_revision, brief, cancellation).await?;
+                let output = create_assignment::call(dependencies.create_assignment.clone(), sender_id, sender_agent, assignment, parent, parent_connection_id, parent_revision, parent_run_id, brief, cancellation).await?;
                 domain::ToolResult::success(format!("Assignment intent {} prepared with the exact actual-parent model AND thinking snapshot. Inspect /decision {}. No worker launched. Research dispatch is separately admitted; Implementers/workspaces/review/merge remain unavailable.", output.decision.id, output.decision.id))
             }
             domain::ToolInvocation::PublishWork(arguments) => {

@@ -1,3 +1,4 @@
+mod accounting;
 mod agents;
 mod authentication;
 mod children;
@@ -10,6 +11,7 @@ mod guidance;
 mod mcp;
 mod projection;
 mod prompt;
+mod provider_retries;
 mod setup;
 mod steering;
 mod tools;
@@ -89,6 +91,8 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         read_deciders,
         update_decider,
         read_work,
+        read_usage,
+        update_provider_retry,
         update_work,
         authentication,
         models,
@@ -403,6 +407,31 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 connection.spawn(async move {
                     match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::CompleteFollowUp { outcomes: request.outcomes }, tokio_util::sync::CancellationToken::new()).await {
                         Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: accounting::Request, responder, connection| {
+                let dependencies = read_usage.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_usage::call(dependencies, request.session_id, request.run_id, request.work_id, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => match accounting::response(output).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(error),
+                        },
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: provider_retries::Request, responder, connection| {
+                let dependencies = update_provider_retry.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_provider_retry::call(dependencies, request.session_id, request.revision, request.id, request.additional).await {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
                         Err(error) => responder.respond_with_error(conversations::error(error)),
                     }
                 })

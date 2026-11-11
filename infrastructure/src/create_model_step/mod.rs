@@ -1,5 +1,6 @@
 mod context;
 mod credentials;
+mod failure;
 pub(crate) mod openai;
 pub(crate) mod openrouter;
 mod record;
