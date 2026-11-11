@@ -15,7 +15,9 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: String) -> Result<O
     let mut blocked = None;
     let mut diagnostics = Vec::new();
     if let Some(decision) = &decision {
-        if decision.phase == domain::DecisionPhase::Configuration {
+        if decision.legacy && decision.phase == domain::DecisionPhase::Prepared {
+            blocked = Some("Legacy Prepared intent requires a deliberately new CoS intent/UUID through normal authorized preparation; no conversion or inference".into());
+        } else if decision.phase == domain::DecisionPhase::Configuration {
             blocked = decision.reason.clone();
         } else if let Some(selected) = &decision.selected {
             match decision_access::candidate(&d.read_models, &d.read_model_allowlist, &d.read_provider_connection, &d.create_model_step_factory, &selected.selection, decision.brief.context_tokens).await {

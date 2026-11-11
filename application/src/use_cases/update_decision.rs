@@ -67,6 +67,12 @@ async fn select(
         );
         return save(&d, decision).await;
     }
+    if decision.legacy && decision.phase == domain::DecisionPhase::Prepared {
+        return Ok(blocked(decision, ErrorContext::caused_by(
+            "Legacy Prepared intent requires a deliberately new CoS intent/UUID; no conversion, inference or parent fallback",
+            "Schema-one complete-pool migration is not authorized",
+        ).into()));
+    }
     if decision.phase != domain::DecisionPhase::Prepared {
         let validation = revalidate(&d, &decision).await;
         return Ok(match validation {
@@ -115,11 +121,12 @@ async fn select(
         if model.validate_worker().is_err() {
             continue;
         }
-        let efforts = if model.efforts.is_empty() {
-            vec![None]
-        } else {
-            model.efforts.iter().copied().map(Some).collect()
-        };
+        let mut efforts = vec![None];
+        for effort in &model.efforts {
+            if !efforts.contains(&Some(*effort)) {
+                efforts.push(Some(*effort));
+            }
+        }
         for effort in efforts {
             let selection = domain::ModelSelection {
                 provider_id: model.provider_id.clone(),
@@ -153,25 +160,53 @@ async fn select(
         decision.reason = Some("No eligible worker pairs: inspect /auth, positive /model allowlist, chat/tool/context/effort capabilities. Cancel preserves this intent; no default.".into());
         return save(&d, decision).await;
     }
-    if candidates.len() > 254 {
-        decision.phase = domain::DecisionPhase::Unsupported;
-        decision.reason = Some(format!(
-            "Unsupported complete pool: {} pairs plus abstention exceeds 255 options. No truncation or inference; hierarchical selection is not implemented.",
-            candidates.len()
-        ));
-        return save(&d, decision).await;
-    }
     let captured_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(Error::with_cause)?
         .as_secs();
+    let (candidates, evidence_candidates) =
+        tokio::task::spawn_blocking(move || (candidates.clone(), candidates))
+            .await
+            .map_err(Error::with_cause)?;
+    let evidence = d
+        .read_routing_evidence
+        .call(
+            evidence_candidates,
+            captured_at,
+            false,
+            cancellation.clone(),
+        )
+        .await
+        .map_err(Error::with_cause)?;
+    diagnostics.extend(evidence.diagnostics.into_iter().map(Error::with_cause));
     decision.request = Some(domain::DecisionRequest {
         model,
         connection_id: connection.id,
         candidates,
         captured_at,
         policy: domain::DecisionRequest::POLICY.into(),
+        evidence: evidence.evidence,
     });
+    let members = decision
+        .request
+        .as_ref()
+        .ok_or_else(|| Error::with_cause("Complete snapshot missing"))?
+        .candidates
+        .iter()
+        .map(|c| c.key.clone())
+        .collect();
+    let (restored, input) = snapshot(decision).await?;
+    decision = restored;
+    match d.create_decision_inputs.call(input, members, 0).await {
+        Ok(stages) => decision.stages = stages,
+        Err(error) if unsupported(&error) => {
+            diagnostics.push(Error::with_cause(error));
+            decision.phase = domain::DecisionPhase::Unsupported;
+            decision.reason = Some("Complete candidate input cannot form bounded reducing native stages. No truncation or inference.".into());
+            return save(&d, decision).await;
+        }
+        Err(error) => return Err(Error::with_cause(error)),
+    }
     decision.phase = domain::DecisionPhase::Pending;
     let revision = decision.revision;
     if cancellation.is_cancelled() {
@@ -208,68 +243,8 @@ async fn select(
         }
     };
 
-    let (mut decision, native_input) = snapshot(decision).await?;
-    let native_cancellation = cancellation.child_token();
-    let native = d
-        .create_native_decision
-        .call(native_input, native_cancellation.clone());
-    tokio::pin!(native);
-    let response = loop {
-        tokio::select! {
-            biased;
-            result = &mut native => break result,
-            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                let control = d.read_decision.call(decision.id.clone()).await.map_err(Error::with_cause)?;
-                if control.as_ref().is_some_and(|v| v.phase == domain::DecisionPhase::Stopped) {
-                    native_cancellation.cancel();
-                    match native.await {
-                        Ok(response) => return Ok(Output {
-                            decision: checkpoint_report(&d, decision, response).await?,
-                            blocked: None,
-                            diagnostics: Vec::new(),
-                        }),
-                        Err(mut error) => {
-                            let report = error.reported_response.take();
-                            diagnostics.push(Error::with_cause(error));
-                            let decision = if let Some(report) = report {
-                                checkpoint_report(&d, decision, *report).await?
-                            } else {
-                                control.ok_or_else(|| Error::with_cause("Stopped intent disappeared"))?
-                            };
-                            return Ok(Output {
-                                decision,
-                                blocked: None,
-                                diagnostics: Vec::new(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    };
-    let mut unsupported_input = false;
-    let received = match response {
-        Ok(response) => {
-            decision = checkpoint_report(&d, decision, response).await?;
-            true
-        }
-        Err(mut error) => {
-            let report = error.reported_response.take();
-            unsupported_input = unsupported(&error);
-            diagnostics.push(Error::with_cause(ErrorContext::caused_by(
-                if unsupported_input {
-                    "Unsupported complete native input"
-                } else {
-                    "Native request failed; exact-parent recovery only"
-                },
-                error,
-            )));
-            if let Some(report) = report {
-                decision = checkpoint_report(&d, decision, *report).await?;
-            }
-            false
-        }
-    };
+    let (mut decision, hierarchy_completed, unsupported_input) =
+        run_hierarchy(&d, decision, diagnostics, cancellation.clone()).await?;
     if decision.phase == domain::DecisionPhase::Stopped {
         return Ok(Output {
             decision,
@@ -282,7 +257,7 @@ async fn select(
     }
     if unsupported_input {
         decision.phase = domain::DecisionPhase::Unsupported;
-        decision.reason = Some("Unsupported complete native input exceeds the conservative byte envelope. No truncation, fallback or inference; hierarchical selection is not implemented.".into());
+        decision.reason = Some("A required native stage could not fit the complete conservative input envelope. No truncation or survivor selection; inspect the retained stages.".into());
         return save(&d, decision).await;
     }
     let authority = authority(&d, &decision).await;
@@ -324,7 +299,7 @@ async fn select(
         "Native request failed; usage is unknown. Exact eligible parent recovery only."
     }
     .to_owned();
-    if received {
+    if hierarchy_completed {
         let (restored, validation, candidate) = tokio::task::spawn_blocking(move || {
             let request = decision
                 .request
@@ -442,6 +417,232 @@ async fn select(
     save(&d, decision).await
 }
 
+async fn run_hierarchy(
+    d: &Dependencies,
+    mut decision: domain::AssignmentDecision,
+    diagnostics: &mut Vec<Error>,
+    cancellation: CancellationToken,
+) -> Result<(domain::AssignmentDecision, bool, bool), Error> {
+    loop {
+        if cancellation.is_cancelled() {
+            return Ok((stop_received(d, decision).await?.decision, false, false));
+        }
+        let index = decision
+            .stages
+            .iter()
+            .position(|s| s.finished_at.is_none())
+            .ok_or_else(|| Error::with_cause("Required pending native stage is missing"))?;
+        decision.stages[index].started_at = Some(now()?);
+        let revision = decision.revision;
+        let (prior, checkpoint) = snapshot(decision).await?;
+        decision = match d.update_decision.call(checkpoint, Some(revision)).await {
+            Ok(saved) => saved,
+            Err(error) => {
+                let control = match d.read_decision.call(prior.id.clone()).await {
+                    Ok(control) => control,
+                    Err(read_error) => {
+                        diagnostics.push(Error::with_cause(error));
+                        return Err(Error::with_cause(read_error));
+                    }
+                };
+                if let Some(control) = control
+                    && control.same_intent(&prior)
+                    && control.phase == domain::DecisionPhase::Stopped
+                {
+                    diagnostics.push(Error::with_cause(error));
+                    return Ok((control, false, false));
+                }
+                return Err(Error::with_cause(error));
+            }
+        };
+        if decision.phase == domain::DecisionPhase::Stopped {
+            return Ok((decision, false, false));
+        }
+        if cancellation.is_cancelled() {
+            return Ok((stop_received(d, decision).await?.decision, false, false));
+        }
+        let (restored, input) = snapshot(decision).await?;
+        decision = restored;
+        let native_cancellation = cancellation.child_token();
+        let native = d
+            .create_native_decision
+            .call(input, native_cancellation.clone());
+        tokio::pin!(native);
+        let response = loop {
+            tokio::select! {
+                biased;
+                result = &mut native => break result,
+                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                    let control = d.read_decision.call(decision.id.clone()).await.map_err(Error::with_cause)?;
+                    if control.as_ref().is_some_and(|v| v.phase == domain::DecisionPhase::Stopped) {
+                        native_cancellation.cancel();
+                        let response = native.await;
+                        decision = match response {
+                            Ok(response) => checkpoint_report(d, decision, response).await?,
+                            Err(mut error) => {
+                                let report = error.reported_response.take();
+                                diagnostics.push(Error::with_cause(error));
+                                if let Some(report) = report {
+                                    checkpoint_report(d, decision, *report).await?
+                                } else {
+                                    control.ok_or_else(|| Error::with_cause("Stopped intent disappeared"))?
+                                }
+                            }
+                        };
+                        return Ok((decision, false, false));
+                    }
+                }
+            }
+        };
+        let (received, unsupported_input) = match response {
+            Ok(response) => {
+                decision = checkpoint_report(d, decision, response).await?;
+                (true, false)
+            }
+            Err(mut error) => {
+                let unsupported_input = unsupported(&error);
+                let report = error.reported_response.take();
+                diagnostics.push(Error::with_cause(error));
+                if let Some(report) = report {
+                    decision = checkpoint_report(d, decision, *report).await?;
+                }
+                (false, unsupported_input)
+            }
+        };
+        if decision.phase == domain::DecisionPhase::Stopped {
+            return Ok((decision, false, unsupported_input));
+        }
+        if cancellation.is_cancelled() {
+            return Ok((
+                stop_received(d, decision).await?.decision,
+                false,
+                unsupported_input,
+            ));
+        }
+        let (mut restored, valid, invalid) = tokio::task::spawn_blocking(move || {
+            let request = decision
+                .request
+                .as_ref()
+                .ok_or_else(|| Error::with_cause("Complete snapshot missing"))?;
+            let stage = decision
+                .stages
+                .get_mut(index)
+                .ok_or_else(|| Error::with_cause("Required stage missing"))?;
+            stage.finished_at = Some(now()?);
+            let validation = if received {
+                stage.validate(request)
+            } else {
+                Err("Required native stage failed")
+            };
+            let valid = validation.is_ok();
+            if !valid {
+                stage.failure = Some(if received {
+                    validation
+                        .err()
+                        .ok_or_else(|| {
+                            Error::with_cause("Failed stage is missing its validation cause")
+                        })?
+                        .into()
+                } else {
+                    "Required native request failed; no survivor selection".into()
+                });
+                stage.response = stage
+                    .response
+                    .take()
+                    .map(domain::DecisionResponse::into_report)
+                    .transpose()
+                    .map_err(Error::with_cause)?;
+            }
+            decision.response = if valid {
+                None
+            } else {
+                decision
+                    .response
+                    .take()
+                    .map(domain::DecisionResponse::into_report)
+                    .transpose()
+                    .map_err(Error::with_cause)?
+            };
+            Ok::<_, Error>((decision, valid, validation.err()))
+        })
+        .await
+        .map_err(Error::with_cause)??;
+        if let Some(error) = invalid {
+            diagnostics.push(Error::with_cause(error));
+        }
+        let revision = restored.revision;
+        restored = d
+            .update_decision
+            .call(restored, Some(revision))
+            .await
+            .map_err(Error::with_cause)?;
+        decision = restored;
+        if decision.phase == domain::DecisionPhase::Stopped || !valid {
+            return Ok((decision, false, unsupported_input));
+        }
+        if decision.stages.iter().any(|s| s.finished_at.is_none()) {
+            continue;
+        }
+        let level = decision
+            .stages
+            .last()
+            .ok_or_else(|| Error::with_cause("Hierarchy has no stages"))?
+            .level;
+        let mut current = decision.stages.iter().filter(|s| s.level == level);
+        let final_stage = current
+            .next()
+            .ok_or_else(|| Error::with_cause("Hierarchy level missing"))?;
+        if current.next().is_none() {
+            decision.response = final_stage.response.clone();
+            return Ok((decision, true, false));
+        }
+        let members = decision
+            .stages
+            .iter()
+            .filter(|s| s.level == level)
+            .map(|s| {
+                s.response
+                    .as_ref()
+                    .and_then(|r| r.choice.clone())
+                    .ok_or_else(|| Error::with_cause("Required winner is missing"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let (restored, input) = snapshot(decision).await?;
+        decision = restored;
+        match d
+            .create_decision_inputs
+            .call(
+                input,
+                members,
+                level
+                    .checked_add(1)
+                    .ok_or_else(|| Error::with_cause("Hierarchy level exhausted"))?,
+            )
+            .await
+        {
+            Ok(stages) => decision.stages.extend(stages),
+            Err(error) if unsupported(&error) => {
+                diagnostics.push(Error::with_cause(error));
+                return Ok((decision, false, true));
+            }
+            Err(error) => return Err(Error::with_cause(error)),
+        }
+        let revision = decision.revision;
+        decision = d
+            .update_decision
+            .call(decision, Some(revision))
+            .await
+            .map_err(Error::with_cause)?;
+    }
+}
+
+fn now() -> Result<u64, Error> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .map_err(Error::with_cause)
+}
+
 fn unsupported(error: &(dyn std::error::Error + 'static)) -> bool {
     let mut current = Some(error);
     while let Some(error) = current {
@@ -544,6 +745,9 @@ async fn checkpoint_report(
     let (decision, response) = tokio::task::spawn_blocking(move || {
         let mut decision = decision;
         decision.response = Some(response.clone().into_report().map_err(Error::with_cause)?);
+        if let Some(stage) = decision.stages.iter_mut().find(|s| s.finished_at.is_none()) {
+            stage.response = Some(response.clone().into_report().map_err(Error::with_cause)?);
+        }
         Ok::<_, Error>((decision, response))
     })
     .await
@@ -555,6 +759,9 @@ async fn checkpoint_report(
         .await
         .map_err(Error::with_cause)?;
     if saved.phase != domain::DecisionPhase::Stopped {
+        if let Some(stage) = saved.stages.iter_mut().find(|s| s.finished_at.is_none()) {
+            stage.response = Some(response.clone());
+        }
         saved.response = Some(response);
     }
     Ok(saved)

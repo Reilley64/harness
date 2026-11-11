@@ -103,6 +103,42 @@ Public catalog metadata does not prove entitlement, quality or execution.
 Catalog reads and provider connects never invoke a model or refresh the static
 snapshot from OpenRouter.
 
+## Routing evidence observations
+
+The sole `MODELS__URL` source may optionally attach `routing_evidence` to a
+curated row. Existing rows need not change and missing observations stay unknown.
+This is advisory source evidence, never a second inventory or permission source.
+For each observation provide:
+
+- `category`: `catalog`, `capability`, `pricing` or `benchmark`;
+  `metric`, nullable finite `value`, and `unit`.
+- `source`, `source_url`, `revision`, and nullable Unix-second
+  `measured_at`, `published_at`, `effective_at`. Retrieval time is assigned by
+  Harness on the successful fetch, not substituted for any original source date.
+- Exact `requested_model`, nullable `resolved_model` and `serving_provider`,
+  nullable `effort` (`low`, `medium`, `high`, `extra_high`) and
+  `configuration`. Benchmark measurements require an original measurement date,
+  nonempty units and configuration; they must not be inferred from other efforts.
+
+Pricing values must be nonnegative and use `USD per million tokens`; no
+implicit conversion or subscription incremental-cost inference occurs. Preserve
+primary-source attribution and applicable licenses when publishing observations.
+There are at most 32 observations per row; source bodies and private caches are
+bounded at 16 MiB. Each candidate retains every compatible observation plus one
+explicit unknown for each missing category: at most 35 expanded facts, or four
+unknowns when no observation matches. Native envelope bounds still apply without
+truncating facts. Invalid sourced observations are a source failure, not silently
+accepted current evidence. The source adapter uses HTTPS or explicit loopback
+fixtures, no URL credentials, redirects or retries, and no provider credentials.
+Invalid configured URLs fail before cache access or recoverable source fetching;
+the rejected raw URL never becomes a public unknown observation. Valid-source
+fetch failures still retain honest cached or unknown observations.
+
+See [native selection](native-decider.md#sourced-evidence-and-refresh) for the
+24-hour/seven-day freshness rules, on-demand refresh and immutable decision
+inspection. Refetching the static source does not turn undated list rates or
+missing benchmarks into fresh measurements.
+
 ## Reading and caching
 
 See [Catalog caches](#catalog-caches) for refresh, fallback and bounds.

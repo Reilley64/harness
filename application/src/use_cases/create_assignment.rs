@@ -51,11 +51,13 @@ pub async fn call(
         work_intent: assignment.intent.clone(),
         work_version: assignment.proposal.version.clone(),
         brief,
+        legacy: false,
         revision: 0,
         finished_at: None,
         phase: domain::DecisionPhase::Prepared,
         request: None,
         response: None,
+        stages: Vec::new(),
         selected: None,
         reason: None,
     };

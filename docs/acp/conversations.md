@@ -50,7 +50,7 @@ authorize it. A delivered CoS uses the ordinary session/prompt/Resume/tool paths
 CoS assignment decision queries/select/Stop operations described in
 [native Decider](../native-decider.md). Child dispatch uses its separate
 [coordination extension](children.md), not native selection. Selection
-requests have no application or SDK deadline and remain explicitly stoppable.
+requests have no application or SDK deadline and remain explicitly stoppable. Selection projections retain the complete candidate/evidence snapshot and all bounded hierarchy stages, encoded inputs, opaque memberships, outcomes and available per-stage native usage/cost/provenance. `_harness/decision/evidence/refresh` accepts `{id}` and returns `{checked_at, refresh_failed, evidence}` without inference or changing the accepted snapshot. It refreshes the same Harness-owned source, not a vendor inventory; retrieved data may still be stale/unknown by its original measurement date.
 
 ## Guidance extension
 

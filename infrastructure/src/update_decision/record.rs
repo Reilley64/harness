@@ -1,5 +1,6 @@
 use super::Error;
 use crate::conversations;
+use crate::create_decision_inputs;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -18,8 +19,14 @@ pub(super) struct Record {
     revision: u64,
     finished_at: Option<u64>,
     phase: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pool_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stage_state: Option<String>,
     request: Option<RequestRecord>,
     response: Option<ResponseRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stages: Option<Vec<StageRecord>>,
     selected: Option<CandidateRecord>,
     reason: Option<String>,
 }
@@ -73,6 +80,8 @@ struct RequestRecord {
     candidates: Vec<CandidateRecord>,
     captured_at: u64,
     policy: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    evidence: Option<Vec<(String, Vec<EvidenceRecord>)>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -96,6 +105,159 @@ fn effort(e: domain::ModelEffort) -> String {
         domain::ModelEffort::ExtraHigh => "extra_high",
     }
     .into()
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StageRecord {
+    status: String,
+    started_at: Option<u64>,
+    id: String,
+    level: u32,
+    members: Vec<String>,
+    input: String,
+    response: Option<ResponseRecord>,
+    failure: Option<String>,
+    finished_at: Option<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceRecord {
+    category: String,
+    metric: String,
+    value: Option<f64>,
+    unit: String,
+    source: String,
+    source_url: String,
+    revision: Option<String>,
+    retrieved_at: Option<u64>,
+    measured_at: Option<u64>,
+    published_at: Option<u64>,
+    effective_at: Option<u64>,
+    refresh_failed: bool,
+    requested_model: String,
+    resolved_model: Option<String>,
+    serving_provider: Option<String>,
+    effort: Option<String>,
+    configuration: String,
+}
+
+impl TryFrom<EvidenceRecord> for domain::RoutingEvidence {
+    type Error = Error;
+    fn try_from(e: EvidenceRecord) -> Result<Self, Error> {
+        let value = Self {
+            category: e.category,
+            metric: e.metric,
+            value: e.value,
+            unit: e.unit,
+            source: e.source,
+            source_url: e.source_url,
+            revision: e.revision,
+            retrieved_at: e.retrieved_at,
+            measured_at: e.measured_at,
+            published_at: e.published_at,
+            effective_at: e.effective_at,
+            refresh_failed: e.refresh_failed,
+            requested_model: e.requested_model,
+            resolved_model: e.resolved_model,
+            serving_provider: e.serving_provider,
+            effort: e.effort.as_deref().map(parse_effort).transpose()?,
+            configuration: e.configuration,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+}
+
+impl From<ResponseRecord> for domain::DecisionResponse {
+    fn from(r: ResponseRecord) -> Self {
+        Self {
+            choice: r.choice,
+            confidence: r.confidence,
+            probabilities: r.probabilities,
+            resolved_model: r.resolved_model,
+            serving_provider: r.serving_provider,
+            input_tokens: r.input_tokens,
+            output_tokens: r.output_tokens,
+            cost: r.cost,
+        }
+    }
+}
+
+impl TryFrom<StageRecord> for domain::DecisionStage {
+    type Error = Error;
+    fn try_from(s: StageRecord) -> Result<Self, Error> {
+        let stage = Self {
+            id: s.id,
+            level: s.level,
+            members: s.members,
+            input: s.input,
+            started_at: s.started_at,
+            response: s.response.map(Into::into),
+            failure: s.failure,
+            finished_at: s.finished_at,
+        };
+        if s.status != stage.status() {
+            return Err("Native stage lifecycle status differs from its explicit facts".into());
+        }
+        Ok(stage)
+    }
+}
+
+impl From<domain::RoutingEvidence> for EvidenceRecord {
+    fn from(e: domain::RoutingEvidence) -> Self {
+        Self {
+            category: e.category,
+            metric: e.metric,
+            value: e.value,
+            unit: e.unit,
+            source: e.source,
+            source_url: e.source_url,
+            revision: e.revision,
+            retrieved_at: e.retrieved_at,
+            measured_at: e.measured_at,
+            published_at: e.published_at,
+            effective_at: e.effective_at,
+            refresh_failed: e.refresh_failed,
+            requested_model: e.requested_model,
+            resolved_model: e.resolved_model,
+            serving_provider: e.serving_provider,
+            effort: e.effort.map(effort),
+            configuration: e.configuration,
+        }
+    }
+}
+
+impl From<domain::DecisionResponse> for ResponseRecord {
+    fn from(r: domain::DecisionResponse) -> Self {
+        Self {
+            choice: r.choice,
+            confidence: r.confidence,
+            probabilities: r.probabilities,
+            resolved_model: r.resolved_model,
+            serving_provider: r.serving_provider,
+            input_tokens: r.input_tokens,
+            output_tokens: r.output_tokens,
+            cost: r.cost,
+        }
+    }
+}
+
+impl From<domain::DecisionStage> for StageRecord {
+    fn from(s: domain::DecisionStage) -> Self {
+        Self {
+            status: s.status().into(),
+            started_at: s.started_at,
+            id: s.id,
+            level: s.level,
+            members: s.members,
+            input: s.input,
+            response: s.response.map(Into::into),
+            failure: s.failure,
+            finished_at: s.finished_at,
+        }
+    }
 }
 
 fn parse_effort(e: &str) -> Result<domain::ModelEffort, Error> {
@@ -226,7 +388,25 @@ impl TryFrom<CandidateRecord> for domain::DecisionCandidate {
 impl From<domain::AssignmentDecision> for Record {
     fn from(d: domain::AssignmentDecision) -> Self {
         Self {
-            format: 1,
+            format: if d.legacy { 1 } else { 2 },
+            pool_state: (!d.legacy).then(|| {
+                if d.request.is_some() {
+                    "complete_pool"
+                } else {
+                    "not_captured"
+                }
+                .into()
+            }),
+            stage_state: (!d.legacy).then(|| {
+                if d.request.is_none() {
+                    "not_requested"
+                } else if d.stages.is_empty() {
+                    "unsupported_before_admission"
+                } else {
+                    "planned"
+                }
+                .into()
+            }),
             id: d.id,
             parent_id: d.parent_id,
             parent_agent_id: d.parent_agent_id,
@@ -262,6 +442,12 @@ impl From<domain::AssignmentDecision> for Record {
                 candidates: r.candidates.into_iter().map(Into::into).collect(),
                 captured_at: r.captured_at,
                 policy: r.policy,
+                evidence: (!d.legacy).then(|| {
+                    r.evidence
+                        .into_iter()
+                        .map(|(key, facts)| (key, facts.into_iter().map(Into::into).collect()))
+                        .collect()
+                }),
             }),
             response: d.response.map(|r| ResponseRecord {
                 choice: r.choice,
@@ -273,6 +459,7 @@ impl From<domain::AssignmentDecision> for Record {
                 output_tokens: r.output_tokens,
                 cost: r.cost,
             }),
+            stages: (!d.legacy).then(|| d.stages.into_iter().map(Into::into).collect()),
             selected: d.selected.map(Into::into),
             reason: d.reason,
         }
@@ -282,7 +469,16 @@ impl From<domain::AssignmentDecision> for Record {
 impl TryFrom<Record> for domain::AssignmentDecision {
     type Error = Error;
     fn try_from(r: Record) -> Result<Self, Error> {
-        if r.format != 1 || r.revision == 0 {
+        if !matches!(r.format, 1 | 2)
+            || r.revision == 0
+            || r.format == 1
+                && (r.stages.is_some() || r.pool_state.is_some() || r.stage_state.is_some())
+            || r.format == 2 && (r.pool_state.is_none() || r.stage_state.is_none())
+            || r.format == 2 && r.stages.is_none()
+            || r.request
+                .as_ref()
+                .is_some_and(|q| (r.format == 1) == q.evidence.is_some())
+        {
             return Err("Unsupported decision record".into());
         }
         for id in [
@@ -294,7 +490,9 @@ impl TryFrom<Record> for domain::AssignmentDecision {
         ] {
             conversations::validate_id(id)?;
         }
+        let legacy = r.format == 1;
         let d = Self {
+            legacy,
             id: r.id,
             parent_id: r.parent_id,
             parent_agent_id: r.parent_agent_id,
@@ -337,6 +535,20 @@ impl TryFrom<Record> for domain::AssignmentDecision {
                             .collect::<Result<_, _>>()?,
                         captured_at: r.captured_at,
                         policy: r.policy,
+                        evidence: r
+                            .evidence
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|(key, facts)| {
+                                Ok::<_, Error>((
+                                    key,
+                                    facts
+                                        .into_iter()
+                                        .map(TryInto::try_into)
+                                        .collect::<Result<_, _>>()?,
+                                ))
+                            })
+                            .collect::<Result<_, _>>()?,
                     })
                 })
                 .transpose()?,
@@ -350,10 +562,43 @@ impl TryFrom<Record> for domain::AssignmentDecision {
                 output_tokens: r.output_tokens,
                 cost: r.cost,
             }),
+            stages: r
+                .stages
+                .unwrap_or_default()
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()?,
             selected: r.selected.map(TryInto::try_into).transpose()?,
             reason: r.reason,
         };
         d.validate()?;
+        if !legacy {
+            let pool_state = if d.request.is_some() {
+                "complete_pool"
+            } else {
+                "not_captured"
+            };
+            let stage_state = if d.request.is_none() {
+                "not_requested"
+            } else if d.stages.is_empty() {
+                "unsupported_before_admission"
+            } else {
+                "planned"
+            };
+            if r.pool_state.as_deref() != Some(pool_state)
+                || r.stage_state.as_deref() != Some(stage_state)
+            {
+                return Err(
+                    "Explicit complete-pool lifecycle authority differs from the stored facts"
+                        .into(),
+                );
+            }
+        }
+        for stage in &d.stages {
+            if create_decision_inputs::encode(&d, &stage.members, &stage.id)? != stage.input {
+                return Err("Stored native input differs from its source snapshot".into());
+            }
+        }
         Ok(d)
     }
 }

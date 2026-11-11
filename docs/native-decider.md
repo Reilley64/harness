@@ -6,8 +6,7 @@ An actual approved Chief of Staff (CoS) can prepare a durable assignment intent,
 then a trusted native user can choose and inspect a typed native decision for it.
 This slice **does not launch a child**, create an agent/run/worktree, dispatch
 review, or integrate/merge anything. A selected pair is not executed work.
-[Managed Research dispatch](managed-dispatch.md) owns subsequent execution; HARNESS-32 owns complete-pool hierarchy and
-richer evidence refresh. Hosted routers remain disabled.
+[Managed Research dispatch](managed-dispatch.md) owns subsequent execution. Complete-pool hierarchy and sourced evidence are part of selection; hosted routers remain disabled.
 
 ## Prepare through CoS
 
@@ -87,19 +86,65 @@ and implemented chat/tools/continuation. Missing benchmark or price evidence doe
 not exclude an otherwise eligible pair. Each opaque UUID key maps to exactly one
 connection/model/thinking pair, with separate explicit `abstain`.
 
-Inputs retain static catalog listing provenance/capture time and canonical revision,
-context and nullable prices in **USD per million tokens**. They are not live
-entitlement, subscription marginal cost, benchmark observations or invoices. No
-measured suitability or benchmark score is invented. There is no model arithmetic,
-date comparison, imputation or effort coercion. Full freshness/benchmark collection
-and hierarchical evidence stages remain outside this slice.
+The complete candidate snapshot is immutable and contains every currently eligible connection/model/thinking pair once, including omitted/default thinking where the existing worker validator permits it and every explicit supported effort. Default thinking is not imputed as a benchmark's explicit effort. Code prepares complete bounded
+batches, retaining opaque membership keys and the exact encoded input for every
+stage. Each native request has at most 254 pairs plus explicit abstention (255
+options), a 24 KiB encoded JSON envelope, and the native model's context number
+as a further byte ceiling, not a tokenizer measurement. The full brief, policy,
+options, abstention and evidence all count toward the envelope. A candidate that
+cannot fit alone fails explicitly without truncation or inference.
 
-The complete small pool must fit 254 pairs plus abstention (255 options). The
-native adapter also enforces a conservative 24 KiB encoded JSON envelope, further
-bounded by the catalog's context number as a byte ceiling, not a claimed tokenizer
-measurement. Larger complete inputs/pools produce explicit `unsupported`, with no
-truncation, native HTTP attempt or parent fallback. There is no hierarchy/global
-optimality claim here.
+All required batch winners advance through as many reducing hierarchy levels as
+needed. Every level uses the same versioned suitability/cost policy and immutable
+candidate evidence; neither response order nor an option's array position grants
+identity. Distinct stage question IDs and opaque candidate keys are validated.
+Before each serial native effect, the exact stage's admission timestamp is checkpointed. Inspection distinguishes planned, pending, completed, failed and stopped/unknown stages; this timestamp is an application reservation, not a provider billing/HTTP receipt. Refusal and explicit abstention remain distinct recorded failure outcomes. A required request, validation, refusal or abstention failure fails routing: it
+cannot exclude that batch and promote surviving winners. Only one successful
+final stage can select a worker. This hierarchy makes no global-optimality claim.
+A non-reducing level that cannot compare two complete candidates is Unsupported,
+not permission to omit candidates. No native application deadline or retry is added.
+
+## Sourced evidence and refresh
+
+Selection reads routing evidence from the **same Harness-owned** `MODELS__URL`.
+The source/cache adapter never imports another vendor inventory, widens the
+curated catalog, changes capabilities or grants entitlement. The original 172
+catalog rows remain unchanged. Optional per-row `routing_evidence` observations
+are advisory and bind to provider/model/canonical identity and exact effort;
+incompatible observations are not borrowed. The catalog's existing static list
+prices remain labelled static USD per million tokens, not current billing or
+subscription incremental dollars. Missing prices/benchmarks remain unknown, not
+zero or automatic exclusion.
+
+`APP_DATA_PATH/routing-evidence.json` is a separately versioned, bounded private
+cache. A selection read refetches after 24 hours; there is no background poll.
+Catalog, capability and pricing facts use a 24-hour freshness window; benchmarks
+use seven days from their original measurement, as well as retrieval age. A
+24-hour source fetch may retrieve benchmark data too; it never resets measurement
+age. Explicit `_harness/decision/evidence/refresh` with `{id}` refetches on demand,
+without native inference, replay or rewriting an accepted decision snapshot.
+It returns current cache observations and a truthful refresh-failed indicator.
+Prepared intents without a pool still refresh the source, returning no pair facts.
+
+Each observation retains category, metric/value/units, attribution and source URL,
+revision, retrieval, measurement, publication/effective dates, requested/resolved
+model and serving provider, effort and configuration. Code owns dates, finite
+numbers and units; the native model does not calculate them. A refetch of an old
+measurement remains stale. Unknown original dates remain unknown even after a
+successful fetch. Missing values and incompatible efforts receive explicit
+unknown observations; no new benchmark score or measured fact is fabricated.
+Source failures persist their failed-refresh state across cache reads/restart, retaining original retrieval/measurement dates with explicit stale status. Without a successful prior retrieval, retrieval/revision/value fields remain null/unknown, never fabricated zero/current values. Original source failures are retained internally, including alongside a cache-commit failure.
+Unsafe/corrupt/unsupported cache records fail rather than being overwritten as
+healthy. Sourced observations never replace live auth/allowlist/protocol/context,
+tools/thinking or canonical checks, including final worker admission.
+
+The optional source schema is documented in
+[catalog configuration](catalog-configuration.md#routing-evidence-observations).
+Inspection exposes the original complete pool, captured facts/ages, each input,
+stage membership, successful/failed/pending outcome and all available per-stage
+usage, cost and native serving provenance. Missing reports/costs stay unknown;
+the top-level response is not an additional billable stage. Captured evidence
+ages describe the snapshot, not a claim that an old decision is fresh today.
 
 The response must contain exactly the requested native `choice` or `refusal`
 answer. Required envelope/usage types, membership, finite/ranged supplied confidence
@@ -141,16 +186,17 @@ loopback HTTP fixtures are supported; URL credentials/redirects are rejected. Ke
 never cross ACP or enter the decision body. No authenticated/paid service exercise
 is implied by implementation or local scripted verification.
 
-Records under `APP_DATA_PATH/decisions/<intent>.json` use a bounded independent
-schema-one representation, owner-only no-follow reads/locks, revision-checked atomic
-replacement and directory sync. Short process locks cover claims/checkpoints,
+Records under `APP_DATA_PATH/decisions/<intent>.json` use an independent schema-two representation bounded at 64 MiB, owner-only no-follow reads/locks, revision-checked atomic replacement and directory sync. Under human-approved policy A, existing schema-one records remain schema one, including safe explicit Stop/accounting and late-report updates. Their identities, captured parent/brief/authority and provenance remain intact; absent historical stages/evidence remain absent/unknown. Legacy Prepared selection visibly blocks and requires a deliberately new CoS intent/UUID through normal authorized preparation. No conversion, automatic re-preparation/new UUID, native attempt, retry/replay or parent-fallback bypass occurs. Legacy Pending/settled/Stopped reads remain inert with current eligibility checks and no native resend. Only new intents use schema two, with explicit validated pool/stage lifecycle states and complete per-candidate category observations, including explicit unknowns. Missing or empty required new facts fail closed. No same-identity migration, downgrade, migration API/background conversion or deletion is authorized. Unsupported versions and inconsistent stage/input/snapshot relationships fail closed. Short process locks cover claims/checkpoints,
 never native inference or a repository scheduler. The native request snapshot is
 committed before HTTP, and outcome/report/finish time before return. Duplicates
 reuse the accepted intent; conflicting transitions reject. Recovered pending work
 is inspectable/unknown and never automatically re-sent; explicit Stop can settle
 it. This slice has no Resume/retry/dispatch engine for an uncertain native request.
 A new intent is an explicit new request, not a hidden retry. Stopped requests never
-fall back. Missing reports/costs remain unknown rather than fabricated zero usage.
+fall back. Stop marks every unfinished stage: admitted stages retain an unknown
+outcome, while unadmitted stages explicitly record Stop before admission. Completed
+stage history remains unchanged. Schema two rejects stopped records missing these
+stage outcomes. Missing reports/costs remain unknown rather than fabricated zero usage.
 
 A received valid accounting/provenance report is durably checkpointed before
 post-response authority or configuration reads. While Pending or Stopped, its
@@ -192,8 +238,9 @@ a successful result with silently lost accounting.
 ## Public interfaces and evidence boundary
 
 Application use cases are `create_assignment`, `read_decision`, `update_decision`,
-`read_deciders` and `update_decider`. Effect ports are `ReadDecision`,
-`UpdateDecision`, `CreateNativeDecision`, `ReadDecider` and `UpdateDecider`, each with
+`read_deciders`, `update_decider` and `update_routing_evidence`. Effect ports are `ReadDecision`,
+`UpdateDecision`, `CreateNativeDecision`, `CreateDecisionInputs`, `ReadRoutingEvidence`,
+`ReadDecider` and `UpdateDecider`, each with
 its matching infrastructure adapter/constructor and composition entry. Domain
 rules remain pure and Serde-free; each adapter owns independent DTOs.
 
@@ -206,6 +253,7 @@ ACP advertises `harness/nativeDecider: true`:
 - `_harness/decision/read`, `{id}` → `{decision, blocked}`; missing is null.
 - `_harness/decision/select`, `{id}` → the same durable projection and current
   block. It has no application/SDK timeout. Request cancellation explicitly Stops.
+- `_harness/decision/evidence/refresh`, `{id}` → `{checked_at, refresh_failed, evidence}`; source/cache refresh only, with no inference or accepted-snapshot mutation.
 - `_harness/decision/stop`, `{id}` → the stopped/settled projection. Terminal
   decisions cannot be replaced by Stop. No request accepts arbitrary response or
   candidate data, and there is no debug/fault route.

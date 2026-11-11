@@ -32,6 +32,7 @@ pub mod update_mcp_configuration;
 pub mod update_model_allowlist;
 pub mod update_model_selection;
 pub mod update_research_guidance;
+pub mod update_routing_evidence;
 pub mod update_run;
 pub mod update_scope;
 pub mod update_setup;
