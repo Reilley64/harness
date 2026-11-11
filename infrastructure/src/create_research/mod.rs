@@ -39,6 +39,7 @@ pub fn create_research(
             }
             let id = execution.agent_id.clone();
             let _guard = conversations::lock(&directory, &id).await?;
+            let _mutation = conversations::lock_mutation(&directory, &id).await?;
             match tokio::fs::symlink_metadata(directory.join(format!("{id}.json"))).await {
                 Ok(_) => return Err("Research conversation already exists; inspect the accepted claim without replay".into()),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

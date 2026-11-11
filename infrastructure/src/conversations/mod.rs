@@ -47,6 +47,19 @@ pub(crate) async fn lock(directory: &Path, id: &str) -> Result<std::fs::File, St
     .await?
 }
 
+pub(crate) async fn lock_mutation(
+    directory: &Path,
+    id: &str,
+) -> Result<std::fs::File, StorageError> {
+    validate_id(id)?;
+
+    Ok(
+        storage::lock(&directory.join(format!("{id}.mutation.json")))
+            .await
+            .context("Conversation update is busy; inspect its current revision")?,
+    )
+}
+
 pub(crate) async fn read(directory: &Path, id: &str) -> Result<Vec<u8>, StorageError> {
     validate_id(id)?;
     let path = directory.join(format!("{id}.json"));

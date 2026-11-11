@@ -41,6 +41,7 @@ pub(super) async fn wait(
         if until.is_some_and(|until| until <= current) {
             return Ok(true);
         }
+
         tokio::select! {
             _ = cancellation.cancelled() => return Ok(false),
             Some(request) = steering.recv() => {
@@ -80,8 +81,10 @@ pub(super) async fn failed(
     )
     .map_err(Error::caused_by)?;
     conversation.provider_retry = Some(retry);
+
     checkpoint(dependencies, conversation).await?;
     super::managed::suspend(dependencies, conversation, lease, &CancellationToken::new()).await?;
+
     present
         .call(domain::TurnEvent::Usage {
             usage: conversation.usage(),

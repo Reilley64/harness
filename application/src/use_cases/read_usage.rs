@@ -31,17 +31,20 @@ pub async fn call(
             return Err(Error::blocked("Usage identifiers must be canonical UUIDs"));
         }
     }
+
     let dependencies = dependencies.into();
     let sources = dependencies
         .read_usage_sources
         .call(cancellation.clone())
         .await
         .map_err(Error::unavailable)?;
+
     let mut native = Vec::new();
     let mut needed_runs = BTreeMap::<String, HashSet<String>>::new();
     let mut retained = 0usize;
     let mut known_work = work_id.is_none();
     let mut parent_sources = BTreeSet::new();
+
     for id in sources.decisions {
         if cancellation.is_cancelled() {
             return Err(Error::caused_by("Usage query cancelled"));
@@ -97,6 +100,7 @@ pub async fn call(
     let mut pending = conversation_id
         .as_ref()
         .map_or_else(|| sources.conversations.clone(), |id| vec![id.clone()]);
+
     while let Some(id) = pending.pop() {
         if cancellation.is_cancelled() {
             return Err(Error::caused_by("Usage query cancelled"));
@@ -109,11 +113,13 @@ pub async fn call(
             .call(id.clone())
             .await
             .map_err(Error::caused_by)?;
+
         let runs = needed_runs.remove(&id).unwrap_or_default();
         let header =
             tokio::task::spawn_blocking(move || projection::ownership(&conversation, &runs))
                 .await
                 .map_err(Error::caused_by)?;
+
         if conversation_id.is_some()
             && let Some(parent) = &header.parent
         {
@@ -124,6 +130,7 @@ pub async fn call(
         }
         ownership.insert(id, header);
     }
+
     if let (Some(id), Some(run)) = (&conversation_id, &run_id)
         && ownership
             .get(id)
@@ -153,6 +160,7 @@ pub async fn call(
             "Usage work scope is unavailable; inspect its retained assignment or intent before querying",
         ));
     }
+
     let mut entries = Vec::new();
     let mut unknown_history_sources: Vec<_> = parent_sources
         .into_iter()
@@ -161,6 +169,7 @@ pub async fn call(
         .collect();
     retained = retained.saturating_add(unknown_history_sources.len());
     capacity(retained)?;
+
     for (id, header) in &ownership {
         if conversation_id
             .as_ref()
@@ -183,13 +192,16 @@ pub async fn call(
             .call(id.clone())
             .await
             .map_err(Error::caused_by)?;
+
         let wanted_run = run_id.clone();
         let known_runs = header.known_runs.clone();
+
         let mut source = tokio::task::spawn_blocking(move || {
             projection::conversation(conversation, wanted_run, known_runs)
         })
         .await
         .map_err(Error::caused_by)??;
+
         if source.id != *id
             || source.ownership.parent != header.parent
             || source.ownership.work != header.work
@@ -199,6 +211,7 @@ pub async fn call(
                 "Usage ownership changed during the query; refresh accounting",
             ));
         }
+
         retained = retained
             .saturating_add(source.entries.len())
             .saturating_add(source.unknown_history.len());
@@ -209,6 +222,7 @@ pub async fn call(
         entries.extend(source.entries);
         unknown_history_sources.extend(source.unknown_history);
     }
+
     tokio::task::spawn_blocking(move || {
         let mut unassigned_native_runs = 0;
         for source in native {
@@ -221,6 +235,7 @@ pub async fn call(
             }
             entries.extend(source.entries);
         }
+
         let mut unique = BTreeMap::new();
         for entry in entries {
             if unique.insert(entry.id.clone(), entry).is_some() {
@@ -229,6 +244,7 @@ pub async fn call(
                 ));
             }
         }
+
         Ok(Output {
             entries: unique.into_values().collect(),
             unassigned_native_runs,

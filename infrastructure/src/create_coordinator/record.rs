@@ -903,7 +903,6 @@ struct UsageRecord {
 impl From<domain::ModelStep> for StepRecord {
     fn from(step: domain::ModelStep) -> Self {
         Self {
-            reported_cost: step.reported_cost,
             id: step.id,
             output: step.output,
             resolved_model_id: step.resolved_model_id,
@@ -913,6 +912,7 @@ impl From<domain::ModelStep> for StepRecord {
                 input_tokens: usage.input_tokens,
                 output_tokens: usage.output_tokens,
             }),
+            reported_cost: step.reported_cost,
             status: Some(
                 match step.status {
                     domain::MessageStatus::Completed => "completed",
@@ -1018,7 +1018,6 @@ impl TryFrom<StepRecord> for domain::ModelStep {
             });
         }
         Ok(Self {
-            reported_cost: step.reported_cost,
             id: step.id,
             output: step.output,
             resolved_model_id: step.resolved_model_id,
@@ -1028,6 +1027,7 @@ impl TryFrom<StepRecord> for domain::ModelStep {
                 .usage
                 .map(|usage| domain::TokenUsage::new(usage.input_tokens, usage.output_tokens))
                 .transpose()?,
+            reported_cost: step.reported_cost,
             calls,
             status: match step.status.as_deref().unwrap_or("completed") {
                 "completed" => domain::MessageStatus::Completed,

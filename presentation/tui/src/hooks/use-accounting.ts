@@ -13,19 +13,23 @@ export function useAccounting(
   const current = useRef(conversation);
   current.current = conversation;
   const mounted = useRef(true);
+
   useEffect(
     () => () => {
       mounted.current = false;
     },
     [],
   );
+
   const serial = useRef(0);
   const selectedId = conversation?.id;
+
   useEffect(() => {
     if (current.current?.id !== selectedId) return;
     setNotice(null);
     serial.current += 1;
   }, [selectedId]);
+
   return {
     notice,
     clear: () => setNotice(null),

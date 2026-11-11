@@ -20,6 +20,8 @@ pub fn update_conversation(
     move |mut conversation| {
         let directory = directory.clone();
         Box::pin(async move {
+            let _mutation = conversations::lock_mutation(&directory, &conversation.id).await?;
+
             let bytes = conversations::read(&directory, &conversation.id).await?;
             let (conversation, bytes) = tokio::task::spawn_blocking(move || {
                 let record: Record =

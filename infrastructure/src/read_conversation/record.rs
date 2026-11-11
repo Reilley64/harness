@@ -781,7 +781,6 @@ impl TryFrom<StepRecord> for domain::ModelStep {
             });
         }
         Ok(Self {
-            reported_cost: step.reported_cost,
             id: step.id,
             output: step.output,
             resolved_model_id: step.resolved_model_id,
@@ -791,6 +790,7 @@ impl TryFrom<StepRecord> for domain::ModelStep {
                 .usage
                 .map(|usage| domain::TokenUsage::new(usage.input_tokens, usage.output_tokens))
                 .transpose()?,
+            reported_cost: step.reported_cost,
             calls,
             status: match step.status.as_deref().unwrap_or("completed") {
                 "completed" => domain::MessageStatus::Completed,

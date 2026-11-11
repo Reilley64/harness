@@ -29,6 +29,7 @@ pub fn create_conversation(
             }
             let id = uuid::Uuid::new_v4().to_string();
             let _guard = conversations::lock(&directory, &id).await?;
+            let _mutation = conversations::lock_mutation(&directory, &id).await?;
             let now = conversations::now()?;
             let workspace = Some(tokio::fs::canonicalize(workspace).await?);
             let conversation = domain::Conversation {

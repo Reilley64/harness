@@ -48,6 +48,7 @@ fn summary(output: application::use_cases::read_usage::Output) -> Result<Respons
     let mut estimated = None;
     let mut unknown_costs = 0;
     let mut subscriptions = 0;
+
     for entry in &output.entries {
         if let Some(tokens) = entry.tokens {
             known_tokens = true;
@@ -69,11 +70,13 @@ fn summary(output: application::use_cases::read_usage::Output) -> Result<Respons
             estimated = Some(estimated.unwrap_or(0.0) + value)
         }
     }
+
     if reported.is_some_and(|value: f64| !value.is_finite())
         || estimated.is_some_and(|value: f64| !value.is_finite())
     {
         return Err(Error::internal_error().data("Usage currency aggregate exceeds finite representation; inspect retained source reports. No amount was truncated."));
     }
+
     Ok(Response {
         entries: output.entries.into_iter().map(|entry| serde_json::json!({
             "id":entry.id, "sourceId":entry.source_id, "sourceRevision":entry.source_revision,

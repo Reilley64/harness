@@ -37,6 +37,7 @@ pub fn create_coordinator(
             }
             let id = approval.coordinator_id.clone();
             let _guard = conversations::lock(&directory, &id).await?;
+            let _mutation = conversations::lock_mutation(&directory, &id).await?;
             let proposal = work.current()?.clone();
             let assignment = domain::WorkAssignment {
                 work_id: work.id,

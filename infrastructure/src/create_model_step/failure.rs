@@ -4,6 +4,12 @@ use chrono::NaiveDateTime;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+#[ohno::error]
+#[display("Provider HTTP {status} error body could not be read")]
+pub(super) struct BodyError {
+    status: u16,
+}
+
 pub(super) fn now() -> Result<u64, ModelStepError> {
     Ok(SystemTime::now()
         .duration_since(UNIX_EPOCH)?
@@ -114,6 +120,7 @@ pub(super) async fn body(
         }
         body.extend_from_slice(&bytes);
     }
+
     tokio::task::spawn_blocking(move || {
         Ok(serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null))
     })

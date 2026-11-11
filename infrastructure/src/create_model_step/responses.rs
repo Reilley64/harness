@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::ModelStepError;
 use super::ModelStepFuture;
+use super::failure::BodyError;
 use super::stream::Decoder;
 
 pub(super) fn create_model_step<P>(
@@ -56,6 +57,7 @@ where
             let mut received_output = false;
             let mut provider_failure = None;
             let mut request_scope = None;
+            let mut rejected_status = None;
             let result: Result<domain::ModelStep, ModelStepError> = async {
             if timeout_seconds == 0 {
                 return Err("Reply timeout must be greater than zero".into());
@@ -149,6 +151,7 @@ where
                         .context("Could not contact the model provider")?;
                     if !response.status().is_success() {
                         let status = response.status().as_u16();
+                        rejected_status = Some(status);
                         let retry_at = super::failure::retry_at(
                             response.headers().get(reqwest::header::RETRY_AFTER).and_then(|value| value.to_str().ok()),
                             super::failure::now()?,
@@ -158,7 +161,10 @@ where
                             failure.retry_at = retry_at;
                             failure
                         });
-                        let body = super::failure::body(&mut response).await?;
+                        let body = super::failure::body(&mut response)
+                            .await
+                            .map_err(|error| BodyError::caused_by(status, error))
+                            .context("Could not read the provider rejection body")?;
                         provider_failure = request_scope.clone().map(|mut failure| {
                             failure.kind = super::failure::response_kind(&model.provider_id.0, status, &body);
                             failure.retry_at = retry_at;
@@ -426,7 +432,14 @@ where
                 result = stream => match result {
                     Ok(result) => result,
                     Err(error) => {
-                        if attempted && !received_output { provider_failure = request_scope.clone(); }
+                        if attempted && !received_output && provider_failure.is_none() {
+                            provider_failure = request_scope.clone();
+                        }
+                        if let Some(status) = rejected_status {
+                            return Err(BodyError::caused_by(status, error))
+                                .context("The provider rejection body timed out; inspect authentication and model settings")
+                                .map_err(Into::into);
+                        }
                         Err(error).context("The model reply timed out").map_err(Into::into)
                     }
                 },

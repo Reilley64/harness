@@ -3,7 +3,8 @@
 ## Persistence and crash recovery
 
 Each conversation lives in `<app_data_path>/conversations/<uuid>.json`, with a
-separate `<uuid>.lock`. Only canonical lowercase UUIDs are accepted as identifiers;
+separate `<uuid>.lock` for execution ownership and `<uuid>.mutation.lock` for
+short storage transactions. Only canonical lowercase UUIDs are accepted as identifiers;
 callers cannot supply paths. Port-owned JSON records stay in infrastructure, domain types have
 no Serde dependency, and unknown versions/corrupt records are rejected unchanged.
 Creation owns encode-only records, reading owns decode-only records, and updating
@@ -50,7 +51,12 @@ and assignment identity facts needed for fresh HTTP admission are retained;
 necessary metadata copies run on a blocking worker too. Each adapter keeps its
 own record directions. Credential,
 conversation, catalog-cache, and artifact writes share the private replacement helper.
-Revision checks reject stale updates before encoding and writing the replacement. Errors at/after the atomic commit point can
+Every conversation writer takes the separate per-record mutation lock, including
+initial creation, controller checkpoints and live retry controls. The revision
+check, bounded encoding and replacement are one short critical section;
+contention or a stale revision rejects the update for fresh inspection instead
+of losing acknowledged facts. Execution ownership remains separate, and no model
+or network work runs under the mutation lock. Errors at/after the atomic commit point can
 mean the replacement already exists; reload rather than blindly resending.
 
 No fsync occurs per token. During a stream the disk record contains the saved user

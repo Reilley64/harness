@@ -20,6 +20,7 @@ pub async fn call(
             "A canonical human retry-control identity is required",
         ));
     }
+
     let dependencies = dependencies.into();
     let mut conversation = dependencies
         .read_conversation
@@ -60,6 +61,7 @@ pub async fn call(
             "Inspect the current provider wait revision before changing its authority",
         ));
     }
+
     work_access::read(
         &dependencies.read_work,
         &conversation.id,
@@ -67,6 +69,7 @@ pub async fn call(
     )
     .await
     .map_err(Error::caused_by)?;
+
     let retry = conversation
         .provider_retry
         .as_mut()
@@ -90,10 +93,12 @@ pub async fn call(
                 .ok_or_else(|| Error::blocked("Provider wait disappeared"))?,
         );
     }
+
     let conversation = dependencies
         .update_conversation
         .call(conversation)
         .await
         .map_err(Error::caused_by)?;
+
     Ok(Output { conversation })
 }

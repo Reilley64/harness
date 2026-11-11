@@ -25,6 +25,7 @@ pub fn create_agent(
         Box::pin(async move {
             let (workspace, id) = repository::agent_identity(&workspace, role.clone()).await?;
             let _guard = conversations::lock(&directory, &id).await?;
+            let _mutation = conversations::lock_mutation(&directory, &id).await?;
             match tokio::fs::symlink_metadata(directory.join(format!("{id}.json"))).await {
                 Ok(_) => return Ok(id),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

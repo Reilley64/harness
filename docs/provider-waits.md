@@ -13,7 +13,9 @@ Authentication/request/context/budget failures are permanent. HTTP 408, 429 and
 5xx, supported rate-limit/overload codes, connection failures and pre-output stream
 interruptions are transient unless structured metadata identifies depleted quota
 or a permanent cause. Authentication/request HTTP statuses take precedence over
-conflicting error metadata. `insufficient_quota`, `quota_exceeded`,
+conflicting error metadata. Once rejection headers establish a status, its
+classification and valid timing survive an interrupted or timed-out error-body
+read; only a timeout without a known outcome supplies a generic transient failure. `insufficient_quota`, `quota_exceeded`,
 `insufficient_credits` and `credits_exhausted` identify quota. OpenRouter's numeric
 402 with `Insufficient credits.` identifies depletion; an unaffordable request,
 fewer-max-tokens condition or otherwise unknown 402 is not an unchanged retry
@@ -53,7 +55,13 @@ checkpointed retry authority with a checked conversation revision; it does not
 start another controller or clear any ownership/recovery gate. The controller
 reloads that checkpoint before proceeding, then revalidates current model,
 connection, policy, assignment and generation eligibility through ordinary
-admission. A conflicting write fails rather than silently replacing a newer fact.
+admission. A conflicting write fails rather than silently replacing a newer fact. All
+conversation writers share a separate per-record mutation lock covering the
+revision check and complete replacement, including live human controls and
+controller checkpoints. Contention rejects the update for fresh inspection; it
+does not queue inference, overwrite a newer snapshot or acquire the controller's
+long-lived execution lock. The short mutation lock is never held over model or
+network execution.
 
 After real process loss, ordinary conversation recovery marks the unfinished run
 Interrupted and requires explicit Resume, including when a saved retry time has
