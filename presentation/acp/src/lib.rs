@@ -1,11 +1,24 @@
+mod accounting;
+mod agents;
 mod authentication;
+mod children;
 mod conversations;
+mod creation_map;
+mod decisions;
 mod dependencies;
+mod executions;
+mod guidance;
+mod mcp;
 mod projection;
+mod prompt;
+mod provider_retries;
+mod setup;
 mod steering;
 mod tools;
 mod usage;
+mod work;
 
+mod model_allowlist;
 mod model_selection;
 mod models;
 
@@ -13,6 +26,9 @@ mod providers;
 
 pub use dependencies::Dependencies;
 
+use crate::model_allowlist::ModelAllowlistResponse;
+use crate::model_allowlist::ReadModelAllowlistRequest;
+use crate::model_allowlist::UpdateModelAllowlistRequest;
 use agent_client_protocol::Agent;
 use agent_client_protocol::Error;
 use agent_client_protocol::Stdio;
@@ -31,19 +47,19 @@ use agent_client_protocol::v1::schema::LoadSessionResponse;
 use agent_client_protocol::v1::schema::NewSessionRequest;
 use agent_client_protocol::v1::schema::NewSessionResponse;
 use agent_client_protocol::v1::schema::PromptRequest;
-use agent_client_protocol::v1::schema::PromptResponse;
 use agent_client_protocol::v1::schema::SessionNotification;
-use agent_client_protocol::v1::schema::StopReason;
 use application::error_context::ResultExt;
 use application::ports::PresentAuthorization;
-use application::ports::PresentTurnEvent;
+use application::ports::PresentMcpAuthorization;
 use application::use_cases::create_conversation;
-use application::use_cases::create_message;
 use application::use_cases::create_provider_connection;
 use application::use_cases::read_conversation;
+use application::use_cases::read_model_allowlist;
 use application::use_cases::read_model_selection;
 use application::use_cases::read_models;
 use application::use_cases::read_providers;
+use application::use_cases::update_mcp_configuration;
+use application::use_cases::update_model_allowlist;
 use application::use_cases::update_model_selection;
 
 use crate::model_selection::ModelSelectionResponse;
@@ -58,34 +74,95 @@ use crate::providers::ProvidersResponse;
 
 pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
     let Dependencies {
+        mcp,
         providers,
+        read_children,
+        update_children,
+        create_dispatch,
+        create_instruction,
+        create_scope,
+        update_scope,
+        delete_execution,
+        delete_executions,
+        update_research_guidance,
+        read_decision,
+        update_decision,
+        update_routing_evidence,
+        read_deciders,
+        update_decider,
+        read_work,
+        read_usage,
+        update_provider_retry,
+        update_work,
         authentication,
         models,
+        create_agent,
+        read_agent,
+        read_creation_map,
+        read_setup,
+        update_setup,
+        update_agent,
+        read_guidance,
+        update_guidance,
         create_conversation,
         read_conversation,
         create_message,
         read_model_selection,
         update_model_selection,
+        read_model_allowlist,
+        update_model_allowlist,
     } = dependencies.into();
+    let stopping_children = update_children.clone();
+    let viewing_children = read_conversation.clone();
+    let children_results = read_children.clone();
+    let background_children = update_children.clone();
+    let follow_up_children = update_children.clone();
     let sessions = conversations::Sessions::default();
+    let agent_sessions = sessions.clone();
+    let read_agent_sessions = sessions.clone();
+    let answer_sessions = sessions.clone();
+    let view_sessions = sessions.clone();
+    let answer_history = read_conversation.clone();
+    let answer_dependencies = create_message.clone();
+    let resume_sessions = sessions.clone();
+    let resume_history = read_conversation.clone();
+    let resume_dependencies = create_message.clone();
     let new_sessions = sessions.clone();
     let loaded_sessions = sessions.clone();
     let prompted_sessions = sessions.clone();
+    let execution_sessions = sessions.clone();
     let steering_sessions = sessions.clone();
     let steering_history = read_conversation.clone();
     let projection_history = read_conversation.clone();
+    let decisions = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
+        String,
+        tokio_util::sync::CancellationToken,
+    >::new()));
+    let selecting_decisions = decisions.clone();
+    let stopping_decisions = decisions.clone();
+    let stop_dependencies = update_decision.clone();
     Agent
         .v1()
         .name("harness")
         .on_receive_request(
             async |_: InitializeRequest, responder, _connection| {
                 let metadata: serde_json::Map<String, serde_json::Value> = [
+                    ("harness/mcp".into(), serde_json::json!(true)),
                     ("harness/providerCatalog".into(), serde_json::json!(true)),
                     ("harness/modelCatalog".into(), serde_json::json!(true)),
                     ("harness/modelSelection".into(), serde_json::json!(true)),
+                    ("harness/modelAllowlist".into(), serde_json::json!(true)),
                     ("harness/tools".into(), serde_json::json!(true)),
                     ("harness/steering".into(), serde_json::json!(true)),
                     ("harness/usage".into(), serde_json::json!(true)),
+                    ("harness/agents".into(), serde_json::json!(true)),
+                    ("harness/creationMap".into(), serde_json::json!(true)),
+                    ("harness/guidance".into(), serde_json::json!(true)),
+                    ("harness/approvedWork".into(), serde_json::json!(true)),
+                    ("harness/nativeDecider".into(), serde_json::json!(true)),
+                    ("harness/setup".into(), serde_json::json!(true)),
+                    ("harness/children".into(), serde_json::json!(true)),
+                    ("harness/executionStop".into(), serde_json::json!(true)),
                 ]
                 .into_iter()
                 .collect();
@@ -93,12 +170,436 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                     InitializeResponse::new(ProtocolVersion::V1)
                         .agent_info(Implementation::new("harness", env!("CARGO_PKG_VERSION")))
                         .agent_capabilities(AgentCapabilities::new().load_session(true))
-                        .auth_methods(vec![AuthMethod::Agent(
-                            AuthMethodAgent::new("openai", "Continue with ChatGPT")
-                                .description("Connect your ChatGPT plan to Harness"),
-                        )])
+                        .auth_methods(vec![
+                            AuthMethod::Agent(AuthMethodAgent::new("openai", "Continue with ChatGPT").description("Connect your ChatGPT plan to Harness")),
+                            AuthMethod::Agent(AuthMethodAgent::new("openrouter", "Continue with OpenRouter").description("Connect a separately billed OpenRouter API key; no inference during setup")),
+                        ])
                         .meta(metadata),
                 )
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: executions::Request, responder, connection| {
+                let d = delete_execution.clone();
+                let sessions = execution_sessions.clone();
+                connection.spawn(async move {
+                    let selected_conversation = request.execution_id.is_none();
+                    let result = application::use_cases::delete_execution::call(
+                        d,
+                        request.session_id.clone(),
+                        request.execution_id,
+                        tokio_util::sync::CancellationToken::new(),
+                    ).await;
+                    if selected_conversation {
+                        sessions.cancel(&request.session_id);
+                    }
+                    match result {
+                        Ok(output) => responder.respond(executions::Response {
+                            coordination: children::summary(&output.coordination),
+                            executions: output.executions,
+                        }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ScopeRequest, responder, connection| {
+                let d = create_scope.clone();
+                connection.spawn(async move {
+                    match application::use_cases::create_scope::call(d, request.session_id, request.execution_id, request.id, request.text, request.replaces, request.supersedes_run, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::ScopeResponse { scope: children::scope(&output.scope), continuation_started: false }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ApproveScopeRequest, responder, connection| {
+                let d = update_scope.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_scope::call(d, request.session_id, request.id, request.version, request.approval_id, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::ScopeResponse { scope: children::scope(&output.scope), continuation_started: output.started }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::SteerRequest, responder, connection| {
+                let d = create_instruction.clone();
+                connection.spawn(async move {
+                    match application::use_cases::create_instruction::call(d, request.session_id, request.execution_id, request.id, request.text, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::SteerResponse {
+                            instruction: children::instruction(&output.instruction),
+                            effective_boundary: "Accepted durably in parent order. An active generation is superseded; an already admitted tool may finish. Remaining stale actions are fenced at the next safe boundary.".into(),
+                        }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::AdoptRequest, responder, connection| {
+                let d=update_research_guidance.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_research_guidance::call(d,request.session_id,request.revision,request.intent,request.snapshot,tokio_util::sync::CancellationToken::new()).await{
+                        Ok(output)=>responder.respond(children::AdoptResponse{intent:output.guidance.intent,snapshot:output.guidance.snapshot.id}),
+                        Err(error)=>responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::StopRequest, responder, connection| {
+                let d = stopping_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::Stop { execution_id: request.execution_id }, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_: children::DrainRequest, responder, connection| {
+                let d = delete_executions.clone();
+                connection.spawn(async move {
+                    match application::use_cases::delete_executions::call(d).await {
+                        Ok(output) => responder.respond(children::DrainResponse { stopped: output.stopped }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: creation_map::Request, responder, connection| {
+                let dependencies = read_creation_map.clone();
+                connection.spawn(async move {
+                    let token = tokio_util::sync::CancellationToken::new();
+                    let future = application::use_cases::read_creation_map::call(dependencies, request.cwd, request.after, token.clone());
+                    tokio::pin!(future);
+                    let cancelled = responder.cancellation();
+                    let result = tokio::select! { result = &mut future => result, _ = cancelled.cancelled() => { token.cancel(); future.await } };
+                    match result {
+                        Ok(output) => match tokio::task::spawn_blocking(move || creation_map::response(output)).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ViewRequest, responder, connection| {
+                let d = viewing_children.clone();
+                let sessions = view_sessions.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_conversation::inspect(d, request.session_id).await {
+                        Ok(output) => {
+                            if let Some(workspace) = &output.conversation.workspace {
+                                sessions.register(&output.conversation.id, workspace.clone());
+                            }
+                            responder.respond(agents::response(&output.conversation))
+                        }
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::AnswerRequest, responder, connection| {
+                let prompt = PromptRequest::new(
+                    request.session_id,
+                    vec![agent_client_protocol::v1::schema::ContentBlock::Text(
+                        agent_client_protocol::v1::schema::TextContent::new(request.text),
+                    )],
+                );
+                prompt::receive(prompt, responder, connection, answer_dependencies.clone(), answer_history.clone(), answer_sessions.clone(), false, Some(request.request_run))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ReadRequest, responder, connection| {
+                let d = read_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_children::call(d, request.session_id).await {
+                        Ok(output) => {
+                            let response = tokio::task::spawn_blocking(move || {
+                                let mut coordination = output.coordination.as_ref().map(children::summary);
+                                if let Some(coordination) = &mut coordination {
+                                    coordination["sessionRevision"] = serde_json::json!(output.session_revision);
+                                    coordination["contextBlocked"] = serde_json::json!(!output.diagnostics.is_empty());
+                                }
+                                children::Response { coordination, execution: None, result: None }
+                            }).await;
+                            match response {
+                                Ok(response) => responder.respond(response),
+                                Err(error) => responder.respond_with_error(conversations::error(error)),
+                            }
+                        }
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::ResultRequest, responder, connection| {
+                let d = children_results.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_children::call(d, request.session_id).await {
+                        Ok(output) => match output.coordination.as_ref().map(|state| children::result(state, &request.execution_id)).transpose() {
+                            Ok(result) => responder.respond(children::Response { coordination: None, execution: None, result }),
+                            Err(error) => responder.respond_with_error(error),
+                        },
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::DispatchRequest, responder, connection| {
+                let d = create_dispatch.clone();
+                connection.spawn(async move {
+                    let token = tokio_util::sync::CancellationToken::new();
+                    let future = application::use_cases::create_dispatch::call(d, request.session_id, request.revision, domain::AssignmentBrief { intent: request.intent, role: request.role, task: request.task, constraints: request.constraints, tool_context: request.tool_context, context_tokens: request.context_tokens }, request.routed, token.clone());
+                    tokio::pin!(future);
+                    let cancelled = responder.cancellation();
+                    let result = tokio::select! { result = &mut future => result, _ = cancelled.cancelled() => { token.cancel(); future.await } };
+                    match result {
+                        Ok(output) => responder.respond(children::Response { coordination: None, execution: Some(children::execution(&output.execution)), result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::JoinRequest, responder, connection| {
+                let d = update_children.clone();
+                connection.spawn(async move {
+                    let mode = match request.mode.as_str() { "any" => domain::JoinMode::Any, "all" => domain::JoinMode::All, _ => return responder.respond_with_error(agent_client_protocol::Error::invalid_params().data("Join mode must be any or all")) };
+                    match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::Join { id: request.id, mode, executions: request.executions }, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::BackgroundRequest, responder, connection| {
+                let d = background_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::Background { id: request.id }, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: children::FollowUpRequest, responder, connection| {
+                let d = follow_up_children.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_children::call(d, request.session_id, domain::ChildrenControl::CompleteFollowUp { outcomes: request.outcomes }, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => responder.respond(children::Response { coordination: Some(children::summary(&output.coordination)), execution: None, result: None }),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: accounting::Request, responder, connection| {
+                let dependencies = read_usage.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_usage::call(dependencies, request.session_id, request.run_id, request.work_id, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(output) => match accounting::response(output).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(error),
+                        },
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: provider_retries::Request, responder, connection| {
+                let dependencies = update_provider_retry.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_provider_retry::call(dependencies, request.session_id, request.revision, request.id, request.additional).await {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: decisions::ReadRequest, responder, connection| {
+                let d = read_decision.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_decision::call(d, request.id).await {
+                        Ok(o) => match decisions::project(o.decision, o.blocked).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
+                        Err(e) => responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_: decisions::DecidersRequest, responder, connection| {
+                let d = read_deciders.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_deciders::call(d).await {
+                        Ok(o) => responder.respond(decisions::DecidersResponse { models: o.models.into_iter().map(|(m, blocked)| { let mut m = models::ModelSummary::from(m); m.blocked = blocked; m }).collect(), selected: o.selected }),
+                        Err(e) => responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: decisions::UpdateRequest, responder, connection| {
+                let d = update_decider.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_decider::call(d, request.model_id).await {
+                        Ok(o) => responder.respond(decisions::DecidersResponse { models: Vec::new(), selected: Some(o.selected) }),
+                        Err(e) => responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: decisions::RefreshRequest, responder, connection| {
+                let d = update_routing_evidence.clone();
+                connection.spawn(async move {
+                    let token = tokio_util::sync::CancellationToken::new();
+                    let future = application::use_cases::update_routing_evidence::call(d, request.id, token.clone());
+                    tokio::pin!(future);
+                    let cancel = responder.cancellation();
+                    let result = tokio::select! { result = &mut future => result, _ = cancel.cancelled() => { token.cancel(); future.await } };
+                    match result {
+                        Ok(output) => match tokio::task::spawn_blocking(move || decisions::RefreshResponse {
+                            checked_at:output.checked_at,refresh_failed:!output.diagnostics.is_empty(),
+                            evidence:serde_json::json!(output.evidence.iter().map(|(key,facts)| serde_json::json!({"key":key,"facts":facts.iter().map(|e|decisions::evidence(e,output.checked_at)).collect::<Vec<_>>()})).collect::<Vec<_>>()),
+                        }).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: decisions::SelectRequest, responder, connection| {
+                let d = update_decision.clone();
+                let active = selecting_decisions.clone();
+                let token = tokio_util::sync::CancellationToken::new();
+                let owner = {
+                    let mut map = active.lock().expect("decision control");
+                    match map.entry(request.id.clone()) {
+                        std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(token.clone()); true }
+                        std::collections::hash_map::Entry::Occupied(_) => false,
+                    }
+                };
+                connection.spawn(async move {
+                    let future = application::use_cases::update_decision::call(d, request.id.clone(), false, token.clone());
+                    tokio::pin!(future);
+                    let cancel = responder.cancellation();
+                    let result = tokio::select! {
+                        result = &mut future => result,
+                        _ = cancel.cancelled() => { token.cancel(); future.await },
+                    };
+                    if owner { active.lock().expect("decision control").remove(&request.id); }
+                    match result {
+                        Ok(o) => match decisions::project(Some(o.decision), o.blocked).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
+                        Err(e) => responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: decisions::StopRequest, responder, connection| {
+                let d = stop_dependencies.clone();
+                if let Some(token) = stopping_decisions.lock().expect("decision control").get(&request.id) { token.cancel(); }
+                connection.spawn(async move {
+                    match application::use_cases::update_decision::call(d, request.id, true, tokio_util::sync::CancellationToken::new()).await {
+                        Ok(o) => match decisions::project(Some(o.decision), o.blocked).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(conversations::error(error)),
+                        },
+                        Err(e) => responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: work::ReadRequest, responder, connection| {
+                let d=read_work.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_work::call(d,request.id).await {
+                        Ok(o)=>responder.respond(work::Response {work:o.work.as_ref().map(work::summary),conversation_id:None}),
+                        Err(e)=>responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: work::ApproveRequest, responder, connection| {
+                let d=update_work.clone();
+                connection.spawn(async move {
+                    let selection=domain::ModelSelection {provider_id:domain::ProviderId(request.provider_id),model_id:request.model_id,effort:request.effort.map(|e|match e {models::ModelEffort::Low=>domain::ModelEffort::Low,models::ModelEffort::Medium=>domain::ModelEffort::Medium,models::ModelEffort::High=>domain::ModelEffort::High,models::ModelEffort::ExtraHigh=>domain::ModelEffort::ExtraHigh})};
+                    match application::use_cases::update_work::call(d,request.id,request.revision,request.version,request.intent,selection,request.transient_retry_allowance,request.session_revision).await {
+                        Ok(o)=>responder.respond(work::Response {work:Some(work::summary(&o.work)),conversation_id:Some(o.conversation_id)}),
+                        Err(e)=>responder.respond_with_error(conversations::error(e)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: mcp::Request, responder, connection| {
+                let dependencies = mcp.clone();
+                let authorization_connection = connection.clone();
+                connection.spawn(async move {
+                    let cancellation = tokio_util::sync::CancellationToken::new();
+                    let present = match (&request.operation, request.authentication_id) {
+                        (mcp::Operation::Connect { revision, .. }, Some(id)) if !id.is_empty() && id.len() <= 128 => {
+                            let revision = revision.clone();
+                            let workspace = request.workspace.clone();
+                            Some(PresentMcpAuthorization::new(move |authorization_url| {
+                                authorization_connection.send_notification(mcp::AuthorizationChallenge {
+                                    authentication_id: id.clone(), workspace: workspace.clone(), revision: revision.clone(), authorization_url,
+                                }).map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
+                                Ok(())
+                            }))
+                        }
+                        _ => None,
+                    };
+                    let operation = update_mcp_configuration::call(dependencies, request.workspace, request.operation.into(), present, cancellation.clone());
+                    tokio::pin!(operation);
+                    let request_cancellation = responder.cancellation();
+                    let result = tokio::select! {
+                        result = &mut operation => result,
+                        _ = request_cancellation.cancelled() => { cancellation.cancel(); operation.await }
+                    };
+                    match result {
+                        Ok(output) => match tokio::task::spawn_blocking(move || mcp::Response::from(output.configuration)).await {
+                            Ok(response) => responder.respond(response),
+                            Err(error) => responder.respond_with_error(Error::new(-32006, "MCP response projection failed; reload to reconcile completed changes").data(application::error_context::diagnostic(&error))),
+                        },
+                        Err(error) => responder.respond_with_error(Error::new(-32006, "MCP operation failed; check configuration, trust and provisioned references. Reload to reconcile conflicting edits; custom/manual setup remains available.").data(application::error_context::diagnostic(&error))),
+                    }
+                })
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -167,7 +668,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                 connection.spawn(async move {
                     let connection = auth_connection;
                     let provider_id = request.method_id.to_string();
-                    if provider_id != "openai" {
+                    if !matches!(provider_id.as_str(), "openai" | "openrouter") {
                         return responder.respond_with_error(
                             Error::invalid_params().data("Unsupported authentication method"),
                         );
@@ -293,122 +794,16 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         )
         .on_receive_request(
             async move |request: PromptRequest, responder, connection| {
-                let selection = match conversations::selection(request.meta.as_ref()) {
-                    Ok(selection) => selection,
-                    Err(error) => return responder.respond_with_error(error),
-                };
-                let text = match projection::prompt(request.prompt) {
-                    Ok(text) => text,
-                    Err(error) => return responder.respond_with_error(error),
-                };
-                let mut running = match prompted_sessions.start(&request.session_id.to_string()) {
-                    Ok(running) => running,
-                    Err(error) => return responder.respond_with_error(error),
-                };
-                let dependencies = create_message.clone();
-                let history = projection_history.clone();
-                let updates = connection.clone();
-                let final_updates = connection.clone();
-                connection.spawn(async move {
-                    let id = request.session_id.to_string();
-                    let model = read_conversation::call(history, id.clone())
-                        .await
-                        .ok()
-                        .map(|output| output.conversation.model)
-                        .filter(|model| {
-                            selection.as_ref().is_none_or(|selection| {
-                                selection.model_id == model.id
-                                    && selection.provider_id == model.provider_id
-                            })
-                        });
-                    let projection =
-                        parking_lot::Mutex::new(projection::Projection::new(model.as_ref()));
-                    let updated_session = id.clone();
-                    let present = PresentTurnEvent::new(move |event| {
-                        if let domain::TurnEvent::Usage { usage } = &event {
-                            updates
-                                .send_notification(usage::Notification {
-                                    session_id: updated_session.clone(),
-                                    usage: usage.clone().into(),
-                                })
-                                .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
-                        }
-                        for update in projection.lock().event(event) {
-                            updates
-                                .send_notification(SessionNotification::new(
-                                    updated_session.clone(),
-                                    update,
-                                ))
-                                .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
-                        }
-                        Ok(())
-                    });
-                    let result = create_message::call(
-                        dependencies,
-                        id,
-                        text,
-                        selection,
-                        present,
-                        running
-                            .steering
-                            .take()
-                            .expect("Newly started reply owns its steering receiver"),
-                        running.workspace.clone(),
-                        running.cancellation.clone(),
-                    );
-                    tokio::pin!(result);
-                    let request_cancellation = responder.cancellation();
-                    let result = tokio::select! {
-                        result = &mut result => result,
-                        _ = request_cancellation.cancelled() => {
-                            running.cancellation.cancel();
-                            result.await
-                        }
-                    };
-                    match result {
-                        Ok(output) => {
-                            let mut projection =
-                                projection::Projection::new(Some(&output.conversation.model));
-                            for update in projection.event(domain::TurnEvent::Usage {
-                                usage: output.conversation.usage(),
-                            }) {
-                                if let Err(error) =
-                                    final_updates.send_notification(SessionNotification::new(
-                                        output.conversation.id.clone(),
-                                        update,
-                                    ))
-                                {
-                                    return responder.respond_with_error(error);
-                                }
-                            }
-                            let stop_reason = if running.cancellation.is_cancelled() {
-                                StopReason::Cancelled
-                            } else {
-                                match output
-                                    .conversation
-                                    .messages
-                                    .last()
-                                    .map(|message| message.status)
-                                {
-                                    Some(domain::MessageStatus::Cancelled) => StopReason::Cancelled,
-                                    Some(domain::MessageStatus::Refused) => StopReason::Refusal,
-                                    Some(domain::MessageStatus::Limited) => {
-                                        StopReason::MaxTurnRequests
-                                    }
-                                    Some(domain::MessageStatus::Incomplete) => {
-                                        StopReason::MaxTokens
-                                    }
-                                    _ => StopReason::EndTurn,
-                                }
-                            };
-                            responder.respond(
-                                PromptResponse::new(stop_reason)
-                                    .meta(conversations::metadata(&output.conversation)),
-                            )
-                        }
-                        Err(error) => responder.respond_with_error(conversations::error(error)),
-                    }
-                })
+                prompt::receive(
+                    request,
+                    responder,
+                    connection,
+                    create_message.clone(),
+                    projection_history.clone(),
+                    prompted_sessions.clone(),
+                    false,
+                    None,
+                )
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -466,6 +861,34 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
             agent_client_protocol::on_receive_notification!(),
         )
         .on_receive_request(
+            async move |_: ReadModelAllowlistRequest, responder, connection| {
+                let dependencies = read_model_allowlist.clone();
+                connection.spawn(async move {
+                    match read_model_allowlist::call(dependencies).await {
+                        Ok(output) => {
+                            responder.respond(ModelAllowlistResponse::from(output.policy))
+                        }
+                        Err(error) => responder.respond_with_error(model_allowlist::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: UpdateModelAllowlistRequest, responder, connection| {
+                let dependencies = update_model_allowlist.clone();
+                connection.spawn(async move {
+                    match update_model_allowlist::call(dependencies, request.patterns).await {
+                        Ok(output) => {
+                            responder.respond(ModelAllowlistResponse::from(output.policy))
+                        }
+                        Err(error) => responder.respond_with_error(model_allowlist::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
             async move |_: ReadModelSelectionRequest, responder, connection| {
                 let dependencies = read_model_selection.clone();
                 connection.spawn(async move {
@@ -488,6 +911,215 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                             selection: Some(output.selected_model.into()),
                         }),
                         Err(error) => responder.respond_with_error(model_selection::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: agents::ReadRequest, responder, connection| {
+                let dependencies = read_agent.clone();
+                let sessions = read_agent_sessions.clone();
+                connection.spawn(async move {
+                    let role = match setup::role(request.role) {
+                        Ok(role) => role,
+                        Err(error) => {
+                            return responder
+                                .respond_with_error(Error::invalid_params().data(error));
+                        }
+                    };
+                    match responder
+                        .cancellation()
+                        .run_until_cancelled(async {
+                            application::use_cases::read_agent::call(
+                                dependencies,
+                                request.cwd,
+                                role,
+                            )
+                            .await
+                            .map_err(conversations::error)
+                        })
+                        .await
+                    {
+                        Ok(output) => {
+                            if let Some(conversation) = output.conversation {
+                                sessions.register(
+                                    &conversation.id,
+                                    conversation
+                                        .workspace
+                                        .clone()
+                                        .expect("Griller has a workspace"),
+                                );
+                                responder.respond(agents::response(&conversation))
+                            } else {
+                                responder.respond(agents::Response { conversation: None })
+                            }
+                        }
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: agents::StartRequest, responder, connection| {
+                let dependencies = create_agent.clone();
+                let sessions = agent_sessions.clone();
+                connection.spawn(async move {
+                    let result = async {
+                        let selection = conversations::selection(Some(&request.selection))?
+                            .ok_or_else(|| Error::invalid_params().data("Choose a model first"))?;
+                        let output = application::use_cases::create_agent::call(
+                            dependencies,
+                            selection,
+                            request.cwd,
+                            setup::role(request.role)
+                                .map_err(|error| Error::invalid_params().data(error))?,
+                        )
+                        .await
+                        .map_err(conversations::error)?;
+                        sessions.register(
+                            &output.conversation.id,
+                            output
+                                .conversation
+                                .workspace
+                                .clone()
+                                .expect("Griller has a workspace"),
+                        );
+                        Ok(agents::response(&output.conversation))
+                    }
+                    .await;
+                    match result {
+                        Ok(response) => responder.respond(response),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: agents::ResumeRequest, responder, connection| {
+                let request = PromptRequest::new(
+                    request.session_id,
+                    vec![agent_client_protocol::v1::schema::ContentBlock::Text(
+                        agent_client_protocol::v1::schema::TextContent::new("Resume"),
+                    )],
+                );
+                prompt::receive(
+                    request,
+                    responder,
+                    connection,
+                    resume_dependencies.clone(),
+                    resume_history.clone(),
+                    resume_sessions.clone(),
+                    true,
+                    None,
+                )
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: agents::AcknowledgeRequest, responder, connection| {
+                let dependencies = update_agent.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_agent::call(
+                        dependencies,
+                        request.session_id,
+                    )
+                    .await
+                    {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: setup::ReadRequest, responder, connection| {
+                let dependencies = read_setup.clone();
+                connection.spawn(async move {
+                    let result = responder
+                        .cancellation()
+                        .run_until_cancelled(async {
+                            application::use_cases::read_setup::call(
+                                dependencies,
+                                request.cwd,
+                                request.session_id,
+                                tokio_util::sync::CancellationToken::new(),
+                            )
+                            .await
+                            .map(setup::Response::from)
+                            .map_err(conversations::error)
+                        })
+                        .await;
+                    match result {
+                        Ok(output) => responder.respond(output),
+                        Err(error) => responder.respond_with_error(error),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: setup::UpdateRequest, responder, connection| {
+                let dependencies = update_setup.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_setup::call(
+                        dependencies,
+                        request.session_id,
+                        request.revision,
+                        request.proposal,
+                        request.confirm,
+                        tokio_util::sync::CancellationToken::new(),
+                    )
+                    .await
+                    {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: guidance::ReadRequest, responder, connection| {
+                let dependencies = read_guidance.clone();
+                connection.spawn(async move {
+                    match application::use_cases::read_guidance::call(
+                        dependencies,
+                        request.session_id,
+                        request.cwd,
+                        request.phase,
+                        request.scopes,
+                        request.references,
+                    )
+                    .await
+                    {
+                        Ok(output) => responder.respond(guidance::Response::from(output)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: guidance::AdoptRequest, responder, connection| {
+                let dependencies = update_guidance.clone();
+                connection.spawn(async move {
+                    match application::use_cases::update_guidance::call(
+                        dependencies,
+                        request.session_id,
+                        request.revision,
+                        request.available,
+                        request.phase,
+                        request.scopes,
+                        request.references,
+                    )
+                    .await
+                    {
+                        Ok(output) => responder.respond(agents::response(&output.conversation)),
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
                     }
                 })
             },

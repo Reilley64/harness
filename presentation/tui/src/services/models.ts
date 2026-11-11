@@ -4,7 +4,7 @@ import type {
   ModelPricing,
   ModelSelection,
 } from "../types/model.js";
-import { modelEfforts } from "../types/model.js";
+import { modelCapabilities, modelEfforts } from "../types/model.js";
 import { PresentationError } from "./errors.js";
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -56,6 +56,17 @@ export function parseModels(value: unknown): Model[] {
       throw new PresentationError(
         "Invalid model entry returned by the ACP agent.",
       );
+    const capabilities = entry.capabilities ?? [];
+    if (
+      !Array.isArray(capabilities) ||
+      capabilities.some(
+        (capability: unknown) =>
+          !modelCapabilities.some((known) => known === capability),
+      )
+    )
+      throw new PresentationError(
+        "Invalid model capabilities returned by the ACP agent.",
+      );
     const efforts = entry.efforts ?? [];
     if (
       !Array.isArray(efforts) ||
@@ -74,10 +85,16 @@ export function parseModels(value: unknown): Model[] {
         entry.contextWindow > 1_000_000_000)
     )
       throw new PresentationError("Invalid model context window.");
+    if (entry.blocked != null && typeof entry.blocked !== "string")
+      throw new PresentationError("Invalid model availability.");
     const model: Model = {
+      blocked: entry.blocked == null ? null : String(entry.blocked),
       id: entry.id,
       name: entry.name,
       providerId: entry.providerId,
+      capabilities: modelCapabilities.filter((capability) =>
+        capabilities.includes(capability),
+      ),
       efforts: modelEfforts.filter((effort) => efforts.includes(effort)),
       pricing: parsePricing(entry.pricing),
       contextWindow:

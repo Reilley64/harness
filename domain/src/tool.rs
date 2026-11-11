@@ -9,9 +9,21 @@ pub enum Tool {
     Grep,
     AstSearch,
     WebSearch,
+    RequestHumanInput,
+    PublishWork,
+    PrepareAssignment,
+    DispatchResearch,
+    JoinChildren,
+    BackgroundChildren,
+    CompleteChildrenFollowUp,
+    ReadChildren,
+    ReadChildResult,
+    McpCall,
+    McpConfiguration,
 }
+
 impl Tool {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 20] = [
         Self::Read,
         Self::Bash,
         Self::Edit,
@@ -21,7 +33,19 @@ impl Tool {
         Self::Grep,
         Self::AstSearch,
         Self::WebSearch,
+        Self::RequestHumanInput,
+        Self::PublishWork,
+        Self::PrepareAssignment,
+        Self::DispatchResearch,
+        Self::JoinChildren,
+        Self::BackgroundChildren,
+        Self::CompleteChildrenFollowUp,
+        Self::ReadChildren,
+        Self::ReadChildResult,
+        Self::McpCall,
+        Self::McpConfiguration,
     ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Read => "read",
@@ -33,12 +57,39 @@ impl Tool {
             Self::Grep => "grep",
             Self::AstSearch => "ast_search",
             Self::WebSearch => "web_search",
+            Self::RequestHumanInput => "request_human_input",
+            Self::PublishWork => "publish_work",
+            Self::PrepareAssignment => "prepare_assignment",
+            Self::DispatchResearch => "dispatch_research",
+            Self::JoinChildren => "join_children",
+            Self::BackgroundChildren => "background_children",
+            Self::CompleteChildrenFollowUp => "complete_children_followup",
+            Self::ReadChildren => "read_children",
+            Self::ReadChildResult => "read_child_result",
+            Self::McpCall => "mcp_call",
+            Self::McpConfiguration => "mcp_configuration",
         }
     }
+
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|tool| tool.as_str() == value)
     }
+
     pub fn may_mutate(self) -> bool {
-        matches!(self, Self::Bash | Self::Edit | Self::Write)
+        matches!(
+            self,
+            Self::Bash
+                | Self::Edit
+                | Self::Write
+                | Self::RequestHumanInput
+                | Self::PublishWork
+                | Self::PrepareAssignment
+                | Self::DispatchResearch
+                | Self::JoinChildren
+                | Self::BackgroundChildren
+                | Self::CompleteChildrenFollowUp
+                | Self::McpCall
+                | Self::McpConfiguration
+        )
     }
 }

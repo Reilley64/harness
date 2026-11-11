@@ -1,3 +1,5 @@
+use crate::provider_retries;
+
 #[derive(
     Debug, Clone, agent_client_protocol::JsonRpcNotification, serde::Serialize, serde::Deserialize,
 )]
@@ -16,6 +18,7 @@ pub(crate) struct Summary {
     pub context_tokens: Option<u64>,
     pub model_id: Option<String>,
     pub partial: bool,
+    pub provider_wait: Option<serde_json::Value>,
 }
 impl From<domain::UsageSummary> for Summary {
     fn from(value: domain::UsageSummary) -> Self {
@@ -25,6 +28,7 @@ impl From<domain::UsageSummary> for Summary {
             context_tokens: value.context_tokens,
             model_id: value.model_id,
             partial: value.partial,
+            provider_wait: value.provider_retry.as_ref().map(provider_retries::summary),
         }
     }
 }

@@ -9,6 +9,7 @@ use agent_client_protocol::v1::schema::Meta;
 use tokio_util::sync::CancellationToken;
 
 use crate::models::ModelSummary;
+use crate::provider_retries;
 use crate::tools;
 
 #[derive(Clone, Default)]
@@ -112,16 +113,39 @@ pub(crate) fn selection(meta: Option<&Meta>) -> Result<Option<domain::ModelSelec
 
 pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
     let model = ModelSummary::from(application::use_cases::read_models::Output {
+        blocked: None,
         id: conversation.model.id.clone(),
         name: conversation.model.name.clone(),
         context_window: conversation.model.context_window,
         provider_id: conversation.model.provider_id.clone(),
+        capabilities: conversation.model.capabilities.clone(),
         efforts: conversation.model.efforts.clone(),
         pricing: conversation.model.pricing.clone(),
     });
     [("harness/conversation".into(), serde_json::json!({
         "id": conversation.id,
         "workspace": conversation.workspace,
+        "resumeRequired": conversation.resume_required,
+        "providerWait": conversation.provider_retry.as_ref().map(provider_retries::summary),
+        "selectedInstructions": conversation.selected_instructions,
+        "assignment": conversation.assignment.as_ref().map(|a| serde_json::json!({"workId":a.work_id,"intent":a.intent,"version":a.proposal.version,"creatorId":a.creator_id,"approvedAt":a.approved_at,"document":a.proposal.document})),
+        "research": conversation.research.as_ref().map(|research| serde_json::json!({"parentId":research.parent_id,"parentAgentId":research.parent_agent_id,"intent":research.intent,"assignmentId":research.assignment_id,"executionId":research.execution_id})),
+        "agent": conversation.agent.as_ref().map(|agent| serde_json::json!({
+            "id": agent.id.0, "role": match agent.role { domain::AgentRole::ChiefOfStaff => "chief_of_staff", domain::AgentRole::Setup => "setup", domain::AgentRole::Research => "research", _ => "griller" }, "creatorId": conversation.research.as_ref().map(|research| &research.parent_agent_id).or_else(|| conversation.assignment.as_ref().map(|assignment| &assignment.creator_id)),
+        })),
+        "runs": conversation.runs.iter().map(|run| serde_json::json!({
+            "id": run.id, "agentId": run.agent_id.0, "replyId": run.reply_id,
+            "modelId": run.model_id, "providerId": run.provider_id.0, "effort": effort(run.effort),
+            "task": run.instructions.as_ref().and_then(|id| conversation.instruction_snapshots.iter().find(|snapshot| &snapshot.id == id)).map_or("grilling", |snapshot| snapshot.phase.as_str()),
+            "instructions": run.instructions,
+            "status": match run.status {
+                domain::RunStatus::Running => "running",
+                domain::RunStatus::NeedsHuman => "needs_human",
+                domain::RunStatus::Stopped => "stopped",
+                domain::RunStatus::Failed => "failed",
+                domain::RunStatus::Interrupted => "interrupted",
+            },
+        })).collect::<Vec<_>>(),
         "usage": super::usage::Summary::from(conversation.usage()),
         "providerConnectionId": conversation.provider_connection_id,
         "model": model,
@@ -143,7 +167,7 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
                 domain::MessageStatus::Limited => "limited",
                 domain::MessageStatus::Refused => "refused",
             },
-            "modelId": message.model_id,
+            "modelId": message.model_id, "providerId": message.provider_id.0,
             "tools": message.steps.iter().flat_map(|step|&step.calls).map(|call|tools::summary(&message.id,call)).collect::<Vec<_>>(),
             "steering": message.steering.iter().map(|s|serde_json::json!({"id":s.id,"text":s.text,"afterStep":s.after_step})).collect::<Vec<_>>(),
             "effort": effort(message.effort),

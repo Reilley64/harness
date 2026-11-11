@@ -1,4 +1,4 @@
-import type { Conversation, Message } from "../types/conversation.js";
+import type { Conversation, Message, Run } from "../types/conversation.js";
 import { messageStatuses } from "../types/conversation.js";
 import type { ModelEffort, ModelSelection } from "../types/model.js";
 import { modelEfforts } from "../types/model.js";
@@ -132,6 +132,13 @@ export function parseConversation(value: unknown): Conversation {
       "Incomplete conversation returned by the agent.",
     );
   return {
+    agent: value.agent == null ? null : parseAgent(value.agent),
+    runs: value.runs == null ? [] : parseRuns(value.runs),
+    resumeRequired: value.resumeRequired === true,
+    selectedInstructions:
+      typeof value.selectedInstructions === "string"
+        ? value.selectedInstructions
+        : null,
     id: id(value.id),
     workspace: typeof value.workspace === "string" ? value.workspace : null,
     usage: value.usage == null ? undefined : parseUsage(value.usage),
@@ -143,6 +150,59 @@ export function parseConversation(value: unknown): Conversation {
     updatedAt: counter(value.updatedAt),
     revision: counter(value.revision),
   };
+}
+
+function parseAgent(value: unknown): NonNullable<Conversation["agent"]> {
+  if (
+    !record(value) ||
+    (value.role !== "griller" &&
+      value.role !== "chief_of_staff" &&
+      value.role !== "setup" &&
+      value.role !== "research") ||
+    (value.role === "chief_of_staff" || value.role === "research"
+      ? typeof value.creatorId !== "string"
+      : value.creatorId !== null)
+  )
+    throw new PresentationError("Invalid agent identity.");
+  return {
+    id: id(value.id),
+    role: value.role,
+    creatorId: value.creatorId === null ? null : id(value.creatorId),
+  };
+}
+
+function parseRuns(value: unknown): Run[] {
+  if (!Array.isArray(value))
+    throw new PresentationError("Invalid run history.");
+  return value.map((run: unknown) => {
+    if (
+      !record(run) ||
+      typeof run.modelId !== "string" ||
+      ![
+        "grilling",
+        "specification",
+        "tickets",
+        "coordination",
+        "setup",
+        "research",
+      ].includes(String(run.task)) ||
+      !["running", "needs_human", "stopped", "failed", "interrupted"].includes(
+        String(run.status),
+      )
+    )
+      throw new PresentationError("Invalid run.");
+    return {
+      id: id(run.id),
+      agentId: id(run.agentId),
+      replyId: id(run.replyId),
+      modelId: run.modelId,
+      effort: effort(run.effort),
+      task: run.task as Run["task"],
+      instructions:
+        typeof run.instructions === "string" ? run.instructions : null,
+      status: run.status as Run["status"],
+    };
+  });
 }
 
 export function selectionMetadata(selection: ModelSelection) {

@@ -46,13 +46,19 @@ pub fn read_models(
         let future = cached();
         Box::pin(async move {
             let responses = future.await.context("Could not load model catalog")?;
-            Ok(
-                tokio::task::spawn_blocking(move || {
-                    responses.into_iter().map(Into::into).collect()
-                })
-                .await
-                .context("Could not process model catalog")?,
-            )
+            tokio::task::spawn_blocking(move || {
+                let models: Vec<domain::Model> = responses.into_iter().map(Into::into).collect();
+                let mut ids = std::collections::HashSet::new();
+                if models.iter().any(|model| {
+                    model.id.is_empty()
+                        || !ids.insert((model.provider_id.clone(), model.id.clone()))
+                }) {
+                    return Err("Invalid or duplicate catalog model identity".into());
+                }
+                Ok(models)
+            })
+            .await
+            .context("Could not process model catalog")?
         })
     }
 }

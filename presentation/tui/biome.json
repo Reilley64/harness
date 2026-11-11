@@ -20,7 +20,7 @@
       "includes": [
         "src/components/atoms/terminal-text.tsx",
         "src/hooks/use-model-picker.ts",
-        "src/services/terminal-scroll.ts",
+        "src/services/terminal-input.ts",
         "src/services/transcript.ts"
       ],
       "linter": {

@@ -3,13 +3,21 @@
 ## Scope
 
 The `create_provider_connection` use case signs in and saves one active
-connection per provider. The initial provider is ChatGPT (`openai`). Repeating
-sign-in reuses the active registration and stable connection ID, verifies the
-same account, and replaces credentials only after validation.
+connection per provider: ChatGPT (`openai`) and OpenRouter (`openrouter`).
+ChatGPT reconnect verifies the same account/registration. OpenRouter reconnect
+replaces its API key only after successful PKCE exchange and preserves its opaque
+local connection ID; the key exchange does not establish a verified account subject.
 
-Text chat consumes this connection and refreshes credentials on demand near
-access-token expiry. Account switching, connection listing, and logout/revocation
+Text chat consumes the selected provider's connection. ChatGPT refreshes
+credentials on demand near access-token expiry; OpenRouter keys have no assumed
+refresh-token protocol. Account switching, connection listing, and logout/revocation
 are not implemented. No background refresh loop runs.
+
+Successful setup initializes an uncustomized provider wildcard through the application
+policy port. Re-authentication never broadens a custom model allowlist, including
+an empty list. Legacy credential discovery alone grants no model coverage. See
+[model allowlist](model-allowlist.md) for settings, initialization and commit
+boundaries.
 
 ## Modules and interfaces
 
@@ -26,7 +34,7 @@ are not implemented. No background refresh loop runs.
   port's `Arc` storage, `Clone`, constructor, and forwarding `call` method;
   associated errors remain explicit.
 - `infrastructure/src/create_provider_connection_factory/mod.rs`: factory whose provider-ID match
-  selects OpenAI or returns an unsupported-provider error.
+  selects OpenAI, OpenRouter, or returns an unsupported-provider error.
 - `infrastructure/src/create_provider_connection/openai.rs`: the documented ChatGPT flow,
   discovery, validation, and returning-account checks.
 - `infrastructure/src/create_provider_connection/callback.rs`: per-attempt loopback listener.
@@ -81,6 +89,44 @@ Account eligibility and preview limitations still apply. This does not grant
 unrestricted developer-API access or an independent usage allowance. Text
 inference follows the documented Responses API requirements.
 
+## OpenRouter flow
+
+The native `/auth` picker advertises OpenRouter separately from ChatGPT. Its Rust
+adapter follows [OpenRouter OAuth PKCE](https://openrouter.ai/docs/guides/overview/auth/oauth):
+bind an ephemeral IPv4 loopback callback, generate fresh 256-bit state and S256
+PKCE, and present `https://openrouter.ai/auth` with `callback_url`, `state`,
+`code_challenge`, and `code_challenge_method=S256`. The shared callback rejects
+mismatched/missing state without completing the attempt. OpenRouter documents
+that denial does not return state; in that case use Escape to cancel, or let the
+attempt expire. No unbound denial can authorize a code exchange.
+
+The backend alone exchanges a bounded code with its verifier at
+`POST /api/v1/auth/keys`, as JSON with `code_challenge_method:S256`. Redirects
+are disabled and HTTP responses are bounded at 1 MiB. It requires a nonempty,
+bounded key without control characters, then atomically saves a version-one
+record containing the opaque connection ID, issuer origin and key. Connecting
+does not invoke a model, query credits, or promise entitlement. OpenRouter
+inference is separately billed to the authorizing account, not a ChatGPT plan.
+
+Records and locks are separate: `auth/openrouter.json` and
+`auth/openrouter.lock`, under the shared app-data root. Existing corrupt,
+oversized, unsafe or issuer-incompatible records are preserved and rejected.
+Saved keys use the same nonempty, 16,384-byte and no-control-character checks as
+exchanged keys and inference admission; invalid saved keys are rejected before
+opening a browser callback or starting a key exchange.
+Cancel/disconnect/timeout closes the listener and releases the lock. A completed
+atomic commit may already have saved the new key; cancellation is not revocation.
+
+`AUTHENTICATION__OPENROUTER__ISSUER` defaults to `https://openrouter.ai`;
+`OPEN_BROWSER` and `TIMEOUT_SECONDS` default to true and 600 in that section.
+Issuer overrides must be HTTPS origins, or explicit loopback HTTP fixtures.
+The inference origin must match both this configured issuer and the stored
+issuer before the key can be used. No OpenAI credential lookup or reuse occurs.
+A regional/different inference origin requires a separately designed trust
+binding; changing a URL alone does not forward this key there.
+
+OpenAI environment names/defaults are listed in [provider authentication settings](catalog-configuration.md#provider-authentication-settings).
+
 ## Credential storage
 
 The default directory is `~/.harness/auth/`; OpenAI uses `openai.json` and a
@@ -123,7 +169,7 @@ safety timeout, so lowering the backend timeout works without frontend changes.
 
 Cancel, timeout, or disconnect drops the pending operation, closes the callback
 listener, and releases the lock. Cancellation does not revoke an authorization
-already granted at OpenAI; logout/revocation remains separate work. A request
+already granted at the provider; logout/revocation remains separate work. A request
 cancelled at the persistence commit point may already have saved a completed
 connection.
 
@@ -174,7 +220,12 @@ Temporary probes outside the repository exercise:
 - Absence of access and refresh tokens from ACP messages and terminal output.
 
 These are local signed-token fixtures, not a completed login against a real
-ChatGPT account. A real browser sign-in remains a manual verification step.
+ChatGPT account. OpenRouter external loopback probes additionally exercise native
+PKCE/callback, credential isolation, no inference on connect, cancellation,
+corruption/permissions, restart, stock Responses/tool execution and provider
+switches. The OAuth/gateway responses are scripted substitutions, not live
+entitlement, model quality, billing or account-login proof. Real browser sign-in
+and paid inference remain separately authorized manual verification steps.
 
 Further primary sources are collected in
 [the OAuth research notes](research/chatgpt-oauth.md).

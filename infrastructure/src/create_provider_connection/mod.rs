@@ -1,5 +1,6 @@
 mod callback;
 pub(crate) mod openai;
+pub(crate) mod openrouter;
 pub(crate) mod settings;
 pub(crate) mod storage;
 

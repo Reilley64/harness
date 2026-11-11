@@ -1,39 +1,28 @@
-import { useStdin, useStdout } from "ink";
 import { useEffect, useRef } from "react";
-import {
-  disableMouseScroll,
-  enableMouseScroll,
-  mouseScroll,
-} from "../services/terminal-scroll.js";
+import { useTerminalInput } from "./use-terminal-input.js";
 
 export function useTerminalScroll(
   scroll: (rows: number) => void,
   active: boolean,
 ) {
-  const { stdin } = useStdin();
-  const { stdout } = useStdout();
-  const latest = useRef(scroll);
-  latest.current = scroll;
+  const input = useTerminalInput();
+  const latest = useRef({ scroll, active });
+  latest.current = { scroll, active };
+  useEffect(
+    () =>
+      input.subscribe((event) => {
+        if (
+          event.type === "mouse" &&
+          !event.released &&
+          event.wheel &&
+          latest.current.active
+        )
+          latest.current.scroll(event.wheel);
+      }),
+    [input],
+  );
+
   useEffect(() => {
-    if (
-      !active ||
-      !("isTTY" in stdin) ||
-      !stdin.isTTY ||
-      !("isTTY" in stdout) ||
-      !stdout.isTTY
-    )
-      return;
-    let pending = "";
-    const input = (chunk: Buffer | string) => {
-      const parsed = mouseScroll(pending + chunk.toString());
-      pending = parsed.remainder;
-      if (parsed.rows) latest.current(parsed.rows);
-    };
-    stdin.on("data", input);
-    stdout.write(enableMouseScroll);
-    return () => {
-      stdin.off("data", input);
-      stdout.write(disableMouseScroll);
-    };
-  }, [active, stdin, stdout]);
+    if (active) return input.acquireMouse();
+  }, [input, active]);
 }

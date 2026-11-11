@@ -2,5 +2,9 @@
   {
     "id": "openai",
     "name": "ChatGPT"
+  },
+  {
+    "id": "openrouter",
+    "name": "OpenRouter"
   }
 ]

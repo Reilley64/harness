@@ -10,6 +10,9 @@ import {
   PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk";
 import type { Conversation } from "../types/conversation.js";
+import type { Deciders, DecisionResponse } from "../types/decision.js";
+import type { Guidance, GuidanceQuery } from "../types/guidance.js";
+import type { McpConfiguration, McpOperation } from "../types/mcp.js";
 import type { Model, ModelSelection } from "../types/model.js";
 import type { Provider } from "../types/provider.js";
 import type {
@@ -18,16 +21,31 @@ import type {
 } from "../types/provider-connection.js";
 import type { ToolCall } from "../types/tool.js";
 import type { Usage } from "../types/usage.js";
+import type { ApprovedWork, WorkResponse } from "../types/work.js";
 import {
   parseAuthorizationChallenge,
   parseProviderConnection,
+  validAuthorizationUrl,
 } from "./authorization.js";
+import {
+  parseChildInstruction,
+  parseChildResult,
+  parseChildren,
+  parseExecution,
+  parseScopeAmendment,
+} from "./children.js";
 import { parseConversation, selectionMetadata } from "./conversations.js";
+import { parseCreationPage } from "./creation-map.js";
+import { parseDeciders, parseDecision } from "./decisions.js";
 import { PresentationError } from "./errors.js";
+import { parseGuidance } from "./guidance.js";
+import { parseMcp } from "./mcp.js";
 import { parseModelSelection, parseModels } from "./models.js";
 import { readableStream } from "./readable-stream.js";
+import { parseSetup } from "./setup.js";
 import { parseTool } from "./tools.js";
 import { parseUsageUpdate } from "./usage.js";
+import { parseWork } from "./work.js";
 
 export type Agent = ReturnType<typeof connectAgent>;
 
@@ -82,6 +100,14 @@ export function connectAgent() {
     string,
     { providerId: string; present: (challenge: AuthorizationChallenge) => void }
   >();
+  const mcpChallenges = new Map<
+    string,
+    {
+      workspace: string;
+      revision: string;
+      present: (url: string) => void;
+    }
+  >();
   const replies = new Map<
     string,
     {
@@ -97,6 +123,14 @@ export function connectAgent() {
   let selectionWrites: Promise<void> = Promise.resolve();
   let pendingSelections = 0;
   const pendingReplies = new Set<Promise<Conversation>>();
+  const pendingPolicyWrites = new Set<Promise<string[]>>();
+  const pendingWorkWrites = new Set<Promise<WorkResponse>>();
+  const pendingNative = new Set<Promise<unknown>>();
+  const pendingChildren = new Set<Promise<unknown>>();
+  const pendingAccounting = new Set<Promise<unknown>>();
+  const pendingMcp = new Set<Promise<McpConfiguration>>();
+  const mcpControllers = new Set<AbortController>();
+  const nativeControllers = new Map<string, AbortController>();
   const connection = client({ name: "harness-tui" })
     .onNotification(methods.client.session.update, ({ params }) => {
       const update = params.update;
@@ -114,6 +148,39 @@ export function connectAgent() {
           replies.get(params.sessionId)?.tool?.(parseTool(value));
       }
     })
+    .onNotification(
+      "_harness/mcp/authorization",
+      (value: unknown) => {
+        if (
+          typeof value !== "object" ||
+          value === null ||
+          !("authentication_id" in value) ||
+          typeof value.authentication_id !== "string" ||
+          !("workspace" in value) ||
+          typeof value.workspace !== "string" ||
+          !("revision" in value) ||
+          typeof value.revision !== "string" ||
+          !("authorization_url" in value) ||
+          typeof value.authorization_url !== "string"
+        )
+          throw new PresentationError("Invalid MCP authorization challenge.");
+        return {
+          id: value.authentication_id,
+          workspace: value.workspace,
+          revision: value.revision,
+          url: validAuthorizationUrl(value.authorization_url),
+        };
+      },
+      ({ params }) => {
+        const pending = mcpChallenges.get(params.id);
+        if (
+          pending &&
+          pending.workspace === params.workspace &&
+          pending.revision === params.revision
+        )
+          pending.present(params.url);
+      },
+    )
     .onNotification("_harness/usage", parseUsageUpdate, ({ params }) => {
       replies.get(params.sessionId)?.usage?.(params.usage);
     })
@@ -171,6 +238,52 @@ export function connectAgent() {
     return initialization;
   }
 
+  function updateMcp(
+    operation: McpOperation,
+    workspace: string,
+    signal: AbortSignal,
+    present?: (url: string) => void,
+  ): Promise<McpConfiguration> {
+    if (closing)
+      return Promise.reject(new PresentationError("The agent is closing."));
+    const controller = new AbortController();
+    const cancellationSignal = AbortSignal.any([signal, controller.signal]);
+    mcpControllers.add(controller);
+    const pending = (async () => {
+      cancellationSignal.throwIfAborted();
+      const initialized = await initialize();
+      cancellationSignal.throwIfAborted();
+      if (initialized._meta?.["harness/mcp"] !== true)
+        throw new PresentationError(
+          "MCP configuration is not available from this agent.",
+        );
+
+      const authenticationId = randomUUID();
+      if (operation.action === "connect" && present)
+        mcpChallenges.set(authenticationId, {
+          workspace,
+          revision: operation.revision,
+          present,
+        });
+      try {
+        return parseMcp(
+          await connection.agent.request<unknown>(
+            "_harness/mcp",
+            { workspace, authentication_id: authenticationId, ...operation },
+            { cancellationSignal, stopWaitingOnCancel: false },
+          ),
+        );
+      } finally {
+        mcpChallenges.delete(authenticationId);
+      }
+    })();
+    pendingMcp.add(pending);
+    return pending.finally(() => {
+      mcpControllers.delete(controller);
+      pendingMcp.delete(pending);
+    });
+  }
+
   async function listProviders(signal: AbortSignal): Promise<Provider[]> {
     await initialize();
     signal.throwIfAborted();
@@ -207,6 +320,332 @@ export function connectAgent() {
       },
     );
     return parseModels(response);
+  }
+
+  function modelAllowlist(
+    patterns?: string[],
+    signal?: AbortSignal,
+  ): Promise<string[]> {
+    if (closing)
+      return Promise.reject(new PresentationError("The agent is closing."));
+    const cancellationSignal =
+      patterns === undefined && signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+        : AbortSignal.timeout(30000);
+    const pending = (async () => {
+      cancellationSignal.throwIfAborted();
+      const initialized = await initialize();
+      cancellationSignal.throwIfAborted();
+      if (initialized._meta?.["harness/modelAllowlist"] !== true)
+        throw new PresentationError(
+          "The agent does not support model permission settings.",
+        );
+      const response = await connection.agent.request<unknown>(
+        patterns === undefined
+          ? "_harness/model-allowlist/read"
+          : "_harness/model-allowlist/update",
+        patterns === undefined ? {} : { patterns },
+        {
+          cancellationSignal,
+          stopWaitingOnCancel: true,
+        },
+      );
+      if (
+        typeof response !== "object" ||
+        response === null ||
+        !("patterns" in response) ||
+        !Array.isArray(response.patterns) ||
+        response.patterns.some((value: unknown) => typeof value !== "string")
+      )
+        throw new PresentationError(
+          "Invalid model allowlist returned by the agent.",
+        );
+      return response.patterns;
+    })();
+    if (patterns === undefined) return pending;
+    pendingPolicyWrites.add(pending);
+    return pending.finally(() => pendingPolicyWrites.delete(pending));
+  }
+
+  async function childRequest(
+    method: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+    write = false,
+  ): Promise<unknown> {
+    const init = await initialize();
+    signal?.throwIfAborted();
+    if (closing || init._meta?.["harness/children"] !== true)
+      throw new PresentationError(
+        "Managed child controls unavailable or closing.",
+      );
+    const pending = connection.agent.request<unknown>(method, params, {
+      cancellationSignal: signal,
+    });
+    if (write) pendingChildren.add(pending);
+    try {
+      return await pending;
+    } finally {
+      pendingChildren.delete(pending);
+    }
+  }
+
+  async function readChildren(sessionId: string, signal?: AbortSignal) {
+    return parseChildren(
+      await childRequest("_harness/children/read", { sessionId }, signal),
+    );
+  }
+  async function childResult(
+    sessionId: string,
+    executionId: string,
+    signal?: AbortSignal,
+  ) {
+    return parseChildResult(
+      await childRequest(
+        "_harness/children/result",
+        { sessionId, executionId },
+        signal,
+      ),
+    );
+  }
+  async function controlChildren(
+    sessionId: string,
+    operation: "join" | "background" | "stop",
+    args: Record<string, unknown>,
+  ) {
+    return parseChildren(
+      await childRequest(
+        `_harness/children/${operation}`,
+        { ...args, sessionId },
+        undefined,
+        true,
+      ),
+    );
+  }
+  async function changeScope(
+    operation: "request" | "approve",
+    sessionId: string,
+    args: Record<string, unknown>,
+  ) {
+    const value = await childRequest(
+      `_harness/children/scope/${operation}`,
+      { ...args, sessionId },
+      undefined,
+      true,
+    );
+    if (!value || typeof value !== "object" || !("scope" in value))
+      throw new PresentationError("Invalid durable scope response.");
+    return parseScopeAmendment(value.scope);
+  }
+
+  async function resumeChild(sessionId: string) {
+    await viewConversation(sessionId);
+    return childRequest(
+      "_harness/agent/resume",
+      { sessionId },
+      undefined,
+      true,
+    );
+  }
+
+  async function answerAgent(
+    sessionId: string,
+    requestRun: string,
+    text: string,
+  ) {
+    await viewConversation(sessionId);
+    return childRequest(
+      "_harness/agent/answer",
+      { sessionId, requestRun, text },
+      undefined,
+      true,
+    );
+  }
+
+  async function steerChild(
+    sessionId: string,
+    executionId: string,
+    id: string,
+    text: string,
+  ) {
+    const value = await childRequest(
+      "_harness/children/steer",
+      { sessionId, executionId, id, text },
+      undefined,
+      true,
+    );
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("instruction" in value) ||
+      !("effectiveBoundary" in value) ||
+      typeof value.effectiveBoundary !== "string"
+    )
+      throw new PresentationError(
+        "Invalid durable child instruction acknowledgement.",
+      );
+    return {
+      instruction: parseChildInstruction(value.instruction),
+      effectiveBoundary: value.effectiveBoundary,
+    };
+  }
+
+  async function dispatchChild(
+    sessionId: string,
+    args: Record<string, unknown>,
+  ) {
+    const state = await readChildren(sessionId);
+    if (state?.sessionRevision === undefined)
+      throw new PresentationError("Inspect an active parent before dispatch.");
+    const value = await childRequest(
+      "_harness/children/dispatch",
+      { ...args, sessionId, revision: state.sessionRevision },
+      undefined,
+      true,
+    );
+    if (!value || typeof value !== "object" || !("execution" in value))
+      throw new PresentationError("Invalid dispatch response.");
+    return parseExecution(value.execution);
+  }
+  async function adoptResearch(
+    sessionId: string,
+    intent: string,
+    revision: number,
+    snapshot: string,
+  ) {
+    await childRequest(
+      "_harness/children/guidance/adopt",
+      { sessionId, intent, revision, snapshot },
+      undefined,
+      true,
+    );
+  }
+  async function viewConversation(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<Conversation> {
+    const value = await childRequest(
+      "_harness/conversation/view",
+      { sessionId },
+      signal,
+    );
+    if (!value || typeof value !== "object" || !("conversation" in value))
+      throw new PresentationError("Invalid actor snapshot.");
+    const next = parseConversation(value.conversation);
+    if (next.id !== sessionId)
+      throw new PresentationError("Actor snapshot target changed.");
+    return next;
+  }
+
+  async function nativeRequest(
+    method: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const init = await initialize();
+    signal?.throwIfAborted();
+    if (closing || init._meta?.["harness/nativeDecider"] !== true)
+      throw new PresentationError("Native Decider unavailable or closing.");
+    return connection.agent.request<unknown>(method, params, {
+      cancellationSignal: signal,
+    });
+  }
+
+  async function deciders(signal: AbortSignal): Promise<Deciders> {
+    return parseDeciders(await nativeRequest("_harness/deciders", {}, signal));
+  }
+
+  async function chooseDecider(modelId: string): Promise<void> {
+    const pending = nativeRequest("_harness/decider/update", { modelId });
+    pendingNative.add(pending);
+    try {
+      parseDeciders(await pending);
+    } finally {
+      pendingNative.delete(pending);
+    }
+  }
+
+  async function readDecision(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<DecisionResponse> {
+    return parseDecision(
+      await nativeRequest("_harness/decision/read", { id }, signal),
+    );
+  }
+
+  async function selectDecision(id: string): Promise<DecisionResponse> {
+    const controller = new AbortController();
+    nativeControllers.set(id, controller);
+    const pending = nativeRequest(
+      "_harness/decision/select",
+      { id },
+      controller.signal,
+    );
+    pendingNative.add(pending);
+    try {
+      return parseDecision(await pending);
+    } finally {
+      pendingNative.delete(pending);
+      if (nativeControllers.get(id) === controller)
+        nativeControllers.delete(id);
+    }
+  }
+
+  async function stopDecision(id: string): Promise<DecisionResponse> {
+    return parseDecision(await nativeRequest("_harness/decision/stop", { id }));
+  }
+
+  async function readWork(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<WorkResponse> {
+    const init = await initialize();
+    signal.throwIfAborted();
+    if (init._meta?.["harness/approvedWork"] !== true)
+      throw new PresentationError("Approved work is unavailable.");
+    return parseWork(
+      await connection.agent.request<unknown>(
+        "_harness/work/read",
+        { id },
+        { cancellationSignal: signal, stopWaitingOnCancel: true },
+      ),
+    );
+  }
+  function approveWork(
+    work: ApprovedWork,
+    conversation: Conversation,
+    intent: string,
+    transientRetryAllowance?: number,
+  ): Promise<WorkResponse> {
+    if (closing)
+      return Promise.reject(new PresentationError("The agent is closing."));
+    const publication = work.publications.at(-1);
+    if (!publication)
+      return Promise.reject(
+        new PresentationError("Published proposal is missing."),
+      );
+    const prior = work.approvals.find((a) => a.intent === intent);
+    const pending = (async () => {
+      await initialize();
+      return parseWork(
+        await connection.agent.request<unknown>("_harness/work/approve", {
+          id: work.id,
+          revision: prior?.revision ?? work.revision,
+          version: prior?.version ?? publication.version,
+          intent,
+          transientRetryAllowance: prior
+            ? prior.transientRetryAllowance
+            : transientRetryAllowance,
+          sessionRevision: conversation.revision,
+          providerId: conversation.model.providerId,
+          modelId: conversation.model.id,
+          effort: conversation.effort,
+        }),
+      );
+    })();
+    pendingWorkWrites.add(pending);
+    return pending.finally(() => pendingWorkWrites.delete(pending));
   }
 
   async function createProviderConnection(
@@ -313,6 +752,159 @@ export function connectAgent() {
     return pending.finally(() => pendingSelections--);
   }
 
+  async function readCreationPage(after: string | null, signal?: AbortSignal) {
+    const init = await initialize();
+    signal?.throwIfAborted();
+    if (closing || init._meta?.["harness/creationMap"] !== true)
+      throw new PresentationError("Creation-map reads are unavailable.");
+    return parseCreationPage(
+      await connection.agent.request<unknown>(
+        "_harness/agents/map",
+        { cwd: workspace, after },
+        { cancellationSignal: signal },
+      ),
+    );
+  }
+
+  async function steerExisting(id: string, text: string): Promise<boolean> {
+    await viewConversation(id);
+    const value = await childRequest(
+      "_harness/conversation/steer",
+      { sessionId: id, id: randomUUID(), text },
+      undefined,
+      true,
+    );
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("accepted" in value) ||
+      typeof value.accepted !== "boolean"
+    )
+      throw new PresentationError("Invalid steering acknowledgement.");
+    return value.accepted;
+  }
+
+  async function readAgent(
+    role?: "setup" | "griller",
+    signal?: AbortSignal,
+  ): Promise<Conversation | undefined> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const cancellationSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000);
+    cancellationSignal.throwIfAborted();
+    await initialize();
+    cancellationSignal.throwIfAborted();
+    if (closing) throw new PresentationError("The agent is closing.");
+    const response = await connection.agent.request<{ conversation: unknown }>(
+      "_harness/agent/read",
+      { cwd: workspace, role },
+      { cancellationSignal, stopWaitingOnCancel: true },
+    );
+    return response.conversation == null
+      ? undefined
+      : parseConversation(response.conversation);
+  }
+
+  async function startAgent(
+    selection: ModelSelection,
+    role?: "setup" | "griller",
+  ): Promise<Conversation> {
+    await initialize();
+    await selectionWrites;
+    const response = await connection.agent.request<{ conversation: unknown }>(
+      "_harness/agent/start",
+      { cwd: workspace, selection: selectionMetadata(selection), role },
+    );
+    return parseConversation(response.conversation);
+  }
+
+  async function readSetup(id?: string, signal?: AbortSignal) {
+    if (closing) throw new PresentationError("The agent is closing.");
+    signal?.throwIfAborted();
+    await initialize();
+    signal?.throwIfAborted();
+    const response = await connection.agent.request<unknown>(
+      "_harness/setup/read",
+      { cwd: workspace, sessionId: id ?? null },
+      { cancellationSignal: signal, stopWaitingOnCancel: true },
+    );
+    return parseSetup(response);
+  }
+
+  async function updateSetup(
+    id: string,
+    revision: number,
+    proposal: string,
+    confirm: boolean,
+  ): Promise<Conversation> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const pending = connection.agent
+      .request<{ conversation: unknown }>("_harness/setup/update", {
+        sessionId: id,
+        revision,
+        proposal,
+        confirm,
+      })
+      .then((response) => parseConversation(response.conversation));
+    pendingReplies.add(pending);
+    try {
+      return await pending;
+    } finally {
+      pendingReplies.delete(pending);
+    }
+  }
+
+  async function readGuidance(
+    id?: string,
+    query: GuidanceQuery = {},
+    signal?: AbortSignal,
+  ): Promise<Guidance> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const cancellationSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000);
+    cancellationSignal.throwIfAborted();
+    await initialize();
+    cancellationSignal.throwIfAborted();
+    if (closing) throw new PresentationError("The agent is closing.");
+    const response = await connection.agent.request<unknown>(
+      "_harness/guidance/read",
+      { cwd: workspace, sessionId: id ?? null, ...query },
+      { cancellationSignal, stopWaitingOnCancel: true },
+    );
+    return parseGuidance(response);
+  }
+
+  async function adoptGuidance(
+    id: string,
+    revision: number,
+    guidance: Guidance,
+  ): Promise<Conversation> {
+    if (!guidance.available)
+      throw new PresentationError("Required instructions are blocked.");
+    const response = await connection.agent.request<{ conversation: unknown }>(
+      "_harness/guidance/adopt",
+      {
+        sessionId: id,
+        revision,
+        available: guidance.available.id,
+        phase: guidance.available.phase,
+        scopes: guidance.available.scopes,
+        references: guidance.available.references,
+      },
+    );
+    return parseConversation(response.conversation);
+  }
+
+  async function acknowledgeInterruption(id: string): Promise<Conversation> {
+    const response = await connection.agent.request<{ conversation: unknown }>(
+      "_harness/agent/acknowledge",
+      { sessionId: id },
+    );
+    return parseConversation(response.conversation);
+  }
+
   async function createConversation(
     selection: ModelSelection,
   ): Promise<Conversation> {
@@ -336,15 +928,22 @@ export function connectAgent() {
     return conversation;
   }
 
-  async function loadConversation(id: string): Promise<Conversation> {
+  async function loadConversation(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<Conversation> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const cancellationSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+      : AbortSignal.timeout(15000);
+    cancellationSignal.throwIfAborted();
     await initialize();
+    cancellationSignal.throwIfAborted();
+    if (closing) throw new PresentationError("The agent is closing.");
     const response = await connection.agent.request(
       methods.agent.session.load,
       { sessionId: id, cwd: workspace, mcpServers: [] },
-      {
-        cancellationSignal: AbortSignal.timeout(15000),
-        stopWaitingOnCancel: true,
-      },
+      { cancellationSignal, stopWaitingOnCancel: true },
     );
     const conversation = parseConversation(
       response?._meta?.["harness/conversation"],
@@ -354,6 +953,51 @@ export function connectAgent() {
     return conversation;
   }
 
+  async function readUsage(
+    sessionId: string | null,
+    runId: string | null,
+    workId: string | null,
+  ): Promise<unknown> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    await initialize();
+    return connection.agent.request("_harness/usage/read", {
+      sessionId,
+      runId,
+      workId,
+    });
+  }
+
+  async function updateProviderRetry(
+    sessionId: string,
+    revision: number,
+    additional: number | null,
+  ): Promise<Conversation> {
+    if (closing) throw new PresentationError("The agent is closing.");
+    const pending = (async () => {
+      await initialize();
+      const response = await connection.agent.request<{
+        conversation: unknown;
+      }>("_harness/provider-retry/update", {
+        sessionId,
+        revision,
+        id: randomUUID(),
+        additional,
+      });
+      const conversation = parseConversation(response.conversation);
+      if (conversation.id !== sessionId)
+        throw new PresentationError(
+          "The retry control returned another conversation.",
+        );
+      return conversation;
+    })();
+    pendingAccounting.add(pending);
+    try {
+      return await pending;
+    } finally {
+      pendingAccounting.delete(pending);
+    }
+  }
+
   async function createMessage(
     id: string,
     content: string,
@@ -361,6 +1005,7 @@ export function connectAgent() {
     present: (delta: string) => void,
     tool?: (call: ToolCall) => void,
     usage?: (usage: Usage) => void,
+    resume = false,
   ): Promise<Conversation> {
     if (closing || replies.has(id))
       throw new PresentationError(
@@ -384,13 +1029,17 @@ export function connectAgent() {
         return loadConversation(id);
       }
       reply.started = true;
-      const responsePromise = connection.agent.request(
-        methods.agent.session.prompt,
-        {
-          sessionId: id,
-          prompt: [{ type: "text", text: content }],
-          ...(selection ? { _meta: selectionMetadata(selection) } : {}),
-        },
+      const responsePromise = connection.agent.request<{
+        _meta?: Record<string, unknown>;
+      }>(
+        resume ? "_harness/agent/resume" : methods.agent.session.prompt,
+        resume
+          ? { sessionId: id }
+          : {
+              sessionId: id,
+              prompt: [{ type: "text", text: content }],
+              ...(selection ? { _meta: selectionMetadata(selection) } : {}),
+            },
       );
       ready(true);
       const response = await responsePromise;
@@ -439,6 +1088,22 @@ export function connectAgent() {
     return pending;
   }
 
+  async function stopExecution(id: string): Promise<void> {
+    const initialized = await initialize();
+    if (initialized._meta?.["harness/executionStop"] !== true)
+      throw new PresentationError("Durable execution Stop is unavailable.");
+    const result = await childRequest(
+      "_harness/execution/stop",
+      { sessionId: id },
+      undefined,
+      true,
+    );
+    if (!parseChildren(result))
+      throw new PresentationError(
+        "Missing durable execution Stop acknowledgement.",
+      );
+  }
+
   async function cancelReply(id: string): Promise<void> {
     const reply = replies.get(id);
     if (reply) {
@@ -453,12 +1118,33 @@ export function connectAgent() {
   async function close(): Promise<void> {
     if (closing) return;
     closing = true;
-    if (replies.size || pendingSelections) {
+    for (const controller of nativeControllers.values()) controller.abort();
+    for (const controller of mcpControllers) controller.abort();
+    if (
+      replies.size ||
+      pendingReplies.size ||
+      pendingSelections ||
+      pendingPolicyWrites.size ||
+      pendingWorkWrites.size ||
+      pendingNative.size ||
+      pendingMcp.size ||
+      pendingChildren.size ||
+      pendingAccounting.size
+    ) {
       await Promise.allSettled([...replies.keys()].map(cancelReply));
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
-          Promise.allSettled([...pendingReplies, selectionWrites]),
+          Promise.allSettled([
+            ...pendingReplies,
+            selectionWrites,
+            ...pendingPolicyWrites,
+            ...pendingWorkWrites,
+            ...pendingNative,
+            ...pendingMcp,
+            ...pendingChildren,
+            ...pendingAccounting,
+          ]),
           new Promise<void>((resolve) => {
             timer = setTimeout(resolve, 60000);
           }),
@@ -467,10 +1153,19 @@ export function connectAgent() {
         clearTimeout(timer);
       }
     }
+    let drainError: unknown;
+    try {
+      if ((await initialize())._meta?.["harness/children"] === true)
+        await connection.agent.request("_harness/children/drain", {});
+    } catch (error) {
+      drainError = error;
+    }
     connection.close();
     child.stdin.end();
-    if (!child.pid || child.exitCode !== null || child.signalCode !== null)
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
+      if (drainError) throw drainError;
       return;
+    }
     const exited = new Promise<void>((resolve) =>
       child.once("close", () => resolve()),
     );
@@ -482,19 +1177,51 @@ export function connectAgent() {
       clearTimeout(terminate);
       clearTimeout(kill);
     }
+    if (drainError) throw drainError;
   }
 
   return {
     initialize,
+    readUsage,
+    updateProviderRetry,
+    readChildren,
+    childResult,
+    controlChildren,
+    dispatchChild,
+    steerChild,
+    answerAgent,
+    resumeChild,
+    changeScope,
+    adoptResearch,
+    viewConversation,
+    updateMcp,
     listProviders,
     listModels,
+    modelAllowlist,
+    readWork,
+    approveWork,
+    deciders,
+    chooseDecider,
+    readDecision,
+    selectDecision,
+    stopDecision,
     createProviderConnection,
     readModelSelection,
     updateModelSelection,
+    readSetup,
+    updateSetup,
+    readAgent,
+    readCreationPage,
+    steerExisting,
+    startAgent,
+    acknowledgeInterruption,
+    readGuidance,
+    adoptGuidance,
     createConversation,
     loadConversation,
     createMessage,
     workspace,
+    stopExecution,
     cancelReply,
     steer,
     close,

@@ -1,17 +1,27 @@
 mod context;
 mod credentials;
+mod failure;
 pub(crate) mod openai;
+pub(crate) mod openrouter;
 mod record;
+mod responses;
 mod stream;
 mod usage;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub openai: OpenaiSettings,
+    pub openrouter: OpenrouterSettings,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct OpenaiSettings {
+    pub base_url: String,
+    pub timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct OpenrouterSettings {
     pub base_url: String,
     pub timeout_seconds: u64,
 }

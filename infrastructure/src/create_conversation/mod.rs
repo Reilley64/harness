@@ -29,14 +29,30 @@ pub fn create_conversation(
             }
             let id = uuid::Uuid::new_v4().to_string();
             let _guard = conversations::lock(&directory, &id).await?;
+            let _mutation = conversations::lock_mutation(&directory, &id).await?;
             let now = conversations::now()?;
+            let workspace = Some(tokio::fs::canonicalize(workspace).await?);
             let conversation = domain::Conversation {
                 id,
+                agent: None,
+                assignment: None,
+                research: None,
+
+                workspace,
                 provider_connection_id: connection.id,
-                workspace: Some(tokio::fs::canonicalize(workspace).await?),
                 model,
                 effort,
+
+                instruction_snapshots: Vec::new(),
+                selected_instructions: None,
+
                 messages: Vec::new(),
+                runs: Vec::new(),
+                current_work: None,
+                resume_required: false,
+                provider_retry: None,
+                provider_retry_history: Vec::new(),
+
                 created_at: now,
                 updated_at: now,
                 revision: 0,

@@ -1,11 +1,23 @@
 app_data_path = "~/.harness"
 
+[decider]
+url = "https://openrouter.ai/api/alpha/decisions"
+
 [authentication.openai]
 dynamic_client_id = "dynamic_agent_client"
 issuer = "https://auth.openai.com"
 resource = "https://api.openai.com/v1"
 scopes = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
 open_browser = true
+timeout_seconds = 600
+
+[authentication.openrouter]
+issuer = "https://openrouter.ai"
+open_browser = true
+timeout_seconds = 600
+
+[replies.openrouter]
+base_url = "https://openrouter.ai/api/v1"
 timeout_seconds = 600
 
 [replies.openai]

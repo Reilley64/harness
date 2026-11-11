@@ -9,13 +9,21 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function validAuthorizationUrl(value: string): string {
+export function validAuthorizationUrl(value: string): string {
+  if (value.length > 65536)
+    throw new PresentationError(
+      "The authorization URL exceeds its size limit.",
+    );
   const url = new URL(value);
-  const loopback = url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  const loopback =
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "[::1]" ||
+    url.hostname === "localhost";
   if (
     !(url.protocol === "https:" || (url.protocol === "http:" && loopback)) ||
     url.username ||
-    url.password
+    url.password ||
+    url.href.includes("#")
   ) {
     throw new PresentationError(
       "The agent returned an unsafe authorization URL.",

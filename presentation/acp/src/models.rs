@@ -20,10 +20,12 @@ pub(crate) struct ModelsResponse {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModelSummary {
+    pub blocked: Option<String>,
     pub id: String,
     pub name: String,
     pub context_window: Option<u64>,
     pub provider_id: String,
+    pub capabilities: Vec<ModelCapability>,
     pub efforts: Vec<ModelEffort>,
     pub pricing: Option<ModelPricing>,
 }
@@ -48,13 +50,31 @@ pub(crate) struct ModelPricing {
 impl From<domain::Model> for ModelSummary {
     fn from(model: domain::Model) -> Self {
         Self::from(application::use_cases::read_models::Output {
+            blocked: None,
             id: model.id,
             name: model.name,
             context_window: model.context_window,
             provider_id: model.provider_id,
+            capabilities: model.capabilities,
             efforts: model.efforts,
             pricing: model.pricing,
         })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ModelCapability {
+    Chat,
+    Decisions,
+}
+
+impl From<domain::ModelCapability> for ModelCapability {
+    fn from(capability: domain::ModelCapability) -> Self {
+        match capability {
+            domain::ModelCapability::Chat => Self::Chat,
+            domain::ModelCapability::Decisions => Self::Decisions,
+        }
     }
 }
 
@@ -83,10 +103,12 @@ impl From<ModelEffort> for domain::ModelEffort {
 impl From<application::use_cases::read_models::Output> for ModelSummary {
     fn from(model: application::use_cases::read_models::Output) -> Self {
         Self {
+            blocked: model.blocked,
             id: model.id,
             name: model.name,
             context_window: model.context_window,
             provider_id: model.provider_id.0,
+            capabilities: model.capabilities.into_iter().map(Into::into).collect(),
             efforts: model
                 .efforts
                 .into_iter()

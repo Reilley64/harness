@@ -44,6 +44,23 @@
 - Constructors borrow paths/settings where practical and return owned closures.
   Use Rust 2024 `+ use<>` when needed to express precise captures.
 
+## Semantic spacing
+
+Use blank lines to separate logical phases, such as validation, state preparation,
+external effects and result construction. Keep closely related statements and
+checks together rather than separating every statement. Separate top-level
+definitions and distinct hook lifecycles. Do not insert spacing inside literals or
+change evaluation order for layout. Formatters normalize syntax; they do not infer
+these semantic groups.
+
+## Semantic field ordering
+
+Order struct fields by domain meaning, relationships and lifecycle, keeping related
+fields together with blank lines between distinct groups where useful. Align
+named-field construction and destructuring when safe. Preserve side-effect
+evaluation order and observable layout, serialization and canonical/trust
+fingerprints; do not reorder fields mechanically or broaden an edit into cleanup.
+
 ## Errors, effects, and storage
 
 - Use `#[ohno::error]` for application errors and boxed `From` conversions at
@@ -71,15 +88,8 @@
 - Treat module interfaces as the test surface. Verify behavior with temporary
   external probes; keep implementation helpers private. Add no permanent tests
   or test-only dependencies.
-- Validate relevant changes with:
-
-  ```sh
-  mise install
-  mise run build
-  mise run test
-  mise run check
-  git diff --check
-  ```
+- Follow the [root verification policy](AGENTS.md#verification) for local versus
+  CI scope. See [docs/ci.md](docs/ci.md) for available tasks and coverage limits.
 
 The repository pins nightly Rust in `mise.toml` because rustfmt's
 `imports_granularity` setting requires nightly. The formatting and Clippy

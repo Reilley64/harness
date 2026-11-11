@@ -1,0 +1,14 @@
+use crate::ports;
+
+#[fundle::deps]
+#[derive(Clone)]
+pub struct Dependencies {
+    pub(super) read_setup: ports::ReadSetup,
+    pub(super) read_agent: ports::ReadAgent,
+    pub(super) read_coordination: ports::ReadCoordination,
+    pub(super) update_coordination: ports::UpdateCoordination,
+    pub(super) read_conversation: ports::ReadConversation,
+    pub(super) update_conversation: ports::UpdateConversation,
+    pub(super) lock_conversation: ports::LockConversation,
+    pub(super) lock_execution: ports::LockExecution,
+}

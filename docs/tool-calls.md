@@ -17,21 +17,35 @@ second model loop.
 | `grep` | `ReadTextMatches` | `read_text_matches` |
 | `ast_search` | `ReadCodeMatches` | `read_code_matches` |
 | `web_search` | `ReadWebSearch` | `read_web_search` |
+| `request_human_input` | `RequestHumanInput` | ordinary tool checkpoint, then application run finalization; [typed answer](managed-dispatch.md#typed-human-input-and-later-runs) |
+| `publish_work` | `PublishWork` | `read_work_proposal` + application `create_work` |
+| `prepare_assignment` | `PrepareAssignment` | application `create_assignment` + `update_decision` |
+| Managed Research tools | `DispatchResearch`, `ControlChildren`, `ReadChildren`, `ReadChildResult` | application `create_dispatch`, `update_children`, `read_children`; [runtime and retrieval](managed-dispatch.md) |
+| `mcp_configuration` | `McpConfiguration` | `update_mcp_configuration` |
+| `mcp_call` | `McpCall` | `create_mcp_call` |
 
-`domain::Tool` identifies the fixed tool set; `ToolInvocation` carries typed
+`domain::Tool` identifies the fixed dispatch set (dynamic MCP identities are typed invocation fields); `ToolInvocation` carries typed
 arguments. Each adapter owns its strict camelCase `Arguments` representation and
 JSON schema. Unknown fields, malformed JSON, disabled tools, and unavailable tools
 produce invalid-call results without executing anything.
 
 Tools are enabled by default. `TOOLS__ENABLED=false` disables advertisement and
 execution for text-only operation. AST search is advertised only when
-`ast-grep --version` reports exactly `ast-grep 0.51.0`. There are no plugins,
-MCP servers, subagents, browser automation, PTYs, persistent shells, or managed
-background jobs.
+`ast-grep --version` reports exactly `ast-grep 0.51.0`. Trusted configured stdio and Streamable HTTP
+MCP servers use the same durable tool loop; see [MCP connections](mcp-connections.md)
+for native configuration, protected trust, discovery and shared cleanup, and
+[HTTP/OAuth](mcp-http-auth.md) for supported authentication and qualification limits.
+[Managed Research](managed-dispatch.md) adds dispatch, fixed joins, backgrounding,
+status and source-linked result tools; Implementers require managed workspaces.
+There are no plugins, browser automation, PTYs, persistent shells or general-purpose
+background process jobs. Trusted exact-version
+[approved handoff](approved-work.md) can create a separate conversational CoS;
+model tools cannot grant human approval.
 
 ## Permissions and workspace
 
-All enabled tools run automatically, without approvals or permission cards, with
+Enabled native tools and already-trusted MCP invocations run automatically,
+without per-call approvals or permission cards, with
 the OS user's permissions. The workspace is a working directory, not a sandbox.
 Absolute paths and readable files outside it are accessible, including credentials.
 Harness does not proactively inject OAuth tokens into tool arguments, prompts,
@@ -58,17 +72,30 @@ their next mutation.
    Execute sequentially, persist its terminal result, then publish its ACP update.
 5. Pair every recorded provider call with its honest result before further
    inference. Invalid calls and ordinary failures are results the model can handle.
-   Unknown cleanup/outcomes stop the turn.
+   Unknown cleanup/outcomes stop the turn. MCP adapters return the safe typed result
+   separately from an owned original error. The application output retains those
+   causes (including projection omission after a known outcome); finalization
+   failures retain both their own error and prior tool causes. They are never
+   serialized into conversation/tool snapshots or printed through ACP.
 6. Persist final or partial assistant text and the terminal message status.
 
 The adapter retains provider output items, call IDs, and opaque reasoning for
 stateless continuation. Opaque data never enters ACP snapshots. When changing
-models, reasoning items from a different model are omitted, but recorded actions
-and results remain. Reused provider call IDs are rejected before new execution.
+provider or model, private reasoning and provider item/call identities are omitted;
+ordinary text and reconstructed requests with honest results remain. The new
+provider uses its independently stored credential. OpenRouter requires the
+requested parameters and disables endpoint fallback and gateway plugins; a
+reported incompatible model is an error before tools, never a replacement worker. Reused provider call IDs are rejected before new execution.
 HTTP/provider/protocol failures are surfaced; there is no hidden provider fallback.
 Use the explicit text-only setting for a model that does not support function tools.
 
-Records are schema version 2; version 1 is read without rewriting it.
+Conversation records preserve per-message/run provider provenance, optional
+resolved-model/serving-provider metadata, agent/run associations and immutable
+instruction snapshots. Historical instruction provenance and human consent are
+never invented. [Conversation recovery](conversations/recovery.md) owns general
+version compatibility; [managed Research](managed-dispatch.md#compatibility-and-recovery-limits)
+owns its additive schema-seven lineage. See [role guidance](role-guidance.md) and
+[repository Setup](repository-setup.md).
 Read/create/update conversation adapters and preference adapters each own their
 serialized `Record` types. Shared filesystem helpers operate on bytes, not DTOs.
 
@@ -84,13 +111,36 @@ saved but is not replayed as completed model output. During a tool, the current
 operation finishes; remaining calls in that batch are recorded Skipped before
 continuing with the new instruction. Rapid instructions retain their order.
 
-Escape cancels the current turn, including subprocess cleanup, without initiating
-another request. Failed/unaccepted instructions remain drafts. Unsaved draft text
+If instruction or ownership observation fails during admitted work, the backend
+cancels as appropriate and awaits the provider/tool cleanup before finalization.
+It retains reported usage, the tool's actual result and original operation and
+observation causes. A failed observation does not release a mutation guard while
+its blocking commit continues or admit another action.
+
+Explicit Stop cancels the current turn, including subprocess cleanup, without
+initiating another request. Escape only closes or back-navigates. Failed/unaccepted instructions remain drafts. Unsaved draft text
 is not cleared by completion. Neither React nor the transport automatically
 replays a failed request.
 
+## Setup output proposals
+
+In a Setup conversation, ordinary write calls persist a Draft rather than execute
+a repository mutation; edit asks for a preserved-content full draft. Exact trusted
+human confirmation uses the same checkpoint-before-effect, expected-base file
+replacement and result/artifact mechanisms. Draft is not Succeeded, and Unknown
+confirmation outcomes cannot be retried. See [repository Setup](repository-setup.md)
+for scope, fencing, cancellation and the unsandboxed bash boundary. Other roles'
+ordinary tools retain their existing automatic behavior.
+
 ## Tool behavior
 
+- `publish_work`: capture a real proposal file, immutable source document/version
+  and explicit publication intent through the application use case. Amendments
+  invalidate affected authority; this tool cannot approve or launch implementation.
+  See [approved work](approved-work.md) for schema, idempotency and bounds.
+- `prepare_assignment`: only the actual approved CoS can prepare an exact durable
+  intent/brief and parent model/thinking snapshot for [native selection](native-decider.md).
+  This launches no child, workspace or review and cannot grant authority.
 - `read`: regular UTF-8 files only, 1-based offset, default 200/max 2,000 lines.
   The input file is bounded at 1 MiB. No image or binary decoding.
 - `bash`: noninteractive `/bin/bash --noprofile --norc -c`, no stdin or shared
@@ -139,8 +189,8 @@ statuses remain labelled without relying on colour. Read/write code has syntax
 highlighting for supported file types; edits have unified-diff colouring. Unknown
 languages remain plain text. Bounded output and artifact/truncation notices are
 displayed. Ctrl+O expands/collapses stored output. Mouse wheel, PgUp/PgDn, and Shift+Up/Down scroll even during a turn;
-new output preserves the viewed history until scrolling back to the bottom or
-pressing Escape. Shift+drag uses native terminal text selection while mouse
+new output preserves the viewed history until scrolling back to the bottom.
+Escape preserves the anchor while navigating. Shift+drag uses native terminal text selection while mouse
 reporting is enabled. The prompt remains full-sized and editable.
 
 ## Bounds and artifacts
@@ -153,7 +203,9 @@ reporting is enabled. The prompt remains full-sized and editable.
 - 64 KiB arguments; 4 MiB SSE events; 1 MiB continuation per step/4 MiB per turn.
 - 1 MiB each for user text, total assistant text, and accepted steering text.
 - 64 steering instructions; bounded 32-entry control channel.
-- 20-minute turn deadline; bash default 120 seconds/max 600 seconds.
+- 20-minute active-turn budget checked at admission boundaries; suspended joins
+  and provider waits are excluded. Admitted model/tool operations retain their
+  individual limits. Bash defaults to 120 seconds/max 600 seconds.
 - Searches: default/max 100 matches; native walks max 100,000 entries/10 seconds.
 - AST search: 10 seconds; DDG: 15 seconds, 2 MiB response, max 10 results.
 - Captured process stdout and stderr: up to 1 MiB each, then drain/discard.

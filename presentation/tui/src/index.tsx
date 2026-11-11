@@ -1,8 +1,11 @@
+import type { Instance } from "ink";
 import { render } from "ink";
+import { TerminalInputProvider } from "./hooks/use-terminal-input.js";
 import { HarnessScreen } from "./screens/harness-screen.js";
 import { connectAgent, errorMessage } from "./services/acp.js";
 import { parseArguments } from "./services/conversations.js";
 import { PresentationError } from "./services/errors.js";
+import { createTerminalInput } from "./services/terminal-input.js";
 import type { ModelSelection } from "./types/model.js";
 
 try {
@@ -15,7 +18,8 @@ try {
   try {
     const conversation = resumeId
       ? await agent.loadConversation(resumeId)
-      : undefined;
+      : await agent.readAgent();
+    const initialSetup = await agent.readSetup(conversation?.id);
     let initialSelection: ModelSelection | null = null;
     let initialModelError: string | null = null;
     if (!conversation) {
@@ -25,26 +29,32 @@ try {
         initialModelError = `Could not restore the last model: ${errorMessage(error)}`;
       }
     }
-    const wasRaw = process.stdin.isRaw;
-    process.stdin.setRawMode(true);
+    const input = createTerminalInput(process.stdin, process.stdout);
+    input.stream.setRawMode(true);
+    let app: Instance | undefined;
     try {
-      const app = render(
-        <HarnessScreen
-          agent={agent}
-          initialConversation={conversation}
-          initialSelection={initialSelection}
-          initialModelError={initialModelError}
-        />,
+      app = render(
+        <TerminalInputProvider input={input}>
+          <HarnessScreen
+            agent={agent}
+            initialConversation={conversation}
+            initialSelection={initialSelection}
+            initialModelError={initialModelError}
+            initialSetup={initialSetup}
+          />
+        </TerminalInputProvider>,
         {
+          stdin: input.stream,
           alternateScreen: true,
           maxFps: 60,
           kittyKeyboard: { mode: "enabled" },
           exitOnCtrlC: false,
         },
       );
-      await app.waitUntilExit();
+      await Promise.race([app.waitUntilExit(), input.failure]);
     } finally {
-      process.stdin.setRawMode(wasRaw);
+      app?.unmount();
+      input.close();
     }
   } finally {
     await agent.close();

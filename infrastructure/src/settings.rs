@@ -1,4 +1,5 @@
 use crate::create_model_step;
+use crate::create_native_decision;
 
 use std::path::PathBuf;
 
@@ -18,7 +19,10 @@ pub struct Settings {
     pub app_data_path: PathBuf,
     #[serde(default)]
     pub tools: ToolsSettings,
+    #[serde(default)]
+    pub mcp: McpSettings,
     pub replies: create_model_step::Settings,
+    pub decider: create_native_decision::Settings,
     pub authentication: create_provider_connection::Settings,
     pub models: read_models::Settings,
     pub providers: read_providers::Settings,
@@ -31,6 +35,19 @@ pub struct ToolsSettings {
 impl Default for ToolsSettings {
     fn default() -> Self {
         Self { enabled: true }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct McpSettings {
+    pub registry_url: String,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            registry_url: "https://registry.modelcontextprotocol.io/v0.1/servers".into(),
+        }
     }
 }
 

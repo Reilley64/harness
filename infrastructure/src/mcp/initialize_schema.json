@@ -1,0 +1,99 @@
+{
+  "$ref": "#/definitions/InitializeResult",
+  "definitions": {
+    "InitializeResult": {
+      "properties": {
+        "_meta": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "capabilities": {
+          "$ref": "#/definitions/ServerCapabilities"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "string"
+        },
+        "serverInfo": {
+          "$ref": "#/definitions/Implementation"
+        }
+      },
+      "required": [
+        "capabilities",
+        "protocolVersion",
+        "serverInfo"
+      ],
+      "type": "object"
+    },
+    "Implementation": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "ServerCapabilities": {
+      "properties": {
+        "completions": {
+          "additionalProperties": true,
+          "properties": {},
+          "type": "object"
+        },
+        "experimental": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "properties": {},
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "logging": {
+          "additionalProperties": true,
+          "properties": {},
+          "type": "object"
+        },
+        "prompts": {
+          "properties": {
+            "listChanged": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "resources": {
+          "properties": {
+            "listChanged": {
+              "type": "boolean"
+            },
+            "subscribe": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "tools": {
+          "properties": {
+            "listChanged": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

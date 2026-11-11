@@ -1,3 +1,4 @@
+use crate::ModelCapability;
 use crate::ModelEffort;
 use crate::ModelPricing;
 use crate::ProviderId;
@@ -5,14 +6,54 @@ use crate::ProviderId;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Model {
     pub id: String,
+    pub canonical_id: Option<String>,
     pub name: String,
     pub context_window: Option<u64>,
+    pub capabilities: Vec<ModelCapability>,
     pub provider_id: ProviderId,
     pub efforts: Vec<ModelEffort>,
     pub pricing: Option<ModelPricing>,
 }
 
 impl Model {
+    pub fn validate_decider(&self) -> Result<(), &'static str> {
+        if self.provider_id.0 != "openrouter"
+            || !self.capabilities.contains(&ModelCapability::Decisions)
+            || !self.efforts.is_empty()
+            || self.id.to_ascii_lowercase().contains("router")
+            || self.context_window.is_none_or(|limit| limit == 0)
+        {
+            return Err(
+                "Capability blocked: select a native Decisions release or alias, not a worker or hosted router",
+            );
+        }
+        self.validate_effort(None)
+    }
+
+    pub fn validate_worker(&self) -> Result<(), &'static str> {
+        if !self.capabilities.contains(&ModelCapability::Chat) {
+            return Err("This identity lacks the chat capability required for a worker");
+        }
+        if self.provider_id.0 == "openrouter"
+            && (self.context_window.is_none()
+                || self.id.starts_with("openrouter/")
+                || self.id.to_ascii_lowercase().contains("router")
+                || self.id.starts_with('~'))
+        {
+            return Err(
+                "This identity lacks compatible worker protocol, tools or context metadata, or is a hosted router/alias",
+            );
+        }
+        Ok(())
+    }
+
+    pub fn validate_context(&self, required: u64) -> Result<(), &'static str> {
+        if required == 0 || self.context_window.is_none_or(|limit| limit < required) {
+            return Err("The model does not satisfy the required context capacity");
+        }
+        Ok(())
+    }
+
     pub fn validate_effort(&self, effort: Option<ModelEffort>) -> Result<(), &'static str> {
         if self.id.trim().is_empty() || self.provider_id.0.trim().is_empty() {
             return Err("A model and provider must be selected");

@@ -1,23 +1,56 @@
+use crate::create_agent;
 use crate::create_conversation;
+use crate::create_coordinator;
+use crate::create_decision_inputs;
+use crate::create_execution_diagnostics;
 use crate::create_file;
+use crate::create_mcp_call;
 use crate::create_model_step_factory;
+use crate::create_native_decision;
 use crate::create_process;
+use crate::create_research;
 use crate::create_tool_output;
 use crate::lock_conversation;
+use crate::lock_execution;
+use crate::mcp::Connections;
+use crate::read_agent;
+use crate::read_agent_index;
 use crate::read_code_matches;
 use crate::read_conversation;
+use crate::read_coordination;
+use crate::read_decider;
+use crate::read_decision;
 use crate::read_directory;
+use crate::read_execution_claim;
+use crate::read_execution_claims;
 use crate::read_file;
+use crate::read_instructions;
+use crate::read_model_allowlist;
 use crate::read_model_selection;
 use crate::read_paths;
 use crate::read_provider_connection;
+use crate::read_research_guidance;
+use crate::read_routing_evidence;
+use crate::read_setup;
+use crate::read_setup_draft;
 use crate::read_text_matches;
 use crate::read_tool_invocation;
 use crate::read_tools;
+use crate::read_usage_sources;
 use crate::read_web_search;
+use crate::read_work;
+use crate::read_work_proposal;
 use crate::update_conversation;
+use crate::update_coordination;
+use crate::update_decider;
+use crate::update_decision;
 use crate::update_file;
+use crate::update_mcp_configuration;
+use crate::update_model_allowlist;
 use crate::update_model_selection;
+use crate::update_research_guidance;
+use crate::update_setup_draft;
+use crate::update_work;
 
 use std::time::Duration;
 
@@ -31,6 +64,30 @@ use crate::settings::Settings;
 #[fundle::bundle]
 pub struct Dependencies {
     settings: Settings,
+    create_assignment: application::use_cases::create_assignment::Dependencies,
+    child_runtime: application::child_runtime::ChildRuntime,
+    read_children: application::use_cases::read_children::Dependencies,
+    delete_execution: application::use_cases::delete_execution::Dependencies,
+    create_execution_diagnostics: ports::CreateExecutionDiagnostics,
+    create_research: ports::CreateResearch,
+    read_coordination: ports::ReadCoordination,
+    read_execution_claim: ports::ReadExecutionClaim,
+    read_execution_claims: ports::ReadExecutionClaims,
+    read_research_guidance: ports::ReadResearchGuidance,
+    update_research_guidance: ports::UpdateResearchGuidance,
+    update_coordination: ports::UpdateCoordination,
+    read_decision: ports::ReadDecision,
+    update_decision: ports::UpdateDecision,
+    create_native_decision: ports::CreateNativeDecision,
+    create_decision_inputs: ports::CreateDecisionInputs,
+    read_routing_evidence: ports::ReadRoutingEvidence,
+    read_decider: ports::ReadDecider,
+    update_decider: ports::UpdateDecider,
+    create_work: application::use_cases::create_work::Dependencies,
+    read_work: ports::ReadWork,
+    update_work: ports::UpdateWork,
+    read_work_proposal: ports::ReadWorkProposal,
+    create_coordinator: ports::CreateCoordinator,
     read_file: ports::ReadFile,
     create_process: ports::CreateProcess,
     update_file: ports::UpdateFile,
@@ -40,15 +97,29 @@ pub struct Dependencies {
     read_text_matches: ports::ReadTextMatches,
     read_code_matches: ports::ReadCodeMatches,
     read_web_search: ports::ReadWebSearch,
+    mcp_connections: Connections,
+    update_mcp_configuration: ports::UpdateMcpConfiguration,
+    create_mcp_call: ports::CreateMcpCall,
     read_tools: ports::ReadTools,
     read_tool_invocation: ports::ReadToolInvocation,
     create_tool_output: ports::CreateToolOutput,
+    read_model_allowlist: ports::ReadModelAllowlist,
+    update_model_allowlist: ports::UpdateModelAllowlist,
     read_model_selection: ports::ReadModelSelection,
     update_model_selection: ports::UpdateModelSelection,
+    create_agent: ports::CreateAgent,
+    read_setup_draft: ports::ReadSetupDraft,
+    update_setup_draft: ports::UpdateSetupDraft,
+    read_setup: ports::ReadSetup,
+    read_agent: ports::ReadAgent,
+    read_agent_index: ports::ReadAgentIndex,
+    read_usage_sources: ports::ReadUsageSources,
+    read_instructions: ports::ReadInstructions,
     create_conversation: ports::CreateConversation,
     read_conversation: ports::ReadConversation,
     update_conversation: ports::UpdateConversation,
     lock_conversation: ports::LockConversation,
+    lock_execution: ports::LockExecution,
     read_provider_connection: ports::ReadProviderConnection,
     create_model_step_factory: ports::CreateModelStepFactory,
     create_provider_connection_factory: ports::CreateProviderConnectionFactory,
@@ -60,6 +131,46 @@ impl Dependencies {
     pub fn build(settings: Settings) -> Self {
         Self::builder()
             .settings(|_| settings.clone())
+            .mcp_connections(|deps| {
+                let settings: &Settings = deps.as_ref();
+                Connections::new(&settings.app_data_path)
+            })
+            .update_mcp_configuration(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let connections: &Connections = deps.as_ref();
+                let update = update_mcp_configuration::update_mcp_configuration(
+                    &settings.app_data_path,
+                    &settings.mcp.registry_url,
+                    connections,
+                );
+                ports::UpdateMcpConfiguration::new(
+                    move |workspace, action, present_authorization, cancellation| {
+                        let future = update(workspace, action, present_authorization, cancellation);
+                        Box::pin(async move {
+                            let response = future.await?;
+                            Ok(ports::McpConfigurationResponse {
+                                configuration: response.configuration,
+                                diagnostics: response.diagnostics,
+                            })
+                        })
+                    },
+                )
+            })
+            .create_mcp_call(|deps| {
+                let connections: &Connections = deps.as_ref();
+                let configuration: &ports::UpdateMcpConfiguration = deps.as_ref();
+                let create = create_mcp_call::create_mcp_call(connections, configuration.clone());
+                ports::CreateMcpCall::new(move |workspace, arguments, cancellation| {
+                    let future = create(workspace, arguments, cancellation);
+                    Box::pin(async move {
+                        let output = future.await?;
+                        Ok(ports::McpCallResponse {
+                            result: output.result,
+                            cause: output.cause,
+                        })
+                    })
+                })
+            })
             .create_provider_connection_factory(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let credentials_path = settings.app_data_path.join("auth");
@@ -79,6 +190,266 @@ impl Dependencies {
                             })
                         },
                     ))
+                })
+            })
+            .create_execution_diagnostics(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = create_execution_diagnostics::create_execution_diagnostics(
+                    &settings.app_data_path.join("coordination/diagnostics"),
+                );
+                ports::CreateExecutionDiagnostics::new(
+                    move |parent, execution, run, diagnostics| {
+                        let result = implementation(parent, execution, run, diagnostics);
+                        Box::pin(async move { Ok(result.await?) })
+                    },
+                )
+            })
+            .create_research(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation =
+                    create_research::create_research(&settings.app_data_path.join("conversations"));
+                ports::CreateResearch::new(move |execution, workspace, cancellation| {
+                    let result = implementation(execution, workspace, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .child_runtime(|_| application::child_runtime::ChildRuntime::default())
+            .read_coordination(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_coordination::read_coordination(
+                    &settings.app_data_path.join("coordination"),
+                );
+                ports::ReadCoordination::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_research_guidance(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_research_guidance::read_research_guidance(
+                    &settings.app_data_path.join("coordination").join("guidance"),
+                );
+                ports::ReadResearchGuidance::new(move |intent| {
+                    let result = read(intent);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_research_guidance(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let update = update_research_guidance::update_research_guidance(
+                    &settings.app_data_path.join("coordination").join("guidance"),
+                );
+                ports::UpdateResearchGuidance::new(move |guidance, token| {
+                    let result = update(guidance, token);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_execution_claims(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_execution_claims::read_execution_claims(
+                    &settings.app_data_path.join("coordination"),
+                );
+                ports::ReadExecutionClaims::new(move |parent, token| {
+                    let result = read(parent, token);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_execution_claim(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_execution_claim::read_execution_claim(
+                    &settings.app_data_path.join("coordination").join("intents"),
+                );
+                ports::ReadExecutionClaim::new(move |intent, cancellation| {
+                    let result = implementation(intent, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_coordination(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = update_coordination::update_coordination(
+                    &settings.app_data_path.join("coordination"),
+                );
+                ports::UpdateCoordination::new(move |id, command, revision, cancellation| {
+                    let result = implementation(id, command, revision, cancellation);
+                    Box::pin(async move {
+                        result.await.map_err(|error| {
+                            let conflict = error
+                                .downcast_ref::<update_coordination::RevisionConflict>()
+                                .is_some();
+                            ports::UpdateCoordinationError::from(error).with_conflict(conflict)
+                        })
+                    })
+                })
+            })
+            .create_decision_inputs(|_| {
+                let implementation = create_decision_inputs::create_decision_inputs();
+                ports::CreateDecisionInputs::new(move |decision, members, level| {
+                    let result = implementation(decision, members, level);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_routing_evidence(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_routing_evidence::read_routing_evidence(
+                    &settings.models.url,
+                    &settings.app_data_path.join("routing-evidence.json"),
+                );
+                ports::ReadRoutingEvidence::new(move |candidates, now, refresh, cancellation| {
+                    let result = implementation(candidates, now, refresh, cancellation);
+                    Box::pin(async move {
+                        let response = result.await?;
+                        Ok(ports::RoutingEvidenceResponse {
+                            evidence: response.evidence,
+                            diagnostics: response.diagnostics,
+                        })
+                    })
+                })
+            })
+            .read_decision(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation =
+                    read_decision::read_decision(&settings.app_data_path.join("decisions"));
+                ports::ReadDecision::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_decision(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation =
+                    update_decision::update_decision(&settings.app_data_path.join("decisions"));
+                ports::UpdateDecision::new(move |decision, revision| {
+                    let result = implementation(decision, revision);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_decider(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_decider::read_decider(
+                    &settings.app_data_path.join("preferences/decider.json"),
+                );
+                ports::ReadDecider::new(move || {
+                    let result = implementation();
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_decider(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = update_decider::update_decider(
+                    &settings.app_data_path.join("preferences/decider.json"),
+                );
+                ports::UpdateDecider::new(move |model_id| {
+                    let result = implementation(model_id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_work(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = read_work::read_work(&settings.app_data_path.join("work"));
+                ports::ReadWork::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_work(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = update_work::update_work(&settings.app_data_path.join("work"));
+                ports::UpdateWork::new(move |work, revision| {
+                    let result = implementation(work, revision);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_work_proposal(|_| {
+                let implementation = read_work_proposal::read_work_proposal();
+                ports::ReadWorkProposal::new(move |workspace, path, cancellation| {
+                    let result = implementation(workspace, path, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .create_coordinator(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = create_coordinator::create_coordinator(
+                    &settings.app_data_path.join("conversations"),
+                );
+                ports::CreateCoordinator::new(
+                    move |work, approval, model, connection, instructions, adopt_default| {
+                        let result = implementation(
+                            work,
+                            approval,
+                            model,
+                            connection,
+                            instructions,
+                            adopt_default,
+                        );
+                        Box::pin(async move { Ok(result.await?) })
+                    },
+                )
+            })
+            .create_agent(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let create =
+                    create_agent::create_agent(&settings.app_data_path.join("conversations"));
+                ports::CreateAgent::new(move |model, effort, connection, workspace, role| {
+                    let result = create(model, effort, connection, workspace, role);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_setup_draft(|_| {
+                let read = read_setup_draft::read_setup_draft();
+                ports::ReadSetupDraft::new(
+                    move |workspace, arguments, proposed_wiki, cancellation| {
+                        let result = read(workspace, arguments, proposed_wiki, cancellation);
+                        Box::pin(async move { Ok(result.await?) })
+                    },
+                )
+            })
+            .update_setup_draft(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let update = update_setup_draft::update_setup_draft(&settings.app_data_path);
+                ports::UpdateSetupDraft::new(move |draft, cancellation| {
+                    let result = update(draft, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_setup(|_| {
+                let read = read_setup::read_setup();
+                ports::ReadSetup::new(move |workspace, cancellation| {
+                    let result = read(workspace, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_agent(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_agent::read_agent(&settings.app_data_path.join("conversations"));
+                ports::ReadAgent::new(move |workspace, role| {
+                    let result = read(workspace, role);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_usage_sources(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_usage_sources::read_usage_sources(&settings.app_data_path);
+                ports::ReadUsageSources::new(move |cancellation| {
+                    let future = read(cancellation);
+                    Box::pin(async move { future.await.map_err(Into::into) })
+                })
+            })
+            .read_agent_index(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_agent_index::read_agent_index(
+                    &settings.app_data_path.join("conversations"),
+                );
+                ports::ReadAgentIndex::new(move |workspace, after, cancellation| {
+                    let result = read(workspace, after, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .read_instructions(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_instructions::read_instructions(&settings.app_data_path);
+                ports::ReadInstructions::new(move |workspace, phase, scopes, references| {
+                    let result = read(workspace, phase, scopes, references);
+                    Box::pin(async move { Ok(result.await?) })
                 })
             })
             .create_conversation(|deps| {
@@ -111,6 +482,16 @@ impl Dependencies {
                     Box::pin(async move { Ok(result.await?) })
                 })
             })
+            .lock_execution(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let implementation = lock_execution::lock_execution(
+                    &settings.app_data_path.join("coordination/owners"),
+                );
+                ports::LockExecution::new(move |id| {
+                    let result = implementation(id);
+                    Box::pin(async move { result.await.map_err(lock_execution::error) })
+                })
+            })
             .lock_conversation(|deps| {
                 let settings: &Settings = deps.as_ref();
                 let implementation = lock_conversation::lock_conversation(
@@ -131,10 +512,54 @@ impl Dependencies {
                     Box::pin(async move { Ok(result.await?) })
                 })
             })
+            .read_model_allowlist(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_model_allowlist::read_model_allowlist(
+                    &settings
+                        .app_data_path
+                        .join("preferences/model-allowlist.json"),
+                );
+                ports::ReadModelAllowlist::new(move || {
+                    let future = read();
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .update_model_allowlist(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let update = update_model_allowlist::update_model_allowlist(
+                    &settings
+                        .app_data_path
+                        .join("preferences/model-allowlist.json"),
+                );
+                ports::UpdateModelAllowlist::new(move |operation| {
+                    let future = update(operation);
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
+            .read_models(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let read = read_models(
+                    &settings.models.url,
+                    &settings.app_data_path.join("models.json"),
+                    Duration::from_secs(settings.models.memory_ttl_seconds),
+                );
+                ports::ReadModels::new(move || {
+                    let future = read();
+                    Box::pin(async move { Ok(future.await?) })
+                })
+            })
             .create_model_step_factory(|deps| {
                 let settings: &Settings = deps.as_ref();
+                let read_model_allowlist: &ports::ReadModelAllowlist = deps.as_ref();
+                let read_model_allowlist = read_model_allowlist.clone();
                 let reply_settings = settings.replies.clone();
                 let authentication = settings.authentication.clone();
+                let read_models: &ports::ReadModels = deps.as_ref();
+                let read_models = read_models.clone();
+                let read_work: &ports::ReadWork = deps.as_ref();
+                let read_work = read_work.clone();
+                let read_coordination: &ports::ReadCoordination = deps.as_ref();
+                let read_coordination = read_coordination.clone();
                 let credentials_path = settings.app_data_path.join("auth");
                 ports::CreateModelStepFactory::new(move |provider_id| {
                     let create = create_model_step_factory::create_model_step_factory(
@@ -142,6 +567,10 @@ impl Dependencies {
                         &authentication,
                         &credentials_path,
                         &provider_id,
+                        read_model_allowlist.clone(),
+                        read_models.clone(),
+                        read_work.clone(),
+                        read_coordination.clone(),
                     )?;
                     Ok(create)
                 })
@@ -168,18 +597,6 @@ impl Dependencies {
                 ports::UpdateModelSelection::new(move |selection| {
                     let result = update(selection);
                     Box::pin(async move { Ok(result.await?) })
-                })
-            })
-            .read_models(|deps| {
-                let settings: &Settings = deps.as_ref();
-                let read = read_models(
-                    &settings.models.url,
-                    &settings.app_data_path.join("models.json"),
-                    Duration::from_secs(settings.models.memory_ttl_seconds),
-                );
-                ports::ReadModels::new(move || {
-                    let future = read();
-                    Box::pin(async move { Ok(future.await?) })
                 })
             })
             .read_providers(|deps| {
@@ -286,6 +703,27 @@ impl Dependencies {
                     Box::pin(async move { Ok(future.await?) })
                 })
             })
+            .create_native_decision(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let models: &ports::ReadModels = deps.as_ref();
+                let policy: &ports::ReadModelAllowlist = deps.as_ref();
+                let work: &ports::ReadWork = deps.as_ref();
+                let conversation: &ports::ReadConversation = deps.as_ref();
+                let implementation = create_native_decision::create_native_decision(
+                    &settings.decider,
+                    &settings.authentication.openrouter.issuer,
+                    &settings.app_data_path.join("auth/openrouter.json"),
+                    models.clone(),
+                    policy.clone(),
+                    work.clone(),
+                    conversation.clone(),
+                );
+                ports::CreateNativeDecision::new(implementation)
+            })
+            .read_children(|deps| deps.into())
+            .delete_execution(|deps| deps.into())
+            .create_assignment(|deps| deps.into())
+            .create_work(|deps| deps.into())
             .build()
     }
 }

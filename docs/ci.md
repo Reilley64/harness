@@ -4,6 +4,10 @@ GitHub automation follows [.github/AGENTS.md](../.github/AGENTS.md).
 
 ## Shared local and CI tasks
 
+The [root verification policy](../AGENTS.md#verification) assigns whole-project
+builds, tests and full check suites to CI. The commands below describe available
+tasks, not a checklist to run in every local checkout.
+
 Install tools with `mise install`. `mise.toml` owns every project tool pin,
 including Rust's nightly version, minimal profile, and Clippy/rustfmt components.
 Use Mise tasks or `mise exec -- cargo …` so ad hoc Cargo commands use the pinned
@@ -17,6 +21,7 @@ toolchain too; there is no separate Rustup toolchain file.
 | `mise run test` | Run all Rust test targets and doctests. |
 | `mise run lint` | Run strict Clippy, Biome lint/import checks, Actionlint, ShellCheck and redacted secret scanning. |
 | `mise run format` | Format Rust and the TUI. |
+| `mise run format:check` | Check Rust and TUI formatting without rewriting source. |
 | `mise run typecheck` | Check TUI types. |
 | `mise run check` | Check formatting, lint, types and automation without rewriting source. |
 
@@ -31,8 +36,13 @@ currently run on Linux (`ubuntu-latest`). Superseded runs of the same workflow/r
 are cancelled. Jobs use read-only repository permissions and do not receive
 provider credentials or require a catalog server.
 
-- [Test: Workspace](../.github/workflows/test.yml) uses the Mise action, then runs
-  `check:rust` and `test`, `check:tui`, and automation/secret lint in separate jobs.
+- [Test: Workspace](../.github/workflows/test.yml) uses the Mise action and retains
+  separate Rust, TUI and automation jobs. Rust runs `format:check:rust`, strict
+  `lint:rust`, then `test` in explicit steps. TUI runs `typecheck`,
+  `format:check:tui` and `lint:tui` in explicit steps. Automation runs workflow,
+  launcher and secret lint. Format and lint failures fail CI without rewriting
+  source. Existing job names remain unchanged; local `check:rust`, `check:tui`
+  and `check` reuse the same tasks.
 - [Build: Rust workspace](../.github/workflows/build.yml) uses the Mise action,
   then runs `build:release`. It does not publish artifacts, releases or deployments.
 
