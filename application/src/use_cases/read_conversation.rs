@@ -44,6 +44,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: String) -> Result<O
             .await
             .map_err(Error::caused_by)?;
     }
+    coordination_recovery::restore_implementation(
+        &dependencies.read_coordination,
+        &dependencies.update_coordination,
+        &dependencies.lock_execution,
+        &conversation,
+    )
+    .await
+    .map_err(Error::caused_by)?;
     conversation = coordination_recovery::restore(
         &dependencies.read_coordination,
         &dependencies.update_coordination,

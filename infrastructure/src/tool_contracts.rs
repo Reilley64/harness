@@ -15,6 +15,7 @@ use crate::update_coordination;
 use crate::update_decision;
 use crate::update_file;
 use crate::update_mcp_configuration;
+use crate::update_workspace;
 
 pub(crate) fn definitions(tools: &[domain::Tool]) -> serde_json::Value {
     serde_json::Value::Array(
@@ -36,6 +37,7 @@ pub(crate) fn definitions(tools: &[domain::Tool]) -> serde_json::Value {
                 domain::Tool::PublishWork => read_work_proposal::definition(),
                 domain::Tool::PrepareAssignment => update_decision::definition(),
                 domain::Tool::DispatchResearch => create_research::definition(),
+                domain::Tool::SubmitImplementation => update_workspace::definition(),
                 domain::Tool::JoinChildren
                 | domain::Tool::BackgroundChildren
                 | domain::Tool::CompleteChildrenFollowUp => update_coordination::definition(*tool),

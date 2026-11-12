@@ -223,7 +223,9 @@ pub(super) fn read() -> Vec<domain::Instruction> {
         .map(|(id, body, requires, upstream)| domain::Instruction {
             id: (*id).into(),
             version: if matches!(*id, "role/griller" | "procedure/coordination") {
-                "harness-native-selection-1 (Harness contract)"
+                "harness-managed-dispatch-2 (Harness contract)"
+            } else if matches!(*id, "role/implementer" | "procedure/implementation") {
+                "harness-managed-implementation-2 (adapted from upstream 1.3.2)"
             } else if *id == "procedure/setup" {
                 "harness-setup-2 (adapted from upstream 1.3.2)"
             } else if upstream.is_empty() {

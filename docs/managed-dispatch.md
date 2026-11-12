@@ -15,8 +15,9 @@ background/input/later-run boundaries. Approved CoS Research cannot infer a new
 approval owner for nested dispatch; that remains a coordinator-owned operation.
 An approved Chief of Staff uses its prepared, settled native selection or recorded
 exact-parent fallback. The native Decider remains a separate typed operation.
-Implementer execution is unavailable until managed assignment workspaces exist;
-review, integration, target merge and the growing native map remain separate work.
+[Managed Implementers](managed-workspaces.md) use this same execution machinery
+with native owned workspaces and exact submissions. Review, integration and target
+merge remain separate work.
 Tools remain trusted OS-user operations, not a sandbox or role permission matrix.
 
 [ACP child coordination](acp/children.md) owns wire shapes. [Frontend guidance](frontend.md)
@@ -30,7 +31,8 @@ is available without adding nested dispatch, child input or a new controller.
 ## Admission and immutable assignment facts
 
 `dispatch_research` takes the same bounded brief as `prepare_assignment`, plus
-`routed`. It accepts Research only. The actual parent must have a current active
+`routed`. It accepts Research and approved routed Implementers; the latter's
+workspace/setup/submission contract is owned by [managed workspaces](managed-workspaces.md). The actual parent must have a current active
 run, saved workspace and permitted role. CoS work must still match its exact
 approved handoff. A routed brief must match the settled native intent; an
 unrouted Griller captures its actual provider connection, model and thinking.
@@ -261,7 +263,7 @@ These amendments supplement the selected assignment's original captured authorit
 They do not rewrite its exact dispatch payload, immutable guidance, selected pair
 or published root-work approval. Root-work publication/approval remains owned by
 [approved work](approved-work.md); a child amendment cannot approve a changed root
-document or grant an Implementer workspace, merge or unrestricted tool authority.
+document, create a new assignment workspace, grant merge or unrestricted tool authority.
 
 Coordination with amendments writes format six, requiring scope history,
 instruction/recovery arrays and explicit child history/Resume facts. Formats two

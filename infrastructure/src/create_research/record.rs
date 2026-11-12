@@ -16,6 +16,10 @@ pub(super) struct Record {
     messages: Vec<()>,
     runs: Vec<()>,
     resume_required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider_retries: Option<Vec<()>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider_retry_history: Option<Vec<()>>,
 
     created_at: u64,
     updated_at: u64,
@@ -95,14 +99,19 @@ impl Record {
         workspace: std::path::PathBuf,
         now: u64,
     ) -> Self {
+        let implementer = execution.brief.role == "implementer";
         let snapshot = execution.instructions;
         let model = execution.selected.model;
         Self {
-            version: 7,
+            version: if implementer { 9 } else { 7 },
             id: execution.agent_id.clone(),
             agent: AgentRecord {
                 id: execution.agent_id,
-                role: "research",
+                role: if implementer {
+                    "implementer"
+                } else {
+                    "research"
+                },
             },
             research: ResearchRecord {
                 parent_id: execution.parent_id,
@@ -157,6 +166,8 @@ impl Record {
             messages: Vec::new(),
             runs: Vec::new(),
             resume_required: false,
+            provider_retries: implementer.then(Vec::new),
+            provider_retry_history: implementer.then(Vec::new),
             created_at: now,
             updated_at: now,
             revision: 0,

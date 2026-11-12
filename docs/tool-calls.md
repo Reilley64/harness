@@ -21,6 +21,7 @@ second model loop.
 | `publish_work` | `PublishWork` | `read_work_proposal` + application `create_work` |
 | `prepare_assignment` | `PrepareAssignment` | application `create_assignment` + `update_decision` |
 | Managed Research tools | `DispatchResearch`, `ControlChildren`, `ReadChildren`, `ReadChildResult` | application `create_dispatch`, `update_children`, `read_children`; [runtime and retrieval](managed-dispatch.md) |
+| `submit_implementation` | `SubmitImplementation` | application `update_workspace` + native `update_workspace`; [exact submissions](managed-workspaces.md) |
 | `mcp_configuration` | `McpConfiguration` | `update_mcp_configuration` |
 | `mcp_call` | `McpCall` | `create_mcp_call` |
 
@@ -36,7 +37,8 @@ MCP servers use the same durable tool loop; see [MCP connections](mcp-connection
 for native configuration, protected trust, discovery and shared cleanup, and
 [HTTP/OAuth](mcp-http-auth.md) for supported authentication and qualification limits.
 [Managed Research](managed-dispatch.md) adds dispatch, fixed joins, backgrounding,
-status and source-linked result tools; Implementers require managed workspaces.
+status and source-linked result tools; [managed Implementers](managed-workspaces.md)
+add native owned workspaces and committed submission/check handoffs.
 There are no plugins, browser automation, PTYs, persistent shells or general-purpose
 background process jobs. Trusted exact-version
 [approved handoff](approved-work.md) can create a separate conversational CoS;

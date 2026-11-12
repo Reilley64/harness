@@ -22,6 +22,7 @@ pub(super) fn parent(conversation: &domain::Conversation) -> bool {
             domain::AgentRole::ChiefOfStaff
                 | domain::AgentRole::Griller
                 | domain::AgentRole::Research
+                | domain::AgentRole::Implementer
         )
     })
 }

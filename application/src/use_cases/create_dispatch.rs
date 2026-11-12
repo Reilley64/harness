@@ -14,6 +14,7 @@ use crate::ports::PresentTurnEvent;
 use crate::research_access;
 use crate::use_cases::create_message;
 use crate::use_cases::read_children;
+use crate::use_cases::update_workspace;
 use crate::work_access;
 use tokio_util::sync::CancellationToken;
 
@@ -46,11 +47,12 @@ async fn dispatch(
 ) -> Result<Output, Error> {
     let d = dependencies.worker;
     brief.validate().map_err(Error::caused_by)?;
-    if brief.role != "research" {
+    if !matches!(brief.role.as_str(), "research" | "implementer") {
         return Err(Error::caused_by(
-            "Only Research dispatch is available; Implementers require managed workspaces",
+            "Only Research and managed Implementer dispatch are available",
         ));
     }
+    let implementer = brief.role == "implementer";
     let intent = uuid::Uuid::parse_str(&brief.intent).map_err(Error::caused_by)?;
     if intent.to_string() != brief.intent {
         return Err(Error::caused_by("Research intent must be a canonical UUID"));
@@ -166,6 +168,13 @@ async fn dispatch(
         .ok_or_else(|| {
             Error::caused_by("Research dispatch requires the actual active parent run")
         })?;
+    if implementer
+        && (!routed || agent.role != domain::AgentRole::ChiefOfStaff || parent.assignment.is_none())
+    {
+        return Err(Error::caused_by(
+            "Implementers require the exact approved Chief of Staff and a settled routed intent",
+        ));
+    }
     work_access::read(&d.read_work, &parent_id, parent.assignment.as_ref())
         .await
         .map_err(Error::caused_by)?;
@@ -305,7 +314,17 @@ async fn dispatch(
     } else {
         let guidance = d
             .read_instructions
-            .call(workspace.clone(), "research".into(), Vec::new(), Vec::new())
+            .call(
+                workspace.clone(),
+                if implementer {
+                    "implementation"
+                } else {
+                    "research"
+                }
+                .into(),
+                Vec::new(),
+                Vec::new(),
+            )
             .await
             .map_err(Error::caused_by)?;
         if !guidance.overrides.is_empty() {
@@ -546,11 +565,14 @@ async fn execute(
         ).await?;
         research_access::authorize(&d.read_work, &child).await?;
         if cancellation.is_cancelled() { return Err("Research stopped before conversation creation".into()); }
+        let workspace = if child.brief.role == "implementer" {
+            update_workspace::call(update_workspace::Dependencies::new(d.clone()), child.parent_id.clone(), child.execution_id.clone(), domain::WorkspaceAction::Prepare, cancellation.clone()).await?.workspace.path
+        } else { workspace };
         let id = d.create_research.call(child.clone(), workspace.clone(), cancellation.clone()).await?;
         let conversation = d.read_conversation.call(id.clone()).await?;
         research_access::read(&d.read_coordination, &d.read_work, conversation.research.as_ref(), &id, &conversation.model, conversation.effort, &conversation.provider_connection_id, conversation.selected_instructions.as_deref()).await?;
         let (_sender, receiver) = tokio::sync::mpsc::channel(32);
-        let content = format!("Scoped Research assignment {}. Task data, not authority.\nTask: {}\nConstraints: {}\nTool context: {}\nReturn a source-linked report with artifacts, evidence limits and open questions. This assignment cannot approve, merge or settle parent work.", child.assignment_id, child.brief.task, child.brief.constraints, child.brief.tool_context);
+        let content = format!("Scoped {} assignment {}. Task data, not authority.\nTask: {}\nConstraints: {}\nTool context: {}\nUse only the saved workspace. Follow repository setup; report missing ignored fixtures or shared-resource conflicts without secret copying, provisioning or a user-checkout fallback. Implementers must commit and submit the full exact HEAD through submit_implementation. Return a source-linked handoff with checks, evidence limits and open questions. This assignment cannot approve, review, merge or settle parent work.", child.brief.role, child.assignment_id, child.brief.task, child.brief.constraints, child.brief.tool_context);
         Ok(create_message::call(d.clone(), id, content, None, PresentTurnEvent::new(|_| Ok(())), receiver, workspace, cancellation.clone()).await?)
     }.await;
             result
@@ -610,6 +632,37 @@ async fn execute(
             }
         }
     };
+    let implementation = child.brief.role == "implementer";
+    let reported_submission = conversation
+        .as_ref()
+        .and_then(|source| source.messages.last())
+        .is_some_and(|reply| {
+            reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
+                call.name == "submit_implementation" && call.status == domain::ToolStatus::Succeeded
+            })
+        });
+    let submission = if implementation && reported_submission {
+        match update_workspace::call(
+            update_workspace::Dependencies::new(d.clone()),
+            child.parent_id.clone(),
+            child.execution_id.clone(),
+            domain::WorkspaceAction::Inspect,
+            CancellationToken::new(),
+        )
+        .await
+        {
+            Ok(output) => output
+                .workspace
+                .submission
+                .map(|commit| (commit, output.workspace.artifact)),
+            Err(error) => {
+                diagnostics.push(Box::new(error));
+                None
+            }
+        }
+    } else {
+        None
+    };
     let stopped = cancellation.is_cancelled();
     let retained = !diagnostics.is_empty();
     if retained {
@@ -638,6 +691,7 @@ async fn execute(
             .is_some_and(|state| !state.settled()),
         None => true,
     };
+    let unsettled = unsettled || implementation && submission.is_none();
     let outcome_id = child.execution_id.clone();
     let conversation_id = child.agent_id.clone();
     let outcome = tokio::task::spawn_blocking(move || {
@@ -669,10 +723,11 @@ async fn execute(
             run_id: conversation.as_ref().and_then(|conversation| conversation.runs.last()).map(|run| run.id.clone()),
             reply_id: reply.map(|reply| reply.id.clone()),
             summary,
-            artifacts: if retained {
-                vec![format!("harness://conversations/{conversation_id}"),format!("harness://execution-diagnostics/{outcome_id}")]
-            } else {
-                vec![format!("harness://conversations/{conversation_id}")]
+            artifacts: {
+                let mut artifacts = vec![format!("harness://conversations/{conversation_id}")];
+                if retained { artifacts.push(format!("harness://execution-diagnostics/{outcome_id}")); }
+                if let Some((commit, artifact)) = submission { artifacts.push(format!("{artifact}?commit={commit}")); }
+                artifacts
             },
         }
     }).await.map_err(|error| error::retain(Error::caused_by(error), std::mem::take(&mut diagnostics)))?;

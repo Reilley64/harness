@@ -20,6 +20,7 @@ use crate::use_cases::create_work;
 use crate::use_cases::delete_execution;
 use crate::use_cases::read_children;
 use crate::use_cases::update_children;
+use crate::use_cases::update_workspace;
 use crate::work_access;
 pub use dependencies::Dependencies;
 pub use error::Error;
@@ -338,7 +339,13 @@ async fn coordinate(
                         .workspace
                         .clone()
                         .ok_or_else(|| Error::caused_by("The role has no workspace"))?,
-                    if conversation.research.is_some() {
+                    if conversation
+                        .agent
+                        .as_ref()
+                        .is_some_and(|agent| agent.role == domain::AgentRole::Implementer)
+                    {
+                        "implementation"
+                    } else if conversation.research.is_some() {
                         "research"
                     } else if conversation.assignment.is_some() {
                         "coordination"
@@ -509,6 +516,7 @@ async fn coordinate(
             &present,
             &mut steering,
             &mut tool_errors,
+            recovering_research,
             &turn_cancellation,
         );
         tokio::pin!(result);
@@ -697,8 +705,54 @@ async fn run(
     present: &PresentTurnEvent,
     steering: &mut tokio::sync::mpsc::Receiver<SteeringRequest>,
     tool_errors: &mut Vec<Box<dyn std::error::Error + Send + Sync>>,
+    recovering: bool,
     cancellation: &CancellationToken,
 ) -> Result<domain::MessageStatus, Error> {
+    if conversation
+        .agent
+        .as_ref()
+        .is_some_and(|agent| agent.role == domain::AgentRole::Implementer)
+    {
+        let owner = conversation
+            .research
+            .as_ref()
+            .ok_or_else(|| Error::caused_by("Implementer execution owner is missing"))?;
+        let output = update_workspace::call(
+            update_workspace::Dependencies::new(dependencies.clone()),
+            owner.parent_id.clone(),
+            owner.execution_id.clone(),
+            domain::WorkspaceAction::Open {
+                resume: recovering,
+                rework: conversation
+                    .messages
+                    .len()
+                    .checked_sub(3)
+                    .and_then(|index| conversation.messages.get(index))
+                    .filter(|reply| {
+                        reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
+                            call.name == "submit_implementation"
+                                && call.status == domain::ToolStatus::Succeeded
+                        })
+                    })
+                    .and_then(|_| {
+                        conversation
+                            .runs
+                            .len()
+                            .checked_sub(2)
+                            .and_then(|index| conversation.runs.get(index))
+                    })
+                    .map(|run| run.id.clone()),
+            },
+            cancellation.clone(),
+        )
+        .await
+        .map_err(Error::caused_by)?;
+        if conversation.workspace.as_ref() != Some(&output.workspace.path) {
+            return Err(Error::caused_by(
+                "Implementer workspace differs from its owned native intent",
+            ));
+        }
+    }
     let lease = managed::claim(dependencies, conversation, cancellation).await?;
     let reply = conversation.active_reply().map_err(Error::caused_by)?;
     if let Some(step) = reply.steps.last()
@@ -1279,8 +1333,10 @@ async fn run(
                     "Execution control observation failed; admitted tool result and causes retained",
                 ));
             }
-            if call.name == domain::Tool::RequestHumanInput.as_str()
-                && call.status == domain::ToolStatus::Succeeded
+            if matches!(
+                call.name.as_str(),
+                "request_human_input" | "submit_implementation"
+            ) && call.status == domain::ToolStatus::Succeeded
             {
                 return Ok(domain::MessageStatus::Incomplete);
             }
@@ -1375,6 +1431,14 @@ async fn execute(
                 if sender_agent.is_none() { return Err("Human input requires a durable agent identity".into()); }
                 domain::ToolResult::success(format!("HUMAN INPUT REQUIRED: {question}"))
             }
+            domain::ToolInvocation::SubmitImplementation(commit) => {
+                if sender_agent.is_none_or(|agent| agent.role != domain::AgentRole::Implementer) {
+                    return Err("Only the accepted Implementer can submit its workspace".into());
+                }
+                let owner = research.ok_or("Implementer has no retained execution owner")?;
+                let output = update_workspace::call(update_workspace::Dependencies::new(dependencies.clone()), owner.parent_id.clone(), owner.execution_id.clone(), domain::WorkspaceAction::Submit { commit }, cancellation.clone()).await?;
+                domain::ToolResult { status: domain::ToolStatus::Succeeded, output: format!("Exact committed submission {} passed the recorded native checks. Durable handoff: {}. This is not review acceptance, integration or merge authority.", output.workspace.submission.as_deref().ok_or("Submission has no confirmed check result")?, output.workspace.artifact), artifact: Some(output.workspace.artifact), truncated: false }
+            }
             domain::ToolInvocation::DispatchResearch(brief, routed) => {
                 let output = create_dispatch::call(create_dispatch::Dependencies { worker: dependencies.clone() }, sender_id.into(), parent_revision, brief, routed, cancellation).await?;
                 tool_errors.extend(output.diagnostics);
@@ -1414,12 +1478,12 @@ async fn execute(
             }
             domain::ToolInvocation::PrepareAssignment(brief) => {
                 let output = create_assignment::call(dependencies.create_assignment.clone(), sender_id, sender_agent, assignment, parent, parent_connection_id, parent_revision, parent_run_id, brief, cancellation).await?;
-                domain::ToolResult::success(format!("Assignment intent {} prepared with the exact actual-parent model AND thinking snapshot. Inspect /decision {}. No worker launched. Research dispatch is separately admitted; Implementers/workspaces/review/merge remain unavailable.", output.decision.id, output.decision.id))
+                domain::ToolResult::success(format!("Assignment intent {} prepared with the exact actual-parent model AND thinking snapshot. Inspect /decision {}. No worker launched. Research and approved routed Implementer dispatch are separately admitted; review, integration and merge remain unavailable.", output.decision.id, output.decision.id))
             }
             domain::ToolInvocation::PublishWork(arguments) => {
                 if cancellation.is_cancelled() { return Ok(domain::ToolResult::cancelled()); }
                 let result=create_work::call(dependencies.create_work.clone(),sender_id,sender_agent,workspace,arguments.work_id,arguments.intent,arguments.path,arguments.revision,cancellation).await?;
-                domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Only separately admitted Research can execute; implementation, review and merge remain unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
+                domain::ToolResult::success(format!("Reviewable work {} revision {} version {} captured. No implementation authority. Inspect with /work {} and use the native exact-version approval control. Research can be separately admitted; Implementers require exact trusted work approval and routed CoS dispatch. Review, integration and merge remain unavailable.",result.work.id,result.work.revision,result.work.current()?.version,result.work.id))
             }
             domain::ToolInvocation::McpCall(arguments) => {
                 let response = dependencies.create_mcp_call.call(workspace, arguments, cancellation).await?;

@@ -168,8 +168,14 @@ impl ChildExecution {
         self.brief.validate()?;
         self.selected.validate(self.brief.context_tokens)?;
         self.instructions.validate()?;
-        if self.brief.role != "research"
-            || self.instructions.phase != "research"
+        if !matches!(self.brief.role.as_str(), "research" | "implementer")
+            || self.instructions.phase
+                != if self.brief.role == "implementer" {
+                    "implementation"
+                } else {
+                    "research"
+                }
+            || self.brief.role == "implementer" && !self.routed
             || self.intent != self.brief.intent
             || [
                 &self.intent,

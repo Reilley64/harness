@@ -13,6 +13,7 @@ pub enum Tool {
     PublishWork,
     PrepareAssignment,
     DispatchResearch,
+    SubmitImplementation,
     JoinChildren,
     BackgroundChildren,
     CompleteChildrenFollowUp,
@@ -23,7 +24,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Read,
         Self::Bash,
         Self::Edit,
@@ -37,6 +38,7 @@ impl Tool {
         Self::PublishWork,
         Self::PrepareAssignment,
         Self::DispatchResearch,
+        Self::SubmitImplementation,
         Self::JoinChildren,
         Self::BackgroundChildren,
         Self::CompleteChildrenFollowUp,
@@ -61,6 +63,7 @@ impl Tool {
             Self::PublishWork => "publish_work",
             Self::PrepareAssignment => "prepare_assignment",
             Self::DispatchResearch => "dispatch_research",
+            Self::SubmitImplementation => "submit_implementation",
             Self::JoinChildren => "join_children",
             Self::BackgroundChildren => "background_children",
             Self::CompleteChildrenFollowUp => "complete_children_followup",
@@ -85,6 +88,7 @@ impl Tool {
                 | Self::PublishWork
                 | Self::PrepareAssignment
                 | Self::DispatchResearch
+                | Self::SubmitImplementation
                 | Self::JoinChildren
                 | Self::BackgroundChildren
                 | Self::CompleteChildrenFollowUp

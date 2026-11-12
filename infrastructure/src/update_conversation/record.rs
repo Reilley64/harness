@@ -193,7 +193,15 @@ struct MessageRecord {
 impl From<domain::Conversation> for Record {
     fn from(conversation: domain::Conversation) -> Self {
         Self {
-            version: 8,
+            version: if conversation
+                .agent
+                .as_ref()
+                .is_some_and(|agent| agent.role == domain::AgentRole::Implementer)
+            {
+                9
+            } else {
+                8
+            },
             provider_retries: Some(
                 conversation
                     .provider_retry
@@ -224,7 +232,9 @@ impl From<domain::Conversation> for Record {
             selected_instructions: conversation.selected_instructions,
             agent: conversation.agent.map(|agent| AgentRecord {
                 id: agent.id.0,
-                role: if agent.role == domain::AgentRole::Research {
+                role: if agent.role == domain::AgentRole::Implementer {
+                    "implementer"
+                } else if agent.role == domain::AgentRole::Research {
                     "research"
                 } else if agent.role == domain::AgentRole::ChiefOfStaff {
                     "chief_of_staff"
@@ -365,7 +375,7 @@ impl TryFrom<Record> for domain::Conversation {
     type Error = StorageError;
 
     fn try_from(dto: Record) -> Result<Self, Self::Error> {
-        if !matches!(dto.version, 1..=8) {
+        if !matches!(dto.version, 1..=9) {
             return Err("Unsupported conversation format".into());
         }
         conversations::validate_id(&dto.id)?;
@@ -555,6 +565,7 @@ impl TryFrom<Record> for domain::Conversation {
                     "chief_of_staff" if dto.version >= 6 => domain::AgentRole::ChiefOfStaff,
                     "setup" if dto.version >= 6 => domain::AgentRole::Setup,
                     "research" if dto.version >= 7 => domain::AgentRole::Research,
+                    "implementer" if dto.version >= 9 => domain::AgentRole::Implementer,
                     _ => return Err(StorageError::from("Unsupported agent role")),
                 };
                 Ok(domain::Agent {
@@ -693,10 +704,12 @@ impl TryFrom<Record> for domain::Conversation {
             assignment_id: value.assignment_id,
             execution_id: value.execution_id,
         });
-        if agent
-            .as_ref()
-            .is_some_and(|agent| agent.role == domain::AgentRole::Research)
-            != research.is_some()
+        if agent.as_ref().is_some_and(|agent| {
+            matches!(
+                agent.role,
+                domain::AgentRole::Research | domain::AgentRole::Implementer
+            )
+        }) != research.is_some()
             || dto.version < 8 && (dto.version == 7) != research.is_some()
         {
             return Err("Invalid Research assignment/role binding".into());
@@ -713,25 +726,33 @@ impl TryFrom<Record> for domain::Conversation {
             }
             if agent.as_ref().is_none_or(|agent| agent.id.0 != dto.id)
                 || research.parent_id == dto.id
-                || instruction_snapshots
-                    .iter()
-                    .any(|snapshot| snapshot.phase != "research")
+                || instruction_snapshots.iter().any(|snapshot| {
+                    snapshot.phase
+                        != if agent
+                            .as_ref()
+                            .is_some_and(|agent| agent.role == domain::AgentRole::Implementer)
+                        {
+                            "implementation"
+                        } else {
+                            "research"
+                        }
+                })
             {
                 return Err("Research provenance or captured instructions are inconsistent".into());
             }
         } else if instruction_snapshots
             .iter()
-            .any(|snapshot| snapshot.phase == "research")
+            .any(|snapshot| matches!(snapshot.phase.as_str(), "research" | "implementation"))
         {
             return Err("Research instructions require an actual Research assignment".into());
         }
-        if dto.version == 8 && dto.provider_retries.is_none()
+        if dto.version >= 8 && dto.provider_retries.is_none()
             || dto.version < 8 && dto.provider_retries.is_some()
             || dto.provider_retries.as_ref().is_some_and(|r| r.len() > 1)
         {
             return Err("Missing or incompatible provider retry authority".into());
         }
-        if dto.version == 8 && dto.provider_retry_history.is_none()
+        if dto.version >= 8 && dto.provider_retry_history.is_none()
             || dto.version < 8 && dto.provider_retry_history.is_some()
             || dto
                 .provider_retry_history

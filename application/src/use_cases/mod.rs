@@ -39,3 +39,4 @@ pub mod update_run;
 pub mod update_scope;
 pub mod update_setup;
 pub mod update_work;
+pub mod update_workspace;

@@ -17,6 +17,7 @@ use crate::update_coordination;
 use crate::update_decision;
 use crate::update_file;
 use crate::update_mcp_configuration;
+use crate::update_workspace;
 
 pub fn read_tool_invocation()
 -> impl Fn(domain::Tool, String) -> Result<domain::ToolInvocation, tool_io::Error> + Send + Sync {
@@ -40,6 +41,7 @@ pub fn read_tool_invocation()
             domain::Tool::PublishWork => read_work_proposal::decode(&arguments),
             domain::Tool::PrepareAssignment => update_decision::decode(&arguments),
             domain::Tool::DispatchResearch => create_research::decode(&arguments),
+            domain::Tool::SubmitImplementation => update_workspace::decode(&arguments),
             domain::Tool::JoinChildren
             | domain::Tool::BackgroundChildren
             | domain::Tool::CompleteChildrenFollowUp => {

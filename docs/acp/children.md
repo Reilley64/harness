@@ -15,7 +15,7 @@ Fields are camelCase and unknown fields are rejected.
 | --- | --- | --- |
 | `_harness/children/read` | `{sessionId}` | Read durable parent status without inference. |
 | `_harness/children/result` | `{sessionId, executionId}` | Read that parent's bounded source-linked receipt. |
-| `_harness/children/dispatch` | `{sessionId, revision, intent, routed, role, task, constraints, toolContext, contextTokens}` | Admit or reuse a Research execution and return before long child completion. |
+| `_harness/children/dispatch` | `{sessionId, revision, intent, routed, role, task, constraints, toolContext, contextTokens}` | Admit or reuse Research or an approved routed Implementer and return before long child completion. |
 | `_harness/children/steer` | `{sessionId, executionId, id, text}` | Durably order a targeted human instruction for an existing active owned child. |
 | `_harness/children/scope/request` | `{sessionId, executionId, id, text, replaces?, supersedesRun?}` | Persist a targeted scope version and pause its actual ownership subtree pending approval. |
 | `_harness/children/scope/approve` | `{sessionId, id, version, approvalId}` | Approve only the latest exact scope version, without satisfying unrelated gates. |
@@ -29,7 +29,8 @@ Fields are camelCase and unknown fields are rejected.
 
 `intent`, `sessionId` and execution/assignment identities are canonical UUIDs.
 Dispatch `revision` is the inspected parent conversation revision, not a tracker
-revision. `role` must be `research`; Implementer is unavailable. Task is at most
+revision. `role` is `research` or `implementer`. Implementers require the approved CoS,
+`routed: true` and the [managed workspace configuration](../managed-workspaces.md). Task is at most
 4096 UTF-8 bytes; constraints/tool context are each at most 2048; required context
 is 1..1,000,000,000, not a measured token prediction. CoS uses `routed: true` with
 its matching settled native intent. Permitted Griller inheritance uses false.
@@ -138,7 +139,12 @@ follow-up completion are distinct fields, not aliases for settlement. Follow-up
 requires its typed control or `complete_children_followup` tool; neither child
 prose nor the ending of a parent response writes that disposition.
 
-Safe conversation metadata additionally exposes `agent.role: "research"`, its
+`_harness/workspace/read` takes `{sessionId, executionId}` and returns exact native
+workspace/submission/check evidence as documented in [managed workspaces](../managed-workspaces.md).
+Successful `submit_implementation` ends the run for typed follow-up; the same
+answer interface retains the Implementer for ordinary rework, without new routing.
+
+Safe conversation metadata additionally exposes `agent.role: "research"` or `"implementer"`, its
 actual `creatorId`, and nullable `research: {parentId, parentAgentId, intent, assignmentId,
 executionId}`. Research run task is `research`. Existing schema-six Setup/CoS
 metadata and private-state exclusion remain intact.

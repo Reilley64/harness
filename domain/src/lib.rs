@@ -1,3 +1,9 @@
+mod workspace_check;
+pub use workspace_check::WorkspaceCheck;
+mod assignment_workspace;
+mod workspace_action;
+pub use assignment_workspace::AssignmentWorkspace;
+pub use workspace_action::WorkspaceAction;
 mod children_control;
 pub use children_control::ChildrenControl;
 mod research_assignment;

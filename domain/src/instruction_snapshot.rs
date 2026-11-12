@@ -18,7 +18,13 @@ impl InstructionSnapshot {
             || !self.id.bytes().all(|byte| byte.is_ascii_hexdigit())
             || !matches!(
                 self.phase.as_str(),
-                "grilling" | "specification" | "tickets" | "coordination" | "setup" | "research"
+                "grilling"
+                    | "specification"
+                    | "tickets"
+                    | "coordination"
+                    | "setup"
+                    | "research"
+                    | "implementation"
             )
             || self.instructions.is_empty()
             || self.instructions.len() > 64
@@ -80,6 +86,7 @@ impl InstructionSnapshot {
             "coordination" => "role/chief-of-staff",
             "setup" => "role/setup",
             "research" => "role/research",
+            "implementation" => "role/implementer",
             _ => "role/griller",
         };
         if !ids.contains(&role.to_owned())

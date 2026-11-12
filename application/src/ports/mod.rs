@@ -19,6 +19,9 @@ macro_rules! port {
     };
 }
 
+mod update_workspace;
+pub use update_workspace::UpdateWorkspace;
+pub use update_workspace::UpdateWorkspaceError;
 mod lock_execution;
 pub use lock_execution::ExecutionGuard;
 pub use lock_execution::LockExecution;

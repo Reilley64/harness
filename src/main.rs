@@ -36,6 +36,9 @@ async fn run() -> Result<(), AppError> {
                 (&dependencies).into(),
             )
         })
+        .update_workspace(|_| {
+            application::use_cases::update_workspace::Dependencies::new((&dependencies).into())
+        })
         .create_instruction(|_| (&dependencies).into())
         .create_scope(|_| (&dependencies).into())
         .update_scope(|_| {

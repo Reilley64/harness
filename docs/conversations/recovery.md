@@ -27,7 +27,10 @@ justified legacy message/run provider when those fields are absent. New updates 
 generation cost/accounting facts; initial empty records may still be six/seven.
 Older versions remain readable without inventing facts. See
 [provider waits and usage](../provider-waits.md). Research retains its explicit
-schema-seven lineage in eight as well.
+schema-seven lineage in eight as well. Managed Implementers use schema nine
+with the same execution association and strict Implementer/implementation role/phase
+binding; retry/accounting authority remains required. See
+[managed workspaces](../managed-workspaces.md).
 See [managed Research compatibility](../managed-dispatch.md#compatibility-and-recovery-limits),
 [role guidance](../role-guidance.md) and [repository Setup](../repository-setup.md).
 Each run records its own stable identity, agent identity,
@@ -117,8 +120,8 @@ through the [role-guidance resolver](../role-guidance.md). It refines ideas and 
 can publish reviewable proposals with normal repository-supported tools and capture
 them through `publish_work`. A separate trusted exact-version approval operation
 creates CoS; Griller prose cannot grant implementation/merge authority. [Managed Research](../managed-dispatch.md) owns child execution and its remaining
-qualification limits. Implementer execution, review, integration and merge remain
-unavailable. See
+qualification limits. [Managed Implementers](../managed-workspaces.md) add owned
+workspace execution; review, integration and merge remain unavailable. See
 [approved work](../approved-work.md). Each submitted answer starts a later grilling run on the same agent;
 steering stays within the active run. A successful response ends the run for human
 input, not as factory completion. Model steps and generations remain the existing

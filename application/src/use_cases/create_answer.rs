@@ -9,6 +9,7 @@ pub use output::Output;
 use crate::ports::PresentTurnEvent;
 use crate::turn_control::SteeringRequest;
 use crate::use_cases::create_message;
+use crate::use_cases::update_workspace;
 use tokio_util::sync::CancellationToken;
 
 pub async fn call(
@@ -204,6 +205,40 @@ async fn answer(
             });
         }
     };
+    let implementation = output
+        .conversation
+        .agent
+        .as_ref()
+        .is_some_and(|agent| agent.role == domain::AgentRole::Implementer);
+    let reported_submission = output.conversation.messages.last().is_some_and(|reply| {
+        reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
+            call.name == "submit_implementation" && call.status == domain::ToolStatus::Succeeded
+        })
+    });
+    let submission = if implementation && reported_submission {
+        let result = update_workspace::call(
+            update_workspace::Dependencies::new(d.clone()),
+            research.parent_id.clone(),
+            research.execution_id.clone(),
+            domain::WorkspaceAction::Inspect,
+            CancellationToken::new(),
+        )
+        .await;
+        match result {
+            Ok(output) => output
+                .workspace
+                .submission
+                .map(|commit| (commit, output.workspace.artifact)),
+            Err(original) => {
+                return Err(error::retain(
+                    Error::caused_by(original),
+                    std::mem::take(&mut output.tool_errors),
+                ));
+            }
+        }
+    } else {
+        None
+    };
     let retained = !output.tool_errors.is_empty();
     if retained {
         let run = output.conversation.runs.last().ok_or_else(|| {
@@ -239,6 +274,7 @@ async fn answer(
             )
         })?
         .is_some_and(|state| !state.settled());
+    let unsettled = unsettled || implementation && submission.is_none();
     let execution_id = research.execution_id.clone();
     let (mut conversation, outcome) = tokio::task::spawn_blocking(move || {
         let conversation = output.conversation;
@@ -259,7 +295,12 @@ async fn answer(
             summary: if reply.content.len() <= 8192 { reply.content.clone() } else {
                 "Later-run report exceeds its bounded summary; inspect the retained source conversation.".into()
             },
-            artifacts: if retained { vec![format!("harness://conversations/{id}"), format!("harness://execution-diagnostics/{}/runs/{}", execution_id, run.id)] } else { vec![format!("harness://conversations/{id}")] },
+            artifacts: {
+                let mut artifacts = vec![format!("harness://conversations/{id}")];
+                if retained { artifacts.push(format!("harness://execution-diagnostics/{}/runs/{}", execution_id, run.id)); }
+                if let Some((commit, artifact)) = submission { artifacts.push(format!("{artifact}?commit={commit}")); }
+                artifacts
+            },
         };
         Ok::<_, Error>((Output { conversation, tool_errors: output.tool_errors }, outcome))
     }).await.map_err(Error::caused_by)??;

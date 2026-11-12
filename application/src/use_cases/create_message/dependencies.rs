@@ -19,6 +19,7 @@ pub struct Dependencies {
     pub(crate) lock_execution: ports::LockExecution,
     pub(crate) create_execution_diagnostics: ports::CreateExecutionDiagnostics,
     pub(crate) create_research: ports::CreateResearch,
+    pub(crate) update_workspace: ports::UpdateWorkspace,
     pub(crate) read_coordination: ports::ReadCoordination,
     pub(crate) read_execution_claim: ports::ReadExecutionClaim,
     pub(crate) read_execution_claims: ports::ReadExecutionClaims,

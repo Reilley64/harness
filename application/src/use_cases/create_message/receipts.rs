@@ -1,6 +1,7 @@
 use super::Dependencies;
 use super::Error;
 use super::error;
+use crate::use_cases::update_workspace;
 use tokio_util::sync::CancellationToken;
 
 pub(super) async fn persist(
@@ -44,6 +45,31 @@ pub(super) async fn persist(
         .await
         .map_err(Error::caused_by)?
         .is_some_and(|state| !state.settled());
+    let implementation = conversation
+        .agent
+        .as_ref()
+        .is_some_and(|agent| agent.role == domain::AgentRole::Implementer);
+    let reported_submission = reply.steps.iter().flat_map(|step| &step.calls).any(|call| {
+        call.name == "submit_implementation" && call.status == domain::ToolStatus::Succeeded
+    });
+    let submission = if implementation && reported_submission {
+        let workspace = update_workspace::call(
+            update_workspace::Dependencies::new(d.clone()),
+            research.parent_id.clone(),
+            research.execution_id.clone(),
+            domain::WorkspaceAction::Inspect,
+            CancellationToken::new(),
+        )
+        .await
+        .map_err(Error::caused_by)?
+        .workspace;
+        workspace
+            .submission
+            .map(|commit| (commit, workspace.artifact))
+    } else {
+        None
+    };
+    let unsettled = unsettled || implementation && submission.is_none();
     let status = if uncertain {
         domain::ChildExecutionStatus::Unknown
     } else {
@@ -67,7 +93,13 @@ pub(super) async fn persist(
         } else {
             "Recovered report exceeds its bounded summary; inspect its retained source conversation.".into()
         },
-        artifacts: vec![format!("harness://conversations/{}", conversation.id)],
+        artifacts: {
+            let mut artifacts = vec![format!("harness://conversations/{}", conversation.id)];
+            if let Some((commit, artifact)) = submission {
+                artifacts.push(format!("{artifact}?commit={commit}"));
+            }
+            artifacts
+        },
     };
     let received = d
         .update_coordination

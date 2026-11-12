@@ -51,6 +51,7 @@ use crate::update_model_selection;
 use crate::update_research_guidance;
 use crate::update_setup_draft;
 use crate::update_work;
+use crate::update_workspace;
 
 use std::time::Duration;
 
@@ -70,6 +71,7 @@ pub struct Dependencies {
     delete_execution: application::use_cases::delete_execution::Dependencies,
     create_execution_diagnostics: ports::CreateExecutionDiagnostics,
     create_research: ports::CreateResearch,
+    update_workspace: ports::UpdateWorkspace,
     read_coordination: ports::ReadCoordination,
     read_execution_claim: ports::ReadExecutionClaim,
     read_execution_claims: ports::ReadExecutionClaims,
@@ -210,6 +212,14 @@ impl Dependencies {
                     create_research::create_research(&settings.app_data_path.join("conversations"));
                 ports::CreateResearch::new(move |execution, workspace, cancellation| {
                     let result = implementation(execution, workspace, cancellation);
+                    Box::pin(async move { Ok(result.await?) })
+                })
+            })
+            .update_workspace(|deps| {
+                let settings: &Settings = deps.as_ref();
+                let update = update_workspace::update_workspace(&settings.app_data_path);
+                ports::UpdateWorkspace::new(move |execution, repository, action, cancellation| {
+                    let result = update(execution, repository, action, cancellation);
                     Box::pin(async move { Ok(result.await?) })
                 })
             })

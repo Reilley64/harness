@@ -89,6 +89,7 @@ impl Conversation {
         if self.agent.as_ref().is_some_and(|agent| {
             (agent.role == AgentRole::ChiefOfStaff) != (snapshot.phase == "coordination")
                 || (agent.role == AgentRole::Research) != (snapshot.phase == "research")
+                || (agent.role == AgentRole::Implementer) != (snapshot.phase == "implementation")
         }) {
             return Err("The instruction phase does not belong to this durable role");
         }

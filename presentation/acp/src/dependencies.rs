@@ -35,10 +35,12 @@ use application::use_cases::update_routing_evidence;
 use application::use_cases::update_scope;
 use application::use_cases::update_setup;
 use application::use_cases::update_work;
+use application::use_cases::update_workspace;
 
 #[fundle::bundle]
 pub struct Dependencies {
     pub create_dispatch: create_dispatch::Dependencies,
+    pub update_workspace: update_workspace::Dependencies,
     pub create_instruction: create_instruction::Dependencies,
     pub create_scope: create_scope::Dependencies,
     pub update_scope: update_scope::Dependencies,

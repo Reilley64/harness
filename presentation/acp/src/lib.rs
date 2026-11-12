@@ -17,6 +17,7 @@ mod steering;
 mod tools;
 mod usage;
 mod work;
+mod workspaces;
 
 mod model_allowlist;
 mod model_selection;
@@ -79,6 +80,7 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
         read_children,
         update_children,
         create_dispatch,
+        update_workspace,
         create_instruction,
         create_scope,
         update_scope,
@@ -357,6 +359,18 @@ pub async fn run(dependencies: impl Into<Dependencies>) -> Result<(), Error> {
                             Ok(result) => responder.respond(children::Response { coordination: None, execution: None, result }),
                             Err(error) => responder.respond_with_error(error),
                         },
+                        Err(error) => responder.respond_with_error(conversations::error(error)),
+                    }
+                })
+            }, agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: workspaces::ReadRequest, responder, connection| {
+                let dependencies = update_workspace.clone();
+                connection.spawn(async move {
+                    let result = application::use_cases::update_workspace::call(dependencies, request.session_id, request.execution_id, domain::WorkspaceAction::Inspect, tokio_util::sync::CancellationToken::new()).await;
+                    match result {
+                        Ok(output) => responder.respond(workspaces::Response::from(output.workspace)),
                         Err(error) => responder.respond_with_error(conversations::error(error)),
                     }
                 })

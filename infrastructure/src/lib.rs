@@ -67,3 +67,4 @@ pub mod update_model_selection;
 pub mod update_research_guidance;
 mod update_setup_draft;
 pub mod update_work;
+pub mod update_workspace;

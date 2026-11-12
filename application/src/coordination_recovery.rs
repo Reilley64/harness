@@ -1,12 +1,74 @@
 mod idle;
 pub(crate) use idle::restore;
 
+use crate::ports::LockExecution;
 use crate::ports::ReadCoordination;
 use crate::ports::UpdateConversation;
 use crate::ports::UpdateCoordination;
 use tokio_util::sync::CancellationToken;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
+
+pub(crate) async fn restore_implementation(
+    read: &ReadCoordination,
+    update: &UpdateCoordination,
+    execution: &LockExecution,
+    conversation: &domain::Conversation,
+) -> Result<(), Error> {
+    if !conversation.resume_required
+        || conversation
+            .agent
+            .as_ref()
+            .is_none_or(|agent| agent.role != domain::AgentRole::Implementer)
+    {
+        return Ok(());
+    }
+    let owner = conversation
+        .research
+        .as_ref()
+        .ok_or("Interrupted Implementer has no execution owner")?;
+    let _lease = match execution.call(owner.execution_id.clone()).await {
+        Ok(lease) => lease,
+        Err(error) if error.busy => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let state = read
+        .call(owner.parent_id.clone())
+        .await?
+        .ok_or("Interrupted Implementer coordination is missing")?;
+    let child = state
+        .children
+        .iter()
+        .find(|child| child.execution_id == owner.execution_id)
+        .ok_or("Interrupted Implementer execution is missing")?;
+    if child.agent_id != conversation.id
+        || child.assignment_id != owner.assignment_id
+        || child.parent_agent_id != owner.parent_agent_id
+        || child.intent != owner.intent
+    {
+        return Err("Interrupted Implementer differs from its durable execution owner".into());
+    }
+    if !child.stop_requested
+        && child.outcome.is_none()
+        && matches!(
+            child.status,
+            domain::ChildExecutionStatus::Held | domain::ChildExecutionStatus::Running
+        )
+    {
+        update
+            .call(
+                owner.parent_id.clone(),
+                domain::CoordinationCommand::RecoverChild {
+                    execution_id: owner.execution_id.clone(),
+                    notice_id: uuid::Uuid::new_v4().to_string(),
+                },
+                None,
+                CancellationToken::new(),
+            )
+            .await?;
+    }
+    Ok(())
+}
 
 pub(crate) async fn restore_answer(
     read: &ReadCoordination,
@@ -84,6 +146,7 @@ pub(crate) async fn pause(
                 domain::AgentRole::Griller
                     | domain::AgentRole::ChiefOfStaff
                     | domain::AgentRole::Research
+                    | domain::AgentRole::Implementer
             )
         })
     {

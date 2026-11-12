@@ -30,6 +30,7 @@ pub enum ToolInvocation {
     PublishWork(PublishWorkArguments),
     PrepareAssignment(AssignmentBrief),
     DispatchResearch(AssignmentBrief, bool),
+    SubmitImplementation(String),
     ControlChildren(ChildrenControl),
     ReadChildren,
     ReadChildResult(String),

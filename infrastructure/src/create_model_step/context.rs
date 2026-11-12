@@ -41,6 +41,7 @@ fn input(
                 | domain::AgentRole::ChiefOfStaff
                 | domain::AgentRole::Setup
                 | domain::AgentRole::Research
+                | domain::AgentRole::Implementer
         )
     }) {
         let snapshot = conversation.run_instructions()?;
@@ -51,7 +52,7 @@ fn input(
         }
     }
     if let Some(a) = &conversation.assignment {
-        input.push(json!({"role":"developer","content":format!("Durable approved handoff. Sender: {}. Recipient: {}. Work: {}. Assignment intent: {}. Version: {}. Trusted human approval recorded at: {}. Source root: {}. Source revision: {}.\\nScope: {}\\nCriteria: {}\\nSpec: {}\\nDependencies: {}\\nWiki pointer: {}\\nCurrent-context pointer: {}\\nArtifacts: {}\\nFollow-up: discuss and plan this approved work. Prepare and inspect native selections, then dispatch scoped Research with dispatch_research; retain chosen pairs and use captured joins without model polling. Implementers, managed workspaces, review, integration and target merge remain unavailable. Never simulate those effects or claim spec completion. Ordinary tools remain OS-user trusted, not managed implementation permission.",
+        input.push(json!({"role":"developer","content":format!("Durable approved handoff. Sender: {}. Recipient: {}. Work: {}. Assignment intent: {}. Version: {}. Trusted human approval recorded at: {}. Source root: {}. Source revision: {}.\\nScope: {}\\nCriteria: {}\\nSpec: {}\\nDependencies: {}\\nWiki pointer: {}\\nCurrent-context pointer: {}\\nArtifacts: {}\\nFollow-up: discuss and plan this approved work. Prepare and inspect native selections, then dispatch scoped Research or approved routed Implementers with dispatch_research; retain chosen pairs and use captured joins without model polling. Managed Implementers commit and submit exact revisions with native checks in owned workspaces. Review, integration and target merge remain unavailable. Never simulate those effects or claim spec completion. Ordinary tools remain OS-user trusted, not managed implementation permission.",
             a.creator_id,conversation.id,a.work_id,a.intent,a.proposal.version,a.approved_at,a.proposal.root,a.proposal.source_revision,a.proposal.scope,a.proposal.criteria,a.proposal.spec,a.proposal.dependencies,a.proposal.wiki.as_deref().unwrap_or("unavailable / unknown"),a.proposal.context.as_deref().unwrap_or("unavailable / unknown"),a.proposal.artifacts.join(", "))}));
     }
     if let Some(current_work) = &conversation.current_work {
