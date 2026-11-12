@@ -131,7 +131,7 @@ pub(crate) fn metadata(conversation: &domain::Conversation) -> Meta {
         "assignment": conversation.assignment.as_ref().map(|a| serde_json::json!({"workId":a.work_id,"intent":a.intent,"version":a.proposal.version,"creatorId":a.creator_id,"approvedAt":a.approved_at,"document":a.proposal.document})),
         "research": conversation.research.as_ref().map(|research| serde_json::json!({"parentId":research.parent_id,"parentAgentId":research.parent_agent_id,"intent":research.intent,"assignmentId":research.assignment_id,"executionId":research.execution_id})),
         "agent": conversation.agent.as_ref().map(|agent| serde_json::json!({
-            "id": agent.id.0, "role": match agent.role { domain::AgentRole::ChiefOfStaff => "chief_of_staff", domain::AgentRole::Setup => "setup", domain::AgentRole::Research => "research", _ => "griller" }, "creatorId": conversation.research.as_ref().map(|research| &research.parent_agent_id).or_else(|| conversation.assignment.as_ref().map(|assignment| &assignment.creator_id)),
+            "id": agent.id.0, "role": match agent.role { domain::AgentRole::ChiefOfStaff => "chief_of_staff", domain::AgentRole::Setup => "setup", domain::AgentRole::Research => "research", domain::AgentRole::Implementer => "implementer", _ => "griller" }, "creatorId": conversation.research.as_ref().map(|research| &research.parent_agent_id).or_else(|| conversation.assignment.as_ref().map(|assignment| &assignment.creator_id)),
         })),
         "runs": conversation.runs.iter().map(|run| serde_json::json!({
             "id": run.id, "agentId": run.agent_id.0, "replyId": run.reply_id,

@@ -11,6 +11,7 @@ use self::record::SubmissionRecord;
 use crate::cache::encode_bounded;
 use crate::create_process;
 use crate::storage;
+use application::error_context::ResultExt;
 use application::ports::PortFuture;
 use std::path::Component;
 use std::path::Path;
@@ -202,7 +203,7 @@ pub fn update_workspace(
                         && !record.rework_runs.contains(&run)
                     {
                         if record.rework_runs.len() >= 2 {
-                            return Err("The recorded three implementation cycles are exhausted; explicit human extension is required, not a new assignment or routing reset".into());
+                            return Err::<domain::AssignmentWorkspace, Error>("The recorded implementation cycle allowance is exhausted".into()).context("The three implementation cycles are exhausted. Preserve this assignment and request a human extension; a new intent or routing cannot reset the allowance.").map_err(Into::into);
                         }
                         uuid::Uuid::parse_str(&run)?;
                         record.rework_runs.push(run);

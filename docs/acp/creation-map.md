@@ -22,7 +22,11 @@ Each page selects at most 64 inventory entries after the cursor and returns
 at most 64 agents. Directory discovery scans metadata; owner-consistency checks
 also read referenced child sources. `next` is the last selected inventory entry when another page
 exists, otherwise null. Filtering unassociated/foreign-workspace conversations
-can make a page shorter, so continue using `next`, not the returned length. There
+can make a page shorter, so continue using `next`, not the returned length.
+A managed Implementer's owned worktree remains associated with the original
+repository through its exact retained CoS owner; a different working directory
+does not silently remove that Implementer from the repository map. The CoS agent
+identity and child execution association are validated without recovery or effects. There
 is no 64-agent fleet cap. Readers refresh from the first page to observe additions
 that sort before an earlier cursor; pagination is not a transactional global
 snapshot.
@@ -42,7 +46,7 @@ repository:
 | `savedStatus`, `runId` | Latest recorded run facts, nullable; not a process-liveness assertion. |
 | `resumeRequired` | Retained conversation recovery flag. |
 | `coordination` | Nullable own status/gate, authority-completeness, restart flag and revision. |
-| `execution` | Nullable retained owning Research execution, using the existing [safe child projection](children.md). |
+| `execution` | Nullable retained owning Research/Implementer execution, using the existing [safe child projection](children.md). |
 | `pendingResults` | Owned-child receipts not yet delivered to an eligible parent boundary. |
 | `requiredFollowUp` | Owned-child receipts without completed parent follow-up. |
 

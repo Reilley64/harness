@@ -276,7 +276,12 @@ not safe relative wheel movement.
 
 Titles are exactly `harness - Griller`, `harness - Setup`, `harness - Research`,
 `harness - Chief of Staff`, `harness - Children` and `harness - Agent map`; an explicitly
-loaded unassociated pilot uses `harness - Conversation`. Only static context labels
+loaded unassociated pilot uses `harness - Conversation`. Managed Implementer
+contexts and their inspected histories use `harness - Implementer`; the native
+metadata decoder accepts their recorded role and `implementation` run phase,
+retaining the required creator identity. Typed `/answer` controls also carry
+same-agent submission follow-up into a later bounded implementation cycle;
+ordinary chat does not bypass that boundary. Only static context labels
 enter title escapes. Background updates cannot change selection/title. Title,
 mouse and raw/alternate-screen modes pair with cleanup. Conversation controllers and per-conversation viewport state survive map visits;
 the transcript need not remain mounted to retain its line anchor. Unsaved drafts

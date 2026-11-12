@@ -29,9 +29,33 @@ pub async fn call(
             .call(id.clone())
             .await
             .map_err(Error::caused_by)?;
-        if conversation.workspace.as_ref() != Some(&page.workspace) || conversation.agent.is_none()
-        {
+        if conversation.agent.is_none() {
             continue;
+        }
+        if conversation.workspace.as_ref() != Some(&page.workspace) {
+            let Some(owner) = conversation.research.as_ref().filter(|_| {
+                conversation
+                    .agent
+                    .as_ref()
+                    .is_some_and(|agent| agent.role == domain::AgentRole::Implementer)
+            }) else {
+                continue;
+            };
+            let parent = d
+                .read_conversation
+                .call(owner.parent_id.clone())
+                .await
+                .map_err(Error::caused_by)?;
+            if parent.workspace.as_ref() != Some(&page.workspace) {
+                continue;
+            }
+            if parent.agent.as_ref().is_none_or(|agent| {
+                agent.role != domain::AgentRole::ChiefOfStaff || agent.id.0 != owner.parent_agent_id
+            }) {
+                return Err(Error::caused_by(
+                    "Managed Implementer repository association differs from its actual coordinator",
+                ));
+            }
         }
 
         let coordination = d

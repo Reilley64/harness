@@ -159,7 +159,9 @@ export function HarnessScreen({
   useContextTitle(
     children.visible
       ? children.history
-        ? "harness - Research"
+        ? children.history.agent?.role === "implementer"
+          ? "harness - Implementer"
+          : "harness - Research"
         : "harness - Children"
       : native.mode
         ? "harness - Decider"
@@ -173,7 +175,9 @@ export function HarnessScreen({
                 ? "harness - Setup"
                 : role === "research"
                   ? "harness - Research"
-                  : "harness - Griller",
+                  : role === "implementer"
+                    ? "harness - Implementer"
+                    : "harness - Griller",
   );
 
   useInput((input, key) => {

@@ -228,7 +228,7 @@ pub(crate) fn execution(child: &domain::ChildExecution) -> serde_json::Value {
         "parentRevision": child.parent_revision,
         "workId": child.work_id,
         "workVersion": child.work_version,
-        "role": "research",
+        "role": child.brief.role,
         "providerId": child.selected.selection.provider_id.0,
         "modelId": child.selected.selection.model_id,
         "effort": child.selected.selection.effort.map(|effort| match effort { domain::ModelEffort::Low => "low", domain::ModelEffort::Medium => "medium", domain::ModelEffort::High => "high", domain::ModelEffort::ExtraHigh => "extra_high" }),
