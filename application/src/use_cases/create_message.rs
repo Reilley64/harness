@@ -1438,7 +1438,11 @@ async fn execute(
                 }
                 let owner = research.ok_or("Implementer has no retained execution owner")?;
                 let output = update_workspace::call(update_workspace::Dependencies::new(dependencies.clone()), owner.parent_id.clone(), owner.execution_id.clone(), domain::WorkspaceAction::Submit { commit }, cancellation.clone()).await?;
-                domain::ToolResult { status: domain::ToolStatus::Succeeded, output: format!("Exact committed submission {} passed the recorded native checks. Durable handoff: {}. This is not review acceptance, integration or merge authority.", output.workspace.submission.as_deref().ok_or("Submission has no confirmed check result")?, output.workspace.artifact), artifact: Some(output.workspace.artifact), truncated: false }
+                if let Some(check) = output.workspace.checks.iter().find(|check| check.status == domain::ToolStatus::Unknown) {
+                    domain::ToolResult { status: domain::ToolStatus::Unknown, output: check.output.clone(), artifact: Some(output.workspace.artifact), truncated: false }
+                } else {
+                    domain::ToolResult { status: domain::ToolStatus::Succeeded, output: format!("Exact committed submission {} passed the recorded native checks. Durable handoff: {}. This is not review acceptance, integration or merge authority.", output.workspace.submission.as_deref().ok_or("Submission has no confirmed check result")?, output.workspace.artifact), artifact: Some(output.workspace.artifact), truncated: false }
+                }
             }
             domain::ToolInvocation::DispatchResearch(brief, routed) => {
                 let output = create_dispatch::call(create_dispatch::Dependencies { worker: dependencies.clone() }, sender_id.into(), parent_revision, brief, routed, cancellation).await?;

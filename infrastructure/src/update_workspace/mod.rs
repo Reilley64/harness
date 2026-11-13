@@ -384,6 +384,9 @@ pub fn update_workspace(
                                 output: result.output,
                             });
                         save(&record_path, &record).await?;
+                        if result.status == domain::ToolStatus::Unknown {
+                            return Ok(record.projection(artifact));
+                        }
                         if !passed {
                             record.phase = "ready".into();
                             save(&record_path, &record).await?;

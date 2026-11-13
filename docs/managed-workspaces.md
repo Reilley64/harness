@@ -62,7 +62,12 @@ common repository, clean tracked/untracked state and base ancestry. It checkpoin
 check intent, runs the nonempty captured required commands in that workspace,
 retains each native status/output, and verifies cleanliness and unchanged HEAD
 again before recording success. Failed, cancelled, truncated or missing checks
-are not passes. In-flight checks after interruption are uncertain, not replayed.
+are not passes. Known failed checks remain eligible for a new submission. A native
+Unknown result retains the `checking` phase and its original check evidence,
+returns an Unknown submission tool result and stops the turn. It cannot become an
+ordinary failure that permits another same-HEAD submission. Inspection and restart
+retain that fence; Resume does not replay an uncertain check. In-flight checks
+after interruption are likewise uncertain, not replayed.
 
 Submission results persist before tool acknowledgement. Successful submission
 ends the run at a typed human-follow-up boundary, without another model call. The
