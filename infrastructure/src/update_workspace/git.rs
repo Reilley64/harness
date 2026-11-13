@@ -15,6 +15,7 @@ pub(super) async fn call(
     if cancellation.is_cancelled() {
         return Err("Managed Git stopped before admission".into());
     }
+
     let mut child = Command::new("git")
         .args([
             "-c",
@@ -37,6 +38,7 @@ pub(super) async fn call(
     drop(stdin);
     let stdout = child.stdout.take().ok_or("Git stdout unavailable")?;
     let stderr = child.stderr.take().ok_or("Git stderr unavailable")?;
+
     let operation = async {
         let mut output = Vec::new();
         let mut error = Vec::new();
@@ -51,6 +53,7 @@ pub(super) async fn call(
                 "Managed Git output exceeds its bound; inspect without replay".into(),
             );
         }
+
         let status = child.wait().await?;
         if !status.success() {
             return Err(format!(
@@ -59,8 +62,10 @@ pub(super) async fn call(
             )
             .into());
         }
+
         Ok(String::from_utf8(output)?.trim_end_matches('\n').to_owned())
     };
+
     tokio::select! {
         biased;
         _ = cancellation.cancelled() => Err("Managed Git interrupted; reconcile native facts before continuation".into()),

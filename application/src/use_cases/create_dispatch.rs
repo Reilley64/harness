@@ -305,7 +305,14 @@ async fn dispatch(
         .await
         .map_err(Error::caused_by)?;
     let instructions = if let Some(adopted) = adopted {
-        if !adopted.matches(&parent) {
+        if !adopted.matches(&parent)
+            || adopted.snapshot.phase
+                != if implementer {
+                    "implementation"
+                } else {
+                    "research"
+                }
+        {
             return Err(Error::caused_by(
                 "Research adoption differs from the actual parent or approved work; inspect without replacement",
             ));
@@ -329,7 +336,7 @@ async fn dispatch(
             .map_err(Error::caused_by)?;
         if !guidance.overrides.is_empty() {
             return Err(Error::caused_by(error_context::ErrorContext::caused_by(
-                "Research overrides require explicit inspection and adoption for this intent in /children guidance.",
+                "Assignment overrides require explicit inspection and adoption for this intent in /children guidance.",
                 "Research guidance is not adopted",
             )));
         }

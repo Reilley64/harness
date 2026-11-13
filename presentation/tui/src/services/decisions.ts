@@ -35,9 +35,17 @@ export function parseDecision(value: unknown): DecisionResponse {
     d.workerLaunched !== false
   )
     throw new PresentationError("Invalid assignment decision.");
+  if (
+    !record(d.brief) ||
+    (d.brief.role !== "research" &&
+      d.brief.role !== "implementer" &&
+      d.brief.role !== "reviewer")
+  )
+    throw new PresentationError("Invalid assignment role.");
   return {
     decision: {
       id: d.id,
+      role: d.brief.role,
       parentId: d.parentId,
       revision: d.revision,
       phase: d.phase,

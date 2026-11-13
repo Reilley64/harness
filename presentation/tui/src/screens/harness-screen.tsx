@@ -344,11 +344,13 @@ export function HarnessScreen({
     const label =
       targetRole === "chief_of_staff"
         ? "Chief of Staff"
-        : targetRole === "research"
-          ? "Research"
-          : targetRole === "setup"
-            ? "Setup"
-            : "Griller";
+        : targetRole === "implementer"
+          ? "Implementer"
+          : targetRole === "research"
+            ? "Research"
+            : targetRole === "setup"
+              ? "Setup"
+              : "Griller";
     setStopTarget({
       id,
       label,

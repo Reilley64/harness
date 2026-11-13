@@ -12,8 +12,9 @@ Domain values remain Serde-free. Each conversation adapter owns its own records.
 
 Griller, [Setup](repository-setup.md) and the approved-work Chief of Staff execute
 through the shared loop. [Managed Research](managed-dispatch.md) resolves its
-Research closure through that same machinery. Implementer, Reviewer, review-axis
-and Retro assets remain bundled for later assignment owners;
+Research closure through that same machinery. [Managed Implementers](managed-workspaces.md)
+execute their implementation closure. Reviewer, review-axis and Retro assets remain
+bundled for later assignment owners;
 inspection is not an agent roster, dispatch API or creation relationship. Native
 Jev Decider has a separate typed-decision contract, not a conversational/tool role.
 All conversational roles use shared configured tools. Guidance cannot grant scope,
@@ -100,6 +101,12 @@ selected in configuration. An explicitly selected root is required. Repository
 and local root choices/overrides require explicit adoption before initial inference.
 Approved handoff can capture the default CoS coordination closure; explicit overrides
 are retained as unselected candidates until inspected/adopted before inference.
+Pending routed Implementer intents inspect their `implementation` closure through
+`/children guidance <intent>`. Adoption derives the phase from the exact prepared
+intent and verifies its actual parent, approved work, current parent revision and
+available hash. The compatibility-named Research guidance endpoint/record also
+retains implementation snapshots; accepted intents cannot replace their closure.
+
 The first default Griller run can capture the unambiguous root and bundled grilling
 closure without a separate adoption command. A block occurs before creating a new
 user/reply/run or contacting inference; repair and retry or inspect/adopt explicitly.

@@ -4,6 +4,7 @@ export type Decision = {
   id: string;
   revision: number;
   parentId: string;
+  role: "research" | "implementer" | "reviewer";
   phase: string;
   details: string;
 };

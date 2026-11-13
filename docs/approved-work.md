@@ -10,9 +10,9 @@ Griller, with its own identity, instructions, messages, runs and accounting.
 
 This module owns approved handoff, not managed implementation. CoS can prepare
 and inspect a [native Decider selection](native-decider.md); separate
-[managed Research dispatch](managed-dispatch.md) consumes settled selections.
-Managed workspaces, Implementer execution, review, integration and target merge
-remain unavailable. Unknown tool names produce ordinary Invalid results; unknown
+[managed dispatch](managed-dispatch.md) consumes settled selections for Research
+and [Implementers in owned workspaces](managed-workspaces.md). Independent review,
+integration and target merge remain unavailable. Unknown tool names produce ordinary Invalid results; unknown
 ACP methods are unavailable. No synthetic execution, readiness or spec completion
 is produced. `complete` is always false here; a later completion
 owner must establish the exact human-authorized verified target merge.

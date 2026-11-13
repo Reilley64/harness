@@ -51,6 +51,7 @@ pub async fn call(
             "Workspace effects are gated by Stop, input, scope or explicit Resume",
         ));
     }
+
     let parent = d
         .read_conversation
         .call(parent_id.clone())
@@ -62,13 +63,16 @@ pub async fn call(
     research_access::authorize(&d.read_work, child)
         .await
         .map_err(Error::caused_by)?;
+
     let repository = parent
         .workspace
         .ok_or_else(|| Error::caused_by("Coordinator has no saved repository"))?;
+
     let workspace = d
         .update_workspace
         .call(child.clone(), repository, action, cancellation)
         .await
         .map_err(Error::caused_by)?;
+
     Ok(Output { workspace })
 }

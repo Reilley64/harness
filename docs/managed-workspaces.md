@@ -24,7 +24,9 @@ commit when preparing its own workspace. Distinct intent UUIDs produce distinct
 assignment, agent, branch and worktree identities even for the same ticket.
 Selected model/thinking, approval, instruction snapshot and existing retry policy
 remain immutable. Missing guidance or unadopted overrides block, never select a
-generic Implementer prompt.
+generic Implementer prompt. `/children guidance <intent>` inspects the phase from
+the prepared intent; explicit adoption captures its implementation closure under
+the exact parent/work/revision/hash, without changing an accepted intent.
 
 ## Native ownership and setup
 
@@ -47,7 +49,9 @@ setup through ordinary tools. Missing ignored fixtures block before inference;
 Harness does not copy secrets, mutate shared services, invent a conflict detector
 or fall back to the original checkout. Worktrees do not isolate processes, ports,
 databases, caches or external services. Check-command failures can expose actual
-resource conflicts but do not identify every possible conflict.
+resource conflicts but do not identify every possible conflict. A missing setup
+reference produces an explicitly safe required-workspace-setup diagnostic with an
+inspection direction; original I/O causes remain private and retained.
 
 ## Exact submissions and handoff
 
@@ -67,7 +71,10 @@ identities survive outside the checkout. A handoff is not review acceptance,
 tracker closure, integration or merge permission. A model response without a
 confirmed current submission cannot become a Completed implementation receipt.
 Moved/dirty/foreign workspaces invalidate the current projection rather than
-qualifying a different revision with earlier checks.
+qualifying a different revision with earlier checks. Persisted submission hashes
+are validated, and the latest submission must match the recorded native tip and
+checking/submitted lifecycle. Earlier historical submissions keep their own hashes
+rather than being rebound to the latest tip.
 
 `_harness/workspace/read` takes `{sessionId, executionId}` for the owning CoS and
 returns `assignmentId`, `path`, `branch`, `base`, `tip`, nullable `submission`,
@@ -82,7 +89,10 @@ existing trusted-tool contract.
 The matching typed answer starts a later run on the same Implementer and
 assignment; ordinary prompts cannot bypass input, approval, Stop or restart gates.
 After a submitted run, that answer consumes one of the two additional recorded
-implementation cycles (three including the initial cycle). The source run ID
+implementation cycles (three including the initial cycle). The pure domain cycle
+transition owns allowance, source-run deduplication and exhaustion; application
+orders workspace admission, while the adapter atomically retains that transition
+under the assignment operation lease. The source run ID
 deduplicates admission across recovery. Routing and allowances never reset by
 recreating a workspace. Exhaustion blocks for explicit human extension; an
 extension interface and independent review policy are not implemented here.

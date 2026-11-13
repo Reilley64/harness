@@ -54,9 +54,40 @@ pub async fn call(
         .workspace
         .clone()
         .ok_or_else(|| Error::caused_by("Parent workspace is missing"))?;
+    let decision = d
+        .read_decision
+        .call(intent.clone())
+        .await
+        .map_err(Error::caused_by)?;
+    let phase = if let Some(decision) = &decision {
+        if decision.parent_id != parent_id
+            || decision.parent_agent_id != agent.id.0
+            || parent.assignment.as_ref().is_none_or(|work| {
+                decision.work_id != work.work_id
+                    || decision.work_intent != work.intent
+                    || decision.work_version != work.proposal.version
+            })
+        {
+            return Err(Error::caused_by(
+                "Guidance intent differs from the actual parent or approved work",
+            ));
+        }
+        match decision.brief.role.as_str() {
+            "implementer" if !decision.legacy => "implementation",
+            "research" => "research",
+            _ => {
+                return Err(Error::caused_by(
+                    "This assignment has no supported guidance adoption phase",
+                ));
+            }
+        }
+    } else {
+        "research"
+    };
+
     let available = d
         .read_instructions
-        .call(workspace, "research".into(), Vec::new(), Vec::new())
+        .call(workspace, phase.into(), Vec::new(), Vec::new())
         .await
         .map_err(Error::caused_by)?
         .available

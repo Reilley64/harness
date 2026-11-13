@@ -112,9 +112,24 @@ export function useChildren(agent: Agent, parentId?: string) {
     setHistory(null);
     setResult(null);
     await run(async (id, signal) => {
+      const routed = await agent.readDecision(key, signal);
+      if (
+        routed.decision &&
+        (routed.decision.parentId !== id || routed.decision.role === "reviewer")
+      )
+        throw new PresentationError(
+          "Inspect guidance for a supported assignment owned by this parent.",
+        );
       const view = await agent.readGuidance(
         id,
-        { phase: "research", scopes: [], references: [] },
+        {
+          phase:
+            routed.decision?.role === "implementer"
+              ? "implementation"
+              : "research",
+          scopes: [],
+          references: [],
+        },
         signal,
       );
       if (!signal.aborted && target.current === id) setGuidance(view);

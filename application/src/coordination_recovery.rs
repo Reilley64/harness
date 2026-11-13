@@ -23,6 +23,7 @@ pub(crate) async fn restore_implementation(
     {
         return Ok(());
     }
+
     let owner = conversation
         .research
         .as_ref()
@@ -32,6 +33,7 @@ pub(crate) async fn restore_implementation(
         Err(error) if error.busy => return Ok(()),
         Err(error) => return Err(error.into()),
     };
+
     let state = read
         .call(owner.parent_id.clone())
         .await?
@@ -48,6 +50,7 @@ pub(crate) async fn restore_implementation(
     {
         return Err("Interrupted Implementer differs from its durable execution owner".into());
     }
+
     if !child.stop_requested
         && child.outcome.is_none()
         && matches!(
@@ -67,6 +70,7 @@ pub(crate) async fn restore_implementation(
             )
             .await?;
     }
+
     Ok(())
 }
 

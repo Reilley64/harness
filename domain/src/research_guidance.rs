@@ -1,3 +1,4 @@
+use crate::AgentRole;
 use crate::Conversation;
 use crate::InstructionSnapshot;
 
@@ -21,7 +22,8 @@ impl ResearchGuidance {
             .any(|id| id.is_empty() || id.len() > 128)
             || self.work_id.is_some() != self.work_intent.is_some()
             || self.work_id.is_some() != self.work_version.is_some()
-            || self.snapshot.phase != "research"
+            || !matches!(self.snapshot.phase.as_str(), "research" | "implementation")
+            || self.snapshot.phase == "implementation" && self.work_id.is_none()
         {
             return Err("Research guidance must bind the exact parent, intent and approved work");
         }
@@ -29,7 +31,12 @@ impl ResearchGuidance {
     }
 
     pub fn matches(&self, parent: &Conversation) -> bool {
-        self.parent_id == parent.id
+        (self.snapshot.phase != "implementation"
+            || parent
+                .agent
+                .as_ref()
+                .is_some_and(|agent| agent.role == AgentRole::ChiefOfStaff))
+            && self.parent_id == parent.id
             && parent
                 .agent
                 .as_ref()

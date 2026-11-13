@@ -39,11 +39,13 @@ pub fn update_workspace(
             if execution.brief.role != "implementer" || !execution.routed {
                 return Err("Managed workspaces require a routed approved Implementer".into());
             }
+
             let id = uuid::Uuid::parse_str(&execution.assignment_id)?;
             if id.to_string() != execution.assignment_id {
                 return Err("Workspace assignment identity must be canonical".into());
             }
             let directory = root.join(id.to_string());
+
             storage::private_directory(&directory).await?;
             let _operation = storage::lock(&directory.join("operation")).await?;
             let record_path = directory.join("workspace.json");
@@ -109,6 +111,7 @@ pub fn update_workspace(
                         &cancellation,
                     )
                     .await?;
+                    let cycles = domain::ImplementationCycles::default();
                     let record = Record {
                         format: 1,
                         assignment_id: execution.assignment_id.clone(),
@@ -129,14 +132,15 @@ pub fn update_workspace(
                         configuration,
                         phase: "planned".into(),
                         submissions: Vec::new(),
-                        cycle_allowance: 3,
-                        rework_runs: Vec::new(),
+                        cycle_allowance: cycles.allowance,
+                        rework_runs: cycles.rework_runs,
                     };
                     save(&record_path, &record).await?;
                     record
                 }
                 Err(error) => return Err(error.into()),
             };
+
             if record.format != 1
                 || record.assignment_id != execution.assignment_id
                 || record.execution_id != execution.execution_id
@@ -155,17 +159,26 @@ pub fn update_workspace(
                             .bytes()
                             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
                 })
-                || record.cycle_allowance != 3
-                || record.rework_runs.len() > 2
             {
                 return Err("Workspace ownership differs from its immutable accepted claim".into());
             }
+            let mut cycles = domain::ImplementationCycles {
+                allowance: record.cycle_allowance,
+                rework_runs: record.rework_runs.clone(),
+            };
+            cycles.validate()?;
             validate_configuration(&record.configuration)?;
+
             if !matches!(
                 record.phase.as_str(),
                 "planned" | "refs_pending" | "tree_pending" | "ready" | "checking" | "submitted"
             ) || record.submissions.iter().any(|submission| {
-                submission.results.len() > record.configuration.checks.len()
+                !matches!(submission.commit.len(), 40 | 64)
+                    || !submission
+                        .commit
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                    || submission.results.len() > record.configuration.checks.len()
                     || submission
                         .results
                         .iter()
@@ -183,11 +196,32 @@ pub fn update_workspace(
             }) {
                 return Err("Workspace check evidence is missing or inconsistent".into());
             }
+            if record
+                .submissions
+                .last()
+                .is_some_and(|submission| submission.commit != record.tip)
+                || record.phase == "submitted"
+                    && !record
+                        .submissions
+                        .last()
+                        .is_some_and(|submission| submission.complete)
+                || record.phase == "checking"
+                    && !record
+                        .submissions
+                        .last()
+                        .is_some_and(|submission| !submission.complete)
+            {
+                return Err(
+                    "Workspace submission does not match its exact recorded check revision".into(),
+                );
+            }
+
             if record.configuration
                 != serde_json::from_str::<Configuration>(&execution.brief.tool_context)?
             {
                 return Err("Workspace payload differs from the exact accepted intent".into());
             }
+
             match action {
                 domain::WorkspaceAction::Prepare => {}
                 domain::WorkspaceAction::Inspect => {
@@ -199,16 +233,16 @@ pub fn update_workspace(
                     }
                 }
                 domain::WorkspaceAction::Open { resume, rework } => {
-                    if let Some(run) = rework
-                        && !record.rework_runs.contains(&run)
-                    {
-                        if record.rework_runs.len() >= 2 {
-                            return Err::<domain::AssignmentWorkspace, Error>("The recorded implementation cycle allowance is exhausted".into()).context("The three implementation cycles are exhausted. Preserve this assignment and request a human extension; a new intent or routing cannot reset the allowance.").map_err(Into::into);
-                        }
+                    if let Some(run) = rework {
                         uuid::Uuid::parse_str(&run)?;
-                        record.rework_runs.push(run);
-                        save(&record_path, &record).await?;
+                        let admitted = cycles.admit(run).map_err(|error| -> Error { error.into() })
+                            .context("The three implementation cycles are exhausted. Preserve this assignment and request a human extension; a new intent or routing cannot reset the allowance.")?;
+                        if admitted {
+                            record.rework_runs = cycles.rework_runs;
+                            save(&record_path, &record).await?;
+                        }
                     }
+
                     if record.phase == "planned" {
                         record.phase = "refs_pending".into();
                         save(&record_path, &record).await?;
@@ -237,6 +271,7 @@ pub fn update_workspace(
                         record.phase = "ready".into();
                         save(&record_path, &record).await?;
                     }
+
                     let registered = git::call(
                         &repository,
                         &["worktree", "list", "--porcelain"],
@@ -272,13 +307,15 @@ pub fn update_workspace(
                         .await?;
                     }
                     verify(&record, &cancellation).await?;
+
                     for path in &record.configuration.setup {
                         let path = record.path.join(path);
-                        let resolved = tokio::fs::canonicalize(&path).await.map_err(|error| std::io::Error::new(error.kind(), format!("Required workspace setup is missing at {}; no ignored fixture or secret was copied: {error}", path.display())))?;
+                        let resolved = tokio::fs::canonicalize(&path).await.context("Required workspace setup is missing. Inspect the owned workspace's required setup references; no ignored fixture or secret was copied.")?;
                         if !resolved.starts_with(&record.path) {
                             return Err("Required setup escapes the owned workspace; no fallback is permitted".into());
                         }
                     }
+
                     record.phase = "ready".into();
                     save(&record_path, &record).await?;
                 }
@@ -314,6 +351,7 @@ pub fn update_workspace(
                         &cancellation,
                     )
                     .await?;
+
                     record.tip = tip.clone();
                     record.phase = "checking".into();
                     record.submissions.push(SubmissionRecord {
@@ -352,6 +390,7 @@ pub fn update_workspace(
                             return Err("Required native check failed, was cancelled or exceeded retained output; inspect the durable submission evidence".into());
                         }
                     }
+
                     verify(&record, &cancellation).await?;
                     if git::call(&record.path, &["rev-parse", "HEAD"], None, &cancellation).await?
                         != tip
@@ -361,6 +400,7 @@ pub fn update_workspace(
                                 .into(),
                         );
                     }
+
                     record
                         .submissions
                         .last_mut()
@@ -370,6 +410,7 @@ pub fn update_workspace(
                     save(&record_path, &record).await?;
                 }
             }
+
             Ok(record.projection(artifact))
         })
     }

@@ -753,6 +753,7 @@ async fn run(
             ));
         }
     }
+
     let lease = managed::claim(dependencies, conversation, cancellation).await?;
     let reply = conversation.active_reply().map_err(Error::caused_by)?;
     if let Some(step) = reply.steps.last()
